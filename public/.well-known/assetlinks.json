@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "app.netlify.playasyventajas.twa",
+    "sha256_cert_fingerprints": ["SUBSTITUA_PELO_FINGERPRINT_GERADO_NO_PASSO_2"]
+  }
+}]
