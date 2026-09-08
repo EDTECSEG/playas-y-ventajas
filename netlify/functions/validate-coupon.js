@@ -10,8 +10,8 @@ exports.handler = async (event) => {
     const body = JSON.parse(event.body || '{}');
     const { publicId, rawToken, shortCode } = body;
     const idempotencyKey = body.idempotencyKey || randomUUID();
-    if (!publicId || (!rawToken && !shortCode)) {
-      return { statusCode: 400, body: JSON.stringify({ error: 'publicId e (rawToken ou shortCode) são obrigatórios' }) };
+    if (!publicId) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'publicId é obrigatório' }) };
     }
 
     const actor = await resolveSession(supabase, body.sessionToken);
