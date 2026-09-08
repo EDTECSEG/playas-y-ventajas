@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useLanguage } from '../../lib/LanguageContext';
 
 const wrap = { maxWidth: 720, margin: '0 auto', padding: '48px 24px 80px', color: '#FFFDF7' };
 const card = { background: '#FFFDF7', color: '#0B6E4F', borderRadius: 12, padding: 20, marginBottom: 16 };
@@ -35,6 +36,7 @@ function loadLeaflet() {
 }
 
 export default function ClientePage() {
+  const { t } = useLanguage();
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [instagram, setInstagram] = useState('');
@@ -172,55 +174,54 @@ export default function ClientePage() {
 
   return (
     <main style={wrap}>
-      <h1>🎟️ Ofertas — Playas y Ventajas</h1>
+      <h1>{t.offersTitle}</h1>
 
       {!customerId && (
         <div style={card}>
-          <h3>Identifique-se para resgatar cupons</h3>
-          <input style={input} placeholder="seu telefone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-          <input style={input} placeholder="seu nome" value={name} onChange={(e) => setName(e.target.value)} />
-          <input style={input} placeholder="seu e-mail" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <input style={input} placeholder="@seu_instagram" value={instagram} onChange={(e) => setInstagram(e.target.value)} />
-          <p style={{ fontSize: 12 }}>Não precisa senha — seu telefone já te identifica no resgate.</p>
+          <h3>{t.identify}</h3>
+          <input style={input} placeholder={t.phone} value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <input style={input} placeholder={t.name} value={name} onChange={(e) => setName(e.target.value)} />
+          <input style={input} placeholder={t.email} value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input style={input} placeholder={t.instagram} value={instagram} onChange={(e) => setInstagram(e.target.value)} />
+          <p style={{ fontSize: 12 }}>{t.noPasswordNote}</p>
         </div>
       )}
 
       {justClaimed && (
         <div style={{ ...card, border: '3px solid #F2C14E', textAlign: 'center' }}>
-          <h3>Seu cupom</h3>
+          <h3>{t.yourCoupon}</h3>
           <div ref={qrDivRef} style={{ display: 'flex', justifyContent: 'center', margin: '0 auto' }} />
           <p style={{ fontSize: 20, fontWeight: 700, letterSpacing: 2, marginTop: 12 }}>{justClaimed.publicId}</p>
-          <p style={{ fontSize: 11 }}>Mostre este QR code ao atendente para validar. Se a câmera não ler, o código de texto abaixo serve de reserva:</p>
-          <p style={{ fontSize: 11 }}>Código curto para o atendente digitar manualmente:</p>
+          <p style={{ fontSize: 11 }}>{t.shortCodeLabel}</p>
           <p style={{ fontSize: 22, fontWeight: 700, letterSpacing: 3 }}>{justClaimed.shortCode}</p>
-          <p style={{ fontSize: 11 }}>Código completo (reserva): <code>{justClaimed.rawToken}</code></p>
-          <p style={{ fontSize: 12, color: '#c0392b' }}>Este código só aparece agora — tire print ou anote.</p>
+          <p style={{ fontSize: 11 }}>{t.fullCodeLabel} <code>{justClaimed.rawToken}</code></p>
+          <p style={{ fontSize: 12, color: '#c0392b' }}>{t.saveWarning}</p>
         </div>
       )}
 
       <div style={card}>
-        <h3>Ofertas disponíveis</h3>
-        {offers.length === 0 ? <p>Nenhuma oferta no momento.</p> : offers.map((o) => (
+        <h3>{t.availableOffers}</h3>
+        {offers.length === 0 ? <p>{t.noOffers}</p> : offers.map((o) => (
           <div key={o.templateId} style={{ borderTop: '1px solid #e2e8f0', padding: '10px 0' }}>
             <strong>{o.title}</strong> — {o.businessName} ({o.category})
             <br />
-            <button style={{ ...btn, marginTop: 6 }} onClick={() => claim(o.templateId)}>Resgatar</button>
+            <button style={{ ...btn, marginTop: 6 }} onClick={() => claim(o.templateId)}>{t.redeem}</button>
           </div>
         ))}
       </div>
 
       <div style={card}>
-        <h3>🗺️ Mapa da região</h3>
-        <p style={{ fontSize: 12 }}>Verde = nossos parceiros. Cinza = outros comércios da região (cadastrados ou não no sistema).</p>
-        <button style={btn} onClick={showMap}>{mapStatus === 'idle' ? 'Mostrar mapa' : 'Atualizar mapa'}</button>
-        {mapStatus === 'denied' && <p style={{ fontSize: 13 }}>Permissão de localização negada.</p>}
+        <h3>{t.mapTitle}</h3>
+        <p style={{ fontSize: 12 }}>{t.mapLegend}</p>
+        <button style={btn} onClick={showMap}>{mapStatus === 'idle' ? t.showMap : t.updateMap}</button>
+        {mapStatus === 'denied' && <p style={{ fontSize: 13 }}>{t.locationDenied}</p>}
         <div ref={mapRef} style={{ height: 320, marginTop: 12, borderRadius: 8, display: mapStatus === 'idle' ? 'none' : 'block' }} />
       </div>
 
       {customerId && (
         <div style={card}>
-          <h3>Meus cupons</h3>
-          {myCoupons.length === 0 ? <p>Nenhum ainda.</p> : (
+          <h3>{t.myCoupons}</h3>
+          {myCoupons.length === 0 ? <p>{t.noneYet}</p> : (
             <ul>{myCoupons.map((c) => (
               <li key={c.publicId} style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => handleOpenCoupon(c.publicId)}>
                 {c.publicId} — {c.title} — <strong>{c.status}</strong> ({c.businessName})

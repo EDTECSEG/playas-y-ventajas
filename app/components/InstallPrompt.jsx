@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useLanguage } from '../../lib/LanguageContext';
 
 export default function InstallPrompt() {
+  const { t } = useLanguage();
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
   const [showIosHelp, setShowIosHelp] = useState(false);
@@ -38,15 +40,13 @@ export default function InstallPrompt() {
   return (
     <div style={{ background: '#F2C14E', color: '#0B6E4F', padding: '8px 16px', textAlign: 'center', fontSize: 13, fontWeight: 600 }}>
       📲 <button onClick={handleClick} style={{ background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', color: '#0B6E4F', fontWeight: 700, fontSize: 13 }}>
-        Instalar app no celular
+        {t.install}
       </button>
       {showIosHelp && (
         <div style={{ marginTop: 6, fontWeight: 400 }}>
-          {isIos
-            ? 'No Safari: toque no ícone de Compartilhar (□↑) e depois em "Adicionar à Tela de Início".'
-            : 'No menu do navegador (⋮), toque em "Instalar app" ou "Adicionar à tela inicial".'}
+          {isIos ? t.installIos : t.installAndroid}
           {' '}
-          <button onClick={() => setShowIosHelp(false)} style={{ background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', color: '#0B6E4F' }}>fechar</button>
+          <button onClick={() => setShowIosHelp(false)} style={{ background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', color: '#0B6E4F' }}>{t.close}</button>
         </div>
       )}
     </div>

@@ -2,13 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { getSupabasePublicClient } from '../lib/supabase';
+import { useLanguage } from '../lib/LanguageContext';
 
-const COLORS = {
-  green: '#0B6E4F',
-  greenDark: '#084D38',
-  gold: '#F2C14E',
-  cream: '#FFFDF7',
-};
+const COLORS = { green: '#0B6E4F', greenDark: '#084D38', gold: '#F2C14E', cream: '#FFFDF7' };
 
 function CouponLink({ href, icon, title, subtitle }) {
   return (
@@ -37,7 +33,33 @@ function CouponLink({ href, icon, title, subtitle }) {
   );
 }
 
+function LanguageMenu() {
+  const { lang, setLang } = useLanguage();
+  const langs = [['pt', 'PT'], ['en', 'EN'], ['es', 'ES']];
+  return (
+    <div style={{
+      position: 'absolute', top: 16, right: 16, display: 'flex', gap: 4,
+      background: 'rgba(255,255,255,0.15)', borderRadius: 20, padding: 4,
+    }}>
+      {langs.map(([code, label]) => (
+        <button
+          key={code}
+          onClick={() => setLang(code)}
+          style={{
+            border: 'none', borderRadius: 16, padding: '5px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            background: lang === code ? COLORS.gold : 'transparent',
+            color: lang === code ? COLORS.greenDark : COLORS.cream,
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function Home() {
+  const { t } = useLanguage();
   const [health, setHealth] = useState({ status: 'checking' });
 
   useEffect(() => {
@@ -56,23 +78,22 @@ export default function Home() {
 
   return (
     <main style={{
-      minHeight: '100vh', background: `radial-gradient(circle at top, ${COLORS.green}, ${COLORS.greenDark})`,
+      position: 'relative', minHeight: '100vh', background: `radial-gradient(circle at top, ${COLORS.green}, ${COLORS.greenDark})`,
       display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px 24px 60px',
     }}>
+      <LanguageMenu />
       <img src="/logo.png" alt="Playas y Ventajas" style={{ width: 180, height: 180, borderRadius: 24, marginBottom: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.35)' }} />
       <h1 style={{ color: COLORS.cream, fontSize: 26, margin: '8px 0 2px', textAlign: 'center' }}>Playas y Ventajas</h1>
-      <p style={{ color: COLORS.gold, fontSize: 14, marginBottom: 36, textAlign: 'center' }}>
-        Cupons, benefícios e experiências para turismo em Cabo Frio e região
-      </p>
+      <p style={{ color: COLORS.gold, fontSize: 14, marginBottom: 36, textAlign: 'center' }}>{t.tagline}</p>
 
       <div style={{ width: '100%', maxWidth: 420 }}>
-        <CouponLink href="/cliente" icon="🎟️" title="Sou Cliente" subtitle="Ver ofertas, resgatar e usar meus cupons" />
-        <CouponLink href="/empresa" icon="🏪" title="Sou Empresa" subtitle="Gerenciar campanhas, cupons e validar resgates" />
-        <CouponLink href="/admin" icon="🛠️" title="Administração" subtitle="Gerenciar empresas parceiras e cobrança" />
+        <CouponLink href="/cliente" icon="🎟️" title={t.client} subtitle={t.clientSub} />
+        <CouponLink href="/empresa" icon="🏪" title={t.business} subtitle={t.businessSub} />
+        <CouponLink href="/admin" icon="🛠️" title={t.admin} subtitle={t.adminSub} />
       </div>
 
       <p style={{ marginTop: 32, fontSize: 12, color: COLORS.cream, opacity: 0.6 }}>
-        {health.status === 'ok' ? 'Sistema online ✅' : health.status === 'checking' ? 'verificando conexão…' : 'sistema com instabilidade ⚠️'}
+        {health.status === 'ok' ? t.online : health.status === 'checking' ? t.checking : t.unstable}
       </p>
     </main>
   );

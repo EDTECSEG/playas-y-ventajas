@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useLanguage } from '../../lib/LanguageContext';
 
 const wrap = { maxWidth: 780, margin: '0 auto', padding: '48px 24px 80px', color: '#FFFDF7' };
 const card = { background: '#FFFDF7', color: '#0B6E4F', borderRadius: 12, padding: 20, marginBottom: 16 };
@@ -42,6 +43,7 @@ async function uploadImage(file, folder) {
 }
 
 export default function AdminPage() {
+  const { t } = useLanguage();
   const [session, setSession] = useState(null);
   const [loginForm, setLoginForm] = useState({ tenantSlug: 'playas-y-ventajas', internalCode: 'ADMIN-001', pin: '' });
   const [businesses, setBusinesses] = useState([]);
@@ -132,13 +134,13 @@ export default function AdminPage() {
   if (!session) {
     return (
       <main style={wrap}>
-        <h1>🛠️ Admin da Plataforma</h1>
+        <h1>{t.adminPanel}</h1>
         <div style={card}>
-          <h3>Login</h3>
-          <input style={input} placeholder="tenant slug" value={loginForm.tenantSlug} onChange={(e) => setLoginForm({ ...loginForm, tenantSlug: e.target.value })} />
-          <input style={input} placeholder="código interno" value={loginForm.internalCode} onChange={(e) => setLoginForm({ ...loginForm, internalCode: e.target.value })} />
-          <input style={input} placeholder="PIN" type="password" value={loginForm.pin} onChange={(e) => setLoginForm({ ...loginForm, pin: e.target.value })} />
-          <button style={btn} onClick={login}>Entrar</button>
+          <h3>{t.login}</h3>
+          <input style={input} placeholder={t.tenantSlug} value={loginForm.tenantSlug} onChange={(e) => setLoginForm({ ...loginForm, tenantSlug: e.target.value })} />
+          <input style={input} placeholder={t.internalCode} value={loginForm.internalCode} onChange={(e) => setLoginForm({ ...loginForm, internalCode: e.target.value })} />
+          <input style={input} placeholder={t.pin} type="password" value={loginForm.pin} onChange={(e) => setLoginForm({ ...loginForm, pin: e.target.value })} />
+          <button style={btn} onClick={login}>{t.enter}</button>
           {msg && <p style={{ fontSize: 13, color: '#c0392b' }}>{msg}</p>}
         </div>
       </main>
@@ -147,63 +149,63 @@ export default function AdminPage() {
 
   return (
     <main style={wrap}>
-      <h1>🛠️ Admin da Plataforma</h1>
+      <h1>{t.adminPanel}</h1>
 
       <div style={card}>
-        <h3>Cadastrar nova empresa parceira</h3>
-        <input style={input} placeholder="nome da empresa" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <h3>{t.registerBusiness}</h3>
+        <input style={input} placeholder={t.businessName} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         <select style={input} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
           <option value="passeio">Passeio</option><option value="hotel">Hotel</option><option value="pousada">Pousada</option>
           <option value="restaurante">Restaurante</option><option value="bar">Bar</option>
         </select>
-        <input style={input} placeholder="cidade" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+        <input style={input} placeholder={t.city} value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
         <br />
         <input style={input} placeholder="(00) 00000-0000" value={form.phone} onChange={(e) => setForm({ ...form, phone: maskPhone(e.target.value) })} />
-        <input style={input} placeholder="e-mail" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        <input style={input} placeholder={t.email} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         <br />
-        <input style={input} placeholder="00.000.000/0000-00 (CNPJ)" value={form.cnpj} onChange={(e) => setForm({ ...form, cnpj: maskCnpj(e.target.value) })} />
-        <input style={input} placeholder="site da empresa (https://...)" value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} />
+        <input style={input} placeholder={t.cnpjPlaceholder} value={form.cnpj} onChange={(e) => setForm({ ...form, cnpj: maskCnpj(e.target.value) })} />
+        <input style={input} placeholder={t.website} value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} />
         <br />
-        <label style={{ fontSize: 13 }}>Logo da empresa: <input type="file" accept="image/*" onChange={handleLogoUpload} /></label>
+        <label style={{ fontSize: 13 }}>{t.businessLogo} <input type="file" accept="image/*" onChange={handleLogoUpload} /></label>
         {form.logoUrl && <img src={form.logoUrl} alt="logo" style={{ height: 40, marginLeft: 8, verticalAlign: 'middle' }} />}
         <br />
-        <input style={input} placeholder="latitude" value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} />
-        <input style={input} placeholder="longitude" value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} />
-        <button style={smallBtn} onClick={useMyLocation}>📍 Usar minha localização</button>
+        <input style={input} placeholder={t.latitude} value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} />
+        <input style={input} placeholder={t.longitude} value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} />
+        <button style={smallBtn} onClick={useMyLocation}>{t.useLocation}</button>
         <br />
-        <input style={input} placeholder="código de login (ex: MERCHANT-002)" value={form.ownerInternalCode} onChange={(e) => setForm({ ...form, ownerInternalCode: e.target.value })} />
-        <input style={input} placeholder="PIN da empresa (mín. 6 caracteres)" value={form.ownerPin} onChange={(e) => setForm({ ...form, ownerPin: e.target.value })} />
+        <input style={input} placeholder={t.loginCode} value={form.ownerInternalCode} onChange={(e) => setForm({ ...form, ownerInternalCode: e.target.value })} />
+        <input style={input} placeholder={t.pinMin} value={form.ownerPin} onChange={(e) => setForm({ ...form, ownerPin: e.target.value })} />
         <select style={input} value={form.billingPlan} onChange={(e) => setForm({ ...form, billingPlan: e.target.value })}>
-          <option value="FREE">Plano Free (sem cobrança por cupom)</option>
-          <option value="BASIC">Plano Basic (R$1,50/cupom validado)</option>
-          <option value="PRO">Plano Pro (R$3,00/cupom validado)</option>
+          <option value="FREE">{t.freePlan}</option>
+          <option value="BASIC">{t.basicPlan}</option>
+          <option value="PRO">{t.proPlan}</option>
         </select>
         <br />
-        <button style={btn} onClick={createBusiness}>Cadastrar empresa</button>
+        <button style={btn} onClick={createBusiness}>{t.registerButton}</button>
       </div>
 
       <div style={card}>
-        <h3>Empresas cadastradas ({businesses.length})</h3>
+        <h3>{t.registeredBusinesses} ({businesses.length})</h3>
         {businesses.map((b) => (
           <div key={b.id} style={{ borderTop: '1px solid #e2e8f0', padding: '10px 0' }}>
             {b.logoUrl && <img src={b.logoUrl} alt="" style={{ height: 30, verticalAlign: 'middle', marginRight: 8 }} />}
-            <strong>{b.name}</strong> — {b.category} — {b.city} {b.isActive ? '✅' : '⛔ desativada'}
+            <strong>{b.name}</strong> — {b.category} — {b.city} {b.isActive ? '✅' : '⛔'}
             <br />
             <span style={{ fontSize: 12 }}>Login: {b.ownerInternalCode} · CNPJ: {b.cnpj || '—'} · {b.website || '—'}</span>
             <br />
-            <span style={{ fontSize: 12 }}>Plano: <strong>{b.billingPlan}</strong> · Status: <strong>{b.billingStatus}</strong></span>
+            <span style={{ fontSize: 12 }}>{b.billingPlan} · {b.billingStatus}</span>
             <div style={{ marginTop: 6 }}>
-              <button style={smallBtn} onClick={() => toggleActive(b)}>{b.isActive ? 'Desativar' : 'Ativar'}</button>
-              <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'ACTIVE', b.monthlyFeeCents)}>Ativar cobrança</button>
-              <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'SUSPENDED', b.monthlyFeeCents)}>Suspender</button>
+              <button style={smallBtn} onClick={() => toggleActive(b)}>{b.isActive ? t.deactivate : t.active}</button>
+              <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'ACTIVE', b.monthlyFeeCents)}>{t.activateBilling}</button>
+              <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'SUSPENDED', b.monthlyFeeCents)}>{t.suspend}</button>
             </div>
           </div>
         ))}
       </div>
 
       <div style={card}>
-        <h3>💰 Cobranças geradas (só cupons validados)</h3>
-        {billing.length === 0 ? <p style={{ fontSize: 13 }}>Nenhuma cobrança ainda — só é gerada quando o cupom é efetivamente validado no estabelecimento.</p> : (
+        <h3>{t.billingPanel}</h3>
+        {billing.length === 0 ? <p style={{ fontSize: 13 }}>{t.noBillingYet}</p> : (
           <ul>{billing.map((c, i) => (
             <li key={i} style={{ fontSize: 13 }}>{c.businessName} — {c.couponPublicId} — R$ {(c.amountCents / 100).toFixed(2)} — {new Date(c.validatedAt).toLocaleString('pt-BR')}</li>
           ))}</ul>

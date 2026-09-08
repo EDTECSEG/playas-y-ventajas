@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { useLanguage } from '../../lib/LanguageContext';
 
 function loadQrScanner() {
   return new Promise((resolve) => {
@@ -35,6 +36,7 @@ const input = { padding: 8, borderRadius: 6, border: '1px solid #cbd5e1', margin
 const btn = { padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', background: '#0B6E4F', color: '#FFFDF7', fontWeight: 600, marginRight: 8 };
 
 export default function EmpresaPage() {
+  const { t } = useLanguage();
   const [session, setSession] = useState(null);
   const [form, setForm] = useState({ tenantSlug: 'playas-y-ventajas', internalCode: 'MERCHANT-001', pin: '1234' });
   const [dash, setDash] = useState(null);
@@ -148,34 +150,34 @@ export default function EmpresaPage() {
 
   return (
     <main style={wrap}>
-      <h1>🏪 Painel da Empresa</h1>
+      <h1>{t.businessPanel}</h1>
 
       {!session ? (
         <div style={card}>
-          <h3>Login</h3>
-          <input style={input} placeholder="tenant slug" value={form.tenantSlug} onChange={(e) => setForm({ ...form, tenantSlug: e.target.value })} />
-          <input style={input} placeholder="código interno" value={form.internalCode} onChange={(e) => setForm({ ...form, internalCode: e.target.value })} />
-          <input style={input} placeholder="PIN" value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} />
-          <button style={btn} onClick={login}>Entrar</button>
-          <p style={{ fontSize: 12, opacity: 0.8 }}>Login: MERCHANT-001 / PIN 1234</p>
+          <h3>{t.login}</h3>
+          <input style={input} placeholder={t.tenantSlug} value={form.tenantSlug} onChange={(e) => setForm({ ...form, tenantSlug: e.target.value })} />
+          <input style={input} placeholder={t.internalCode} value={form.internalCode} onChange={(e) => setForm({ ...form, internalCode: e.target.value })} />
+          <input style={input} placeholder={t.pin} value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} />
+          <button style={btn} onClick={login}>{t.enter}</button>
+          <p style={{ fontSize: 12, opacity: 0.8 }}>{t.demoLogin}</p>
         </div>
       ) : (
         <>
           <div style={card}>
             <p>Logado como <strong>{session.role}</strong> (business: {session.businessId})</p>
 
-            <h3>✅ Validar cupom do cliente</h3>
+            <h3>{t.validateCoupon}</h3>
             {!scanning ? (
-              <button style={btn} onClick={startScan}>📷 Escanear QR code</button>
+              <button style={btn} onClick={startScan}>{t.scanQr}</button>
             ) : (
               <div>
                 <div id={scannerDivId} style={{ maxWidth: 320 }} />
-                <button style={{ ...btn, marginTop: 8 }} onClick={stopScan}>Parar câmera</button>
+                <button style={{ ...btn, marginTop: 8 }} onClick={stopScan}>{t.stopCamera}</button>
               </div>
             )}
             <div style={{ marginTop: 12 }}>
-              <input style={input} placeholder="código do cupom (PYV-...)" value={validateForm.publicId} onChange={(e) => setValidateForm({ ...validateForm, publicId: e.target.value })} />
-              <button style={btn} onClick={() => validateCoupon(validateForm.publicId, null, null)}>Validar manualmente</button>
+              <input style={input} placeholder={t.couponCode} value={validateForm.publicId} onChange={(e) => setValidateForm({ ...validateForm, publicId: e.target.value })} />
+              <button style={btn} onClick={() => validateCoupon(validateForm.publicId, null, null)}>{t.validateManually}</button>
             </div>
             {validateResult && (
               <p style={{ marginTop: 8, fontWeight: 600, color: validateResult.ok ? '#0B6E4F' : '#c0392b' }}>
@@ -183,42 +185,42 @@ export default function EmpresaPage() {
               </p>
             )}
 
-            <h3>Nova campanha</h3>
+            <h3>{t.newCampaign}</h3>
             <input style={input} value={campaignTitle} onChange={(e) => setCampaignTitle(e.target.value)} />
-            <button style={btn} onClick={createCampaign}>Criar campanha</button>
+            <button style={btn} onClick={createCampaign}>{t.createCampaign}</button>
 
-            <h3>Novo cupom-template</h3>
-            <input style={input} placeholder="campaign ID" value={templateForm.campaignId} onChange={(e) => setTemplateForm({ ...templateForm, campaignId: e.target.value })} />
-            <input style={input} placeholder="título" value={templateForm.title} onChange={(e) => setTemplateForm({ ...templateForm, title: e.target.value })} />
-            <input style={input} placeholder="valor (%)" value={templateForm.benefitValue} onChange={(e) => setTemplateForm({ ...templateForm, benefitValue: e.target.value })} />
-            <input style={input} placeholder="estoque (vazio=ilimitado)" value={templateForm.totalStock} onChange={(e) => setTemplateForm({ ...templateForm, totalStock: e.target.value })} />
+            <h3>{t.newTemplate}</h3>
+            <input style={input} placeholder={t.campaignId} value={templateForm.campaignId} onChange={(e) => setTemplateForm({ ...templateForm, campaignId: e.target.value })} />
+            <input style={input} placeholder={t.title} value={templateForm.title} onChange={(e) => setTemplateForm({ ...templateForm, title: e.target.value })} />
+            <input style={input} placeholder={t.value} value={templateForm.benefitValue} onChange={(e) => setTemplateForm({ ...templateForm, benefitValue: e.target.value })} />
+            <input style={input} placeholder={t.stock} value={templateForm.totalStock} onChange={(e) => setTemplateForm({ ...templateForm, totalStock: e.target.value })} />
             <br />
-            <label style={{ fontSize: 13 }}>Imagem/propaganda do cupom: <input type="file" accept="image/*" onChange={handleTemplateImage} /></label>
+            <label style={{ fontSize: 13 }}>{t.campaignImage} <input type="file" accept="image/*" onChange={handleTemplateImage} /></label>
             {templateForm.imageUrl && <img src={templateForm.imageUrl} alt="" style={{ height: 50, marginLeft: 8, verticalAlign: 'middle' }} />}
             <br />
-            <button style={{ ...btn, marginTop: 8 }} onClick={createTemplate}>Criar cupom-template</button>
+            <button style={{ ...btn, marginTop: 8 }} onClick={createTemplate}>{t.createTemplate}</button>
           </div>
 
           {stats && (
             <div style={card}>
-              <h3>📊 Estatísticas</h3>
+              <h3>{t.stats}</h3>
               <ul style={{ lineHeight: 1.9 }}>
-                <li>Cupons emitidos: <strong>{stats.totalIssued}</strong></li>
-                <li>Cupons validados (usados): <strong>{stats.totalValidated}</strong></li>
-                <li>Disponíveis (ainda não usados): <strong>{stats.totalAvailable}</strong></li>
-                <li>Expirados: <strong>{stats.totalExpired}</strong></li>
-                <li>Total cobrado até agora: <strong>R$ {(stats.totalBilledCents / 100).toFixed(2)}</strong></li>
+                <li>{t.issued} <strong>{stats.totalIssued}</strong></li>
+                <li>{t.validated} <strong>{stats.totalValidated}</strong></li>
+                <li>{t.available} <strong>{stats.totalAvailable}</strong></li>
+                <li>{t.expired} <strong>{stats.totalExpired}</strong></li>
+                <li>{t.totalBilled} <strong>R$ {(stats.totalBilledCents / 100).toFixed(2)}</strong></li>
               </ul>
             </div>
           )}
 
           {dash && (
             <div style={card}>
-              <h3>Campanhas ({(dash.campaigns || []).length})</h3>
+              <h3>{t.campaigns} ({(dash.campaigns || []).length})</h3>
               <ul>{(dash.campaigns || []).map((c) => <li key={c.id}>{c.title} — {c.status} — <code>{c.id}</code></li>)}</ul>
-              <h3>Templates ({(dash.templates || []).length})</h3>
-              <ul>{(dash.templates || []).map((t) => <li key={t.id}>{t.title} — emitidos: {t.issued_count}</li>)}</ul>
-              <h3>Cupons emitidos ({(dash.coupons || []).length})</h3>
+              <h3>{t.templates} ({(dash.templates || []).length})</h3>
+              <ul>{(dash.templates || []).map((tpl) => <li key={tpl.id}>{tpl.title} — {t.issued} {tpl.issued_count}</li>)}</ul>
+              <h3>{t.couponsIssued} ({(dash.coupons || []).length})</h3>
               <ul>{(dash.coupons || []).map((c) => <li key={c.id}>{c.publicId} — {c.status}</li>)}</ul>
             </div>
           )}
