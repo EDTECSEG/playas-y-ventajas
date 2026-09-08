@@ -29,3 +29,30 @@ Esta decisão **deve ser reavaliada antes de**:
   antes de qualquer Production Gate da seção 39 do Prompt Master).
 
 Responsável pela decisão: usuário do projeto (confirmado em conversa).
+
+# Decisão de risco registrada — validação manual sem segredo (2026-09-05)
+
+## Contexto
+A validação de cupom por QR code exige o token secreto completo (seguro).
+A validação **manual** (quando o atendente digita o código, sem câmera)
+originalmente também exigia um segredo (token completo, depois um código
+curto de 6 dígitos).
+
+## Decisão
+A pedido do usuário responsável pelo projeto, a validação manual passou a
+aceitar **somente o código público do cupom** (ex: `PYV-XXXXXXXXXX`), sem
+exigir nenhum segredo adicional.
+
+## Risco explicado e aceito
+Qualquer pessoa que veja o código público do cliente (por exemplo, olhando
+a tela dele) poderia, em teoria, pedir para um atendente validar esse cupom
+sem realmente ser o dono. A validação por QR code (câmera) continua exigindo
+o token secreto completo, então esse risco só existe no fluxo manual.
+
+## Mitigação que permanece ativa
+- Exige login de staff/empresa autenticado (sessão verificada no servidor).
+- Só valida cupons do próprio estabelecimento do staff.
+- Cupom só pode ser validado uma vez (trava de concorrência já testada).
+
+Responsável pela decisão: usuário do projeto (confirmado em conversa,
+avisado explicitamente do risco antes de decidir).

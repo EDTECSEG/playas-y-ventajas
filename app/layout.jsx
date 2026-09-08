@@ -2,6 +2,9 @@ export const metadata = {
   title: 'Playas y Ventajas',
   description: 'Plataforma de cupons, benefícios e experiências',
   manifest: '/manifest.json',
+};
+
+export const viewport = {
   themeColor: '#0B6E4F',
 };
 

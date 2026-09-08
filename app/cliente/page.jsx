@@ -60,6 +60,7 @@ export default function ClientePage() {
       loadMyCoupons(s.customerId);
     }
     loadOffers();
+    showMap(); // abre o mapa automaticamente ao entrar no modulo, sem precisar clicar
   }, []);
 
   async function loadOffers() {
@@ -190,7 +191,9 @@ export default function ClientePage() {
           <div ref={qrDivRef} style={{ display: 'flex', justifyContent: 'center', margin: '0 auto' }} />
           <p style={{ fontSize: 20, fontWeight: 700, letterSpacing: 2, marginTop: 12 }}>{justClaimed.publicId}</p>
           <p style={{ fontSize: 11 }}>Mostre este QR code ao atendente para validar. Se a câmera não ler, o código de texto abaixo serve de reserva:</p>
-          <p style={{ fontSize: 11 }}><code>{justClaimed.rawToken}</code></p>
+          <p style={{ fontSize: 11 }}>Código curto para o atendente digitar manualmente:</p>
+          <p style={{ fontSize: 22, fontWeight: 700, letterSpacing: 3 }}>{justClaimed.shortCode}</p>
+          <p style={{ fontSize: 11 }}>Código completo (reserva): <code>{justClaimed.rawToken}</code></p>
           <p style={{ fontSize: 12, color: '#c0392b' }}>Este código só aparece agora — tire print ou anote.</p>
         </div>
       )}

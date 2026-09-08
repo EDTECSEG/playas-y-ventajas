@@ -8,10 +8,10 @@ exports.handler = async (event) => {
   const supabase = getSupabaseAdminClient();
   try {
     const body = JSON.parse(event.body || '{}');
-    const { publicId, rawToken } = body;
+    const { publicId, rawToken, shortCode } = body;
     const idempotencyKey = body.idempotencyKey || randomUUID();
-    if (!publicId || !rawToken) {
-      return { statusCode: 400, body: JSON.stringify({ error: 'publicId e rawToken são obrigatórios' }) };
+    if (!publicId || (!rawToken && !shortCode)) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'publicId e (rawToken ou shortCode) são obrigatórios' }) };
     }
 
     const actor = await resolveSession(supabase, body.sessionToken);
@@ -21,9 +21,10 @@ exports.handler = async (event) => {
       p_tenant_id: actor.tenantId,
       p_business_id: actor.businessId,
       p_public_id: publicId,
-      p_raw_token: rawToken,
+      p_raw_token: rawToken || null,
       p_actor_user_id: actor.userId,
       p_idempotency_key: idempotencyKey,
+      p_short_code: shortCode || null,
     });
 
     if (error) {

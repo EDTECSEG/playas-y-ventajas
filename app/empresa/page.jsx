@@ -42,7 +42,7 @@ export default function EmpresaPage() {
   const [campaignTitle, setCampaignTitle] = useState('Nova campanha');
   const [templateForm, setTemplateForm] = useState({ campaignId: '', title: '10% OFF', benefitType: 'DISCOUNT_PERCENT', benefitValue: 10, totalStock: '', imageUrl: '' });
   const [stats, setStats] = useState(null);
-  const [validateForm, setValidateForm] = useState({ publicId: '', rawToken: '' });
+  const [validateForm, setValidateForm] = useState({ publicId: '', rawToken: '', shortCode: '' });
   const [validateResult, setValidateResult] = useState(null);
   const [scanning, setScanning] = useState(false);
   const scannerRef = useRef(null);
@@ -109,11 +109,11 @@ export default function EmpresaPage() {
     if (res.ok) { loadDashboard(); loadStats(); }
   }
 
-  async function validateCoupon(publicId, rawToken) {
+  async function validateCoupon(publicId, rawToken, shortCode) {
     const res = await fetch('/.netlify/functions/validate-coupon', {
       method: 'POST',
       body: JSON.stringify({
-        sessionToken: session.sessionToken, publicId, rawToken,
+        sessionToken: session.sessionToken, publicId, rawToken: rawToken || undefined, shortCode: shortCode || undefined,
       }),
     });
     const data = await res.json();
@@ -133,8 +133,8 @@ export default function EmpresaPage() {
         if (parts[0] === 'PYV1' && parts.length === 3) {
           await scanner.stop();
           setScanning(false);
-          setValidateForm({ publicId: parts[1], rawToken: parts[2] });
-          validateCoupon(parts[1], parts[2]);
+          setValidateForm({ publicId: parts[1], rawToken: parts[2], shortCode: '' });
+          validateCoupon(parts[1], parts[2], null);
         }
       },
       () => {},
@@ -175,8 +175,7 @@ export default function EmpresaPage() {
             )}
             <div style={{ marginTop: 12 }}>
               <input style={input} placeholder="código do cupom (PYV-...)" value={validateForm.publicId} onChange={(e) => setValidateForm({ ...validateForm, publicId: e.target.value })} />
-              <input style={input} placeholder="código secreto" value={validateForm.rawToken} onChange={(e) => setValidateForm({ ...validateForm, rawToken: e.target.value })} />
-              <button style={btn} onClick={() => validateCoupon(validateForm.publicId, validateForm.rawToken)}>Validar manualmente</button>
+              <button style={btn} onClick={() => validateCoupon(validateForm.publicId, null, null)}>Validar manualmente</button>
             </div>
             {validateResult && (
               <p style={{ marginTop: 8, fontWeight: 600, color: validateResult.ok ? '#0B6E4F' : '#c0392b' }}>
