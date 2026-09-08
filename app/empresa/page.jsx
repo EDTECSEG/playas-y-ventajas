@@ -2,6 +2,8 @@
 
 import { useRef, useState } from 'react';
 import { useLanguage } from '../../lib/LanguageContext';
+import Header from '../components/Header';
+import { theme } from '../../lib/theme';
 
 function loadQrScanner() {
   return new Promise((resolve) => {
@@ -30,10 +32,10 @@ async function uploadImage(file, folder) {
 }
 
 
-const wrap = { maxWidth: 720, margin: '0 auto', padding: '48px 24px 80px', color: '#FFFDF7' };
-const card = { background: '#FFFDF7', color: '#0B6E4F', borderRadius: 12, padding: 20, marginBottom: 16 };
-const input = { padding: 8, borderRadius: 6, border: '1px solid #cbd5e1', marginRight: 8, marginBottom: 8 };
-const btn = { padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', background: '#0B6E4F', color: '#FFFDF7', fontWeight: 600, marginRight: 8 };
+const wrap = { maxWidth: 720, margin: '0 auto', padding: '20px 20px 80px', color: theme.text };
+const card = { background: theme.card, color: theme.text, borderRadius: 14, padding: 20, marginBottom: 16, border: `1px solid ${theme.border}`, boxShadow: '0 2px 8px rgba(11,110,79,0.06)' };
+const input = { padding: 9, borderRadius: 8, border: `1px solid ${theme.border}`, marginRight: 8, marginBottom: 8 };
+const btn = { padding: '9px 16px', borderRadius: 10, border: 'none', cursor: 'pointer', background: theme.gold, color: theme.greenDark, fontWeight: 700, marginRight: 8 };
 
 export default function EmpresaPage() {
   const { t } = useLanguage();
@@ -149,8 +151,9 @@ export default function EmpresaPage() {
   }
 
   return (
-    <main style={wrap}>
-      <h1>{t.businessPanel}</h1>
+    <main style={{ background: theme.bg, minHeight: '100vh' }}>
+      <Header title={t.businessPanel} />
+      <div style={wrap}>
 
       {!session ? (
         <div style={card}>
@@ -227,6 +230,7 @@ export default function EmpresaPage() {
         </>
       )}
       {msg && <p style={{ fontSize: 13 }}>{msg}</p>}
+      </div>
     </main>
   );
 }

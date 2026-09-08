@@ -2,12 +2,14 @@
 
 import { useState } from 'react';
 import { useLanguage } from '../../lib/LanguageContext';
+import Header from '../components/Header';
+import { theme } from '../../lib/theme';
 
-const wrap = { maxWidth: 780, margin: '0 auto', padding: '48px 24px 80px', color: '#FFFDF7' };
-const card = { background: '#FFFDF7', color: '#0B6E4F', borderRadius: 12, padding: 20, marginBottom: 16 };
-const input = { padding: 8, borderRadius: 6, border: '1px solid #cbd5e1', marginRight: 8, marginBottom: 8 };
-const btn = { padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', background: '#0B6E4F', color: '#FFFDF7', fontWeight: 600, marginRight: 8 };
-const smallBtn = { ...btn, padding: '4px 10px', fontSize: 12 };
+const wrap = { maxWidth: 780, margin: '0 auto', padding: '20px 20px 80px', color: theme.text };
+const card = { background: theme.card, color: theme.text, borderRadius: 14, padding: 20, marginBottom: 16, border: `1px solid ${theme.border}`, boxShadow: '0 2px 8px rgba(11,110,79,0.06)' };
+const input = { padding: 9, borderRadius: 8, border: `1px solid ${theme.border}`, marginRight: 8, marginBottom: 8 };
+const btn = { padding: '9px 16px', borderRadius: 10, border: 'none', cursor: 'pointer', background: theme.gold, color: theme.greenDark, fontWeight: 700, marginRight: 8 };
+const smallBtn = { ...btn, padding: '5px 12px', fontSize: 12 };
 
 function maskPhone(v) {
   const d = v.replace(/\D/g, '').slice(0, 11);
@@ -133,8 +135,9 @@ export default function AdminPage() {
 
   if (!session) {
     return (
-      <main style={wrap}>
-        <h1>{t.adminPanel}</h1>
+      <main style={{ background: theme.bg, minHeight: '100vh' }}>
+        <Header title={t.adminPanel} />
+        <div style={wrap}>
         <div style={card}>
           <h3>{t.login}</h3>
           <input style={input} placeholder={t.tenantSlug} value={loginForm.tenantSlug} onChange={(e) => setLoginForm({ ...loginForm, tenantSlug: e.target.value })} />
@@ -143,13 +146,15 @@ export default function AdminPage() {
           <button style={btn} onClick={login}>{t.enter}</button>
           {msg && <p style={{ fontSize: 13, color: '#c0392b' }}>{msg}</p>}
         </div>
+        </div>
       </main>
     );
   }
 
   return (
-    <main style={wrap}>
-      <h1>{t.adminPanel}</h1>
+    <main style={{ background: theme.bg, minHeight: '100vh' }}>
+      <Header title={t.adminPanel} />
+      <div style={wrap}>
 
       <div style={card}>
         <h3>{t.registerBusiness}</h3>
@@ -213,6 +218,7 @@ export default function AdminPage() {
       </div>
 
       {msg && <p style={{ fontSize: 13 }}>{msg}</p>}
+      </div>
     </main>
   );
 }

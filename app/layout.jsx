@@ -14,7 +14,7 @@ import { LanguageProvider } from '../lib/LanguageContext';
 export default function RootLayout({ children }) {
   return (
     <html lang="pt-BR">
-      <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: '#0B6E4F' }}>
+      <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: '#F7FBF9' }}>
         <LanguageProvider>
           <InstallPrompt />
           {children}

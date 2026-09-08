@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useLanguage } from '../../lib/LanguageContext';
+import Header from '../components/Header';
+import { theme } from '../../lib/theme';
 
-const wrap = { maxWidth: 720, margin: '0 auto', padding: '48px 24px 80px', color: '#FFFDF7' };
-const card = { background: '#FFFDF7', color: '#0B6E4F', borderRadius: 12, padding: 20, marginBottom: 16 };
-const input = { padding: 8, borderRadius: 6, border: '1px solid #cbd5e1', marginRight: 8, marginBottom: 8 };
-const btn = { padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', background: '#0B6E4F', color: '#FFFDF7', fontWeight: 600 };
+const wrap = { maxWidth: 720, margin: '0 auto', padding: '20px 20px 80px', color: theme.text, background: theme.bg, minHeight: '100vh' };
+const card = { background: theme.card, color: theme.text, borderRadius: 14, padding: 20, marginBottom: 16, border: `1px solid ${theme.border}`, boxShadow: '0 2px 8px rgba(11,110,79,0.06)' };
+const input = { padding: 9, borderRadius: 8, border: `1px solid ${theme.border}`, marginRight: 8, marginBottom: 8 };
+const btn = { padding: '9px 16px', borderRadius: 10, border: 'none', cursor: 'pointer', background: theme.gold, color: theme.greenDark, fontWeight: 700 };
 
 const TENANT_ID = '0dc57eeb-46c8-47ac-aad4-640d9d59e7b9';
 
@@ -173,8 +175,9 @@ export default function ClientePage() {
   }
 
   return (
-    <main style={wrap}>
-      <h1>{t.offersTitle}</h1>
+    <main style={{ background: theme.bg, minHeight: '100vh' }}>
+      <Header title={t.offersTitle} />
+      <div style={wrap}>
 
       {!customerId && (
         <div style={card}>
@@ -200,12 +203,24 @@ export default function ClientePage() {
       )}
 
       <div style={card}>
-        <h3>{t.availableOffers}</h3>
+        <h3 style={{ marginTop: 0 }}>{t.availableOffers}</h3>
         {offers.length === 0 ? <p>{t.noOffers}</p> : offers.map((o) => (
-          <div key={o.templateId} style={{ borderTop: '1px solid #e2e8f0', padding: '10px 0' }}>
-            <strong>{o.title}</strong> — {o.businessName} ({o.category})
-            <br />
-            <button style={{ ...btn, marginTop: 6 }} onClick={() => claim(o.templateId)}>{t.redeem}</button>
+          <div key={o.templateId} style={{
+            display: 'flex', alignItems: 'center', gap: 14, border: `1px solid ${theme.border}`,
+            borderRadius: 12, padding: 12, marginBottom: 10, background: theme.bg,
+          }}>
+            <div style={{
+              background: theme.gold, color: theme.greenDark, fontWeight: 900, fontSize: 15,
+              borderRadius: 10, width: 56, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              textAlign: 'center', lineHeight: 1.1, flexShrink: 0,
+            }}>
+              {Number(o.benefitValue)}%<br /><span style={{ fontSize: 9, fontWeight: 700 }}>OFF</span>
+            </div>
+            <div style={{ flex: 1 }}>
+              <strong>{o.title}</strong>
+              <div style={{ fontSize: 12, color: theme.textMuted }}>{o.businessName} · {o.category}</div>
+            </div>
+            <button style={btn} onClick={() => claim(o.templateId)}>{t.redeem}</button>
           </div>
         ))}
       </div>
@@ -220,16 +235,25 @@ export default function ClientePage() {
 
       {customerId && (
         <div style={card}>
-          <h3>{t.myCoupons}</h3>
-          {myCoupons.length === 0 ? <p>{t.noneYet}</p> : (
-            <ul>{myCoupons.map((c) => (
-              <li key={c.publicId} style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => handleOpenCoupon(c.publicId)}>
-                {c.publicId} — {c.title} — <strong>{c.status}</strong> ({c.businessName})
-              </li>
-            ))}</ul>
-          )}
+          <h3 style={{ marginTop: 0 }}>{t.myCoupons}</h3>
+          {myCoupons.length === 0 ? <p>{t.noneYet}</p> : myCoupons.map((c) => (
+            <div key={c.publicId} onClick={() => handleOpenCoupon(c.publicId)} style={{
+              display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', border: `1px solid ${theme.border}`,
+              borderRadius: 12, padding: 12, marginBottom: 8, background: theme.bg,
+            }}>
+              <div style={{ flex: 1 }}>
+                <strong>{c.title}</strong>
+                <div style={{ fontSize: 12, color: theme.textMuted }}>{c.publicId} · {c.businessName}</div>
+              </div>
+              <span style={{
+                fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999,
+                background: c.status === 'VALIDATED' ? theme.greenLight : theme.gold,
+                color: c.status === 'VALIDATED' ? theme.green : theme.greenDark,
+              }}>{c.status === 'AVAILABLE' ? 'Activo' : c.status}</span>
+            </div>
+          ))}
           {openCoupon && (
-            <div style={{ textAlign: 'center', marginTop: 12, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
+            <div style={{ textAlign: 'center', marginTop: 12, borderTop: `1px solid ${theme.border}`, paddingTop: 12 }}>
               <div ref={myCouponQrDivRef} style={{ display: 'flex', justifyContent: 'center', margin: '0 auto' }} />
               <p style={{ fontSize: 13, fontWeight: 700 }}>{openCoupon.publicId}</p>
             </div>
@@ -238,6 +262,7 @@ export default function ClientePage() {
       )}
 
       {msg && <p style={{ fontSize: 13 }}>{msg}</p>}
+      </div>
     </main>
   );
 }
