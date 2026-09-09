@@ -209,16 +209,20 @@ export default function ClientePage() {
             display: 'flex', alignItems: 'center', gap: 14, border: `1px solid ${theme.border}`,
             borderRadius: 12, padding: 12, marginBottom: 10, background: theme.bg,
           }}>
-            <div style={{
-              background: theme.gold, color: theme.greenDark, fontWeight: 900, fontSize: 15,
-              borderRadius: 10, width: 56, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              textAlign: 'center', lineHeight: 1.1, flexShrink: 0,
-            }}>
-              {Number(o.benefitValue)}%<br /><span style={{ fontSize: 9, fontWeight: 700 }}>OFF</span>
-            </div>
+            {o.imageUrl ? (
+              <img src={o.imageUrl} alt={o.title} style={{ width: 56, height: 44, objectFit: 'cover', borderRadius: 10, flexShrink: 0 }} />
+            ) : (
+              <div style={{
+                background: theme.gold, color: theme.greenDark, fontWeight: 900, fontSize: 15,
+                borderRadius: 10, width: 56, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                textAlign: 'center', lineHeight: 1.1, flexShrink: 0,
+              }}>
+                {Number(o.benefitValue)}%<br /><span style={{ fontSize: 9, fontWeight: 700 }}>OFF</span>
+              </div>
+            )}
             <div style={{ flex: 1 }}>
               <strong>{o.title}</strong>
-              <div style={{ fontSize: 12, color: theme.textMuted }}>{o.businessName} · {o.category}</div>
+              <div style={{ fontSize: 12, color: theme.textMuted }}>{o.businessName} · {o.category} · {Number(o.benefitValue)}% OFF</div>
             </div>
             <button style={btn} onClick={() => claim(o.templateId)}>{t.redeem}</button>
           </div>

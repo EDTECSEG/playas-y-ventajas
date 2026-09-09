@@ -140,8 +140,7 @@ export default function AdminPage() {
         <div style={wrap}>
         <div style={card}>
           <h3>{t.login}</h3>
-          <input style={input} placeholder={t.tenantSlug} value={loginForm.tenantSlug} onChange={(e) => setLoginForm({ ...loginForm, tenantSlug: e.target.value })} />
-          <input style={input} placeholder={t.internalCode} value={loginForm.internalCode} onChange={(e) => setLoginForm({ ...loginForm, internalCode: e.target.value })} />
+          <input style={input} placeholder="Usuário" value={loginForm.internalCode} onChange={(e) => setLoginForm({ ...loginForm, internalCode: e.target.value })} />
           <input style={input} placeholder={t.pin} type="password" value={loginForm.pin} onChange={(e) => setLoginForm({ ...loginForm, pin: e.target.value })} />
           <button style={btn} onClick={login}>{t.enter}</button>
           {msg && <p style={{ fontSize: 13, color: '#c0392b' }}>{msg}</p>}
@@ -162,6 +161,7 @@ export default function AdminPage() {
         <select style={input} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
           <option value="passeio">Passeio</option><option value="hotel">Hotel</option><option value="pousada">Pousada</option>
           <option value="restaurante">Restaurante</option><option value="bar">Bar</option>
+          <option value="translado">Translado</option><option value="servico">Serviço</option>
         </select>
         <input style={input} placeholder={t.city} value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
         <br />

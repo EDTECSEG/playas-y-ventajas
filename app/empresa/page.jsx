@@ -36,6 +36,7 @@ const wrap = { maxWidth: 720, margin: '0 auto', padding: '20px 20px 80px', color
 const card = { background: theme.card, color: theme.text, borderRadius: 14, padding: 20, marginBottom: 16, border: `1px solid ${theme.border}`, boxShadow: '0 2px 8px rgba(11,110,79,0.06)' };
 const input = { padding: 9, borderRadius: 8, border: `1px solid ${theme.border}`, marginRight: 8, marginBottom: 8 };
 const btn = { padding: '9px 16px', borderRadius: 10, border: 'none', cursor: 'pointer', background: theme.gold, color: theme.greenDark, fontWeight: 700, marginRight: 8 };
+const smallBtn = { ...btn, padding: '5px 12px', fontSize: 12 };
 
 export default function EmpresaPage() {
   const { t } = useLanguage();
@@ -46,6 +47,7 @@ export default function EmpresaPage() {
   const [campaignTitle, setCampaignTitle] = useState('Nova campanha');
   const [templateForm, setTemplateForm] = useState({ campaignId: '', title: '10% OFF', benefitType: 'DISCOUNT_PERCENT', benefitValue: 10, totalStock: '', imageUrl: '' });
   const [stats, setStats] = useState(null);
+  const [justCreatedTemplate, setJustCreatedTemplate] = useState(null);
   const [validateForm, setValidateForm] = useState({ publicId: '', rawToken: '', shortCode: '' });
   const [validateResult, setValidateResult] = useState(null);
   const [scanning, setScanning] = useState(false);
@@ -109,8 +111,10 @@ export default function EmpresaPage() {
       }),
     });
     const data = await res.json();
-    setMsg(res.ok ? 'Cupom-template criado.' : `Erro: ${data.error}`);
-    if (res.ok) { loadDashboard(); loadStats(); }
+    if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
+    setMsg('');
+    setJustCreatedTemplate({ ...templateForm });
+    loadDashboard(); loadStats();
   }
 
   async function validateCoupon(publicId, rawToken, shortCode) {
@@ -158,11 +162,10 @@ export default function EmpresaPage() {
       {!session ? (
         <div style={card}>
           <h3>{t.login}</h3>
-          <input style={input} placeholder={t.tenantSlug} value={form.tenantSlug} onChange={(e) => setForm({ ...form, tenantSlug: e.target.value })} />
-          <input style={input} placeholder={t.internalCode} value={form.internalCode} onChange={(e) => setForm({ ...form, internalCode: e.target.value })} />
-          <input style={input} placeholder={t.pin} value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} />
+          <input style={input} placeholder="Código da empresa" value={form.internalCode} onChange={(e) => setForm({ ...form, internalCode: e.target.value })} />
+          <input style={input} placeholder="Senha" value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} />
           <button style={btn} onClick={login}>{t.enter}</button>
-          <p style={{ fontSize: 12, opacity: 0.8 }}>{t.demoLogin}</p>
+          <p style={{ fontSize: 12, opacity: 0.8 }}>Código: MERCHANT-001 · Senha: 1234</p>
         </div>
       ) : (
         <>
@@ -202,6 +205,17 @@ export default function EmpresaPage() {
             {templateForm.imageUrl && <img src={templateForm.imageUrl} alt="" style={{ height: 50, marginLeft: 8, verticalAlign: 'middle' }} />}
             <br />
             <button style={{ ...btn, marginTop: 8 }} onClick={createTemplate}>{t.createTemplate}</button>
+
+            {justCreatedTemplate && (
+              <div style={{ marginTop: 12, padding: 12, background: theme.greenLight, borderRadius: 10, border: `1px solid ${theme.border}` }}>
+                <strong>✅ Oferta criada com sucesso!</strong>
+                <p style={{ fontSize: 13, margin: '6px 0' }}>
+                  {justCreatedTemplate.title} · {justCreatedTemplate.benefitValue}% OFF · Estoque: {justCreatedTemplate.totalStock || 'ilimitado'}
+                </p>
+                <button style={smallBtn} onClick={() => { navigator.clipboard?.writeText(justCreatedTemplate.title); setMsg('Copiado.'); }}>Copiar nome da oferta</button>
+                <button style={smallBtn} onClick={() => setJustCreatedTemplate(null)}>Fechar</button>
+              </div>
+            )}
           </div>
 
           {stats && (
@@ -222,9 +236,14 @@ export default function EmpresaPage() {
               <h3>{t.campaigns} ({(dash.campaigns || []).length})</h3>
               <ul>{(dash.campaigns || []).map((c) => <li key={c.id}>{c.title} — {c.status} — <code>{c.id}</code></li>)}</ul>
               <h3>{t.templates} ({(dash.templates || []).length})</h3>
-              <ul>{(dash.templates || []).map((tpl) => <li key={tpl.id}>{tpl.title} — {t.issued} {tpl.issued_count}</li>)}</ul>
+              <ul>{(dash.templates || []).map((tpl) => (
+                <li key={tpl.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  {tpl.image_url && <img src={tpl.image_url} alt="" style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 6 }} />}
+                  {tpl.title} — {t.issued} {tpl.issued_count}
+                </li>
+              ))}</ul>
               <h3>{t.couponsIssued} ({(dash.coupons || []).length})</h3>
-              <ul>{(dash.coupons || []).map((c) => <li key={c.id}>{c.publicId} — {c.status}</li>)}</ul>
+              <ul>{(dash.coupons || []).map((c) => <li key={c.id}>{c.publicId} — {c.status} {c.customerPhone ? `· ${c.customerPhone}` : ''}</li>)}</ul>
             </div>
           )}
         </>
