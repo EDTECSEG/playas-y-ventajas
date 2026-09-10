@@ -51,6 +51,18 @@ export default function AdminPage() {
   const [businesses, setBusinesses] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [customerSearch, setCustomerSearch] = useState('');
+  const [editingBusiness, setEditingBusiness] = useState(null);
+
+  async function saveBusinessEdit() {
+    const res = await fetch('/.netlify/functions/admin', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'update_business', sessionToken: session.sessionToken, businessId: editingBusiness.id, ...editingBusiness }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
+    setEditingBusiness(null);
+    loadBusinesses();
+  }
 
   async function loadCustomers() {
     const res = await fetch(`/.netlify/functions/admin?sessionToken=${session.sessionToken}&mode=customers&search=${customerSearch}`);
@@ -219,7 +231,27 @@ export default function AdminPage() {
               <button style={smallBtn} onClick={() => toggleActive(b)}>{b.isActive ? t.deactivate : t.active}</button>
               <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'ACTIVE', b.monthlyFeeCents)}>{t.activateBilling}</button>
               <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'SUSPENDED', b.monthlyFeeCents)}>{t.suspend}</button>
+              <button style={smallBtn} onClick={() => setEditingBusiness({ ...b })}>✏️ Editar</button>
             </div>
+            {editingBusiness?.id === b.id && (
+              <div style={{ marginTop: 8, padding: 10, background: theme.bg, borderRadius: 8 }}>
+                <input style={input} placeholder="nome" value={editingBusiness.name} onChange={(e) => setEditingBusiness({ ...editingBusiness, name: e.target.value })} />
+                <input style={input} placeholder="telefone" value={editingBusiness.phone || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, phone: maskPhone(e.target.value) })} />
+                <input style={input} placeholder="e-mail" value={editingBusiness.email || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, email: e.target.value })} />
+                <input style={input} placeholder="cidade" value={editingBusiness.city || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, city: e.target.value })} />
+                <br />
+                <select style={input} value={editingBusiness.category} onChange={(e) => setEditingBusiness({ ...editingBusiness, category: e.target.value })}>
+                  <option value="passeio">Passeio</option><option value="hotel">Hotel</option><option value="pousada">Pousada</option>
+                  <option value="restaurante">Restaurante</option><option value="bar">Bar</option>
+                  <option value="translado">Translado</option><option value="servico">Serviço</option>
+                </select>
+                <input style={input} placeholder="CNPJ" value={editingBusiness.cnpj || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, cnpj: maskCnpj(e.target.value) })} />
+                <input style={input} placeholder="site" value={editingBusiness.website || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, website: e.target.value })} />
+                <br />
+                <button style={btn} onClick={saveBusinessEdit}>Salvar</button>
+                <button style={smallBtn} onClick={() => setEditingBusiness(null)}>Cancelar</button>
+              </div>
+            )}
           </div>
         ))}
       </div>
