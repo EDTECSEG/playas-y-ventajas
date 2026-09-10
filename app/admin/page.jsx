@@ -49,6 +49,22 @@ export default function AdminPage() {
   const [session, setSession] = useState(null);
   const [loginForm, setLoginForm] = useState({ tenantSlug: 'playas-y-ventajas', internalCode: 'ADMIN-001', pin: '' });
   const [businesses, setBusinesses] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [customerSearch, setCustomerSearch] = useState('');
+
+  async function loadCustomers() {
+    const res = await fetch(`/.netlify/functions/admin?sessionToken=${session.sessionToken}&mode=customers&search=${customerSearch}`);
+    const data = await res.json();
+    if (res.ok) setCustomers(data);
+  }
+
+  async function saveCustomer(c) {
+    await fetch('/.netlify/functions/admin', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'update_customer', sessionToken: session.sessionToken, customerId: c.id, name: c.name, email: c.email, instagram: c.instagram, isActive: c.isActive }),
+    });
+    loadCustomers();
+  }
   const [billing, setBilling] = useState([]);
   const [msg, setMsg] = useState('');
   const [form, setForm] = useState({
@@ -204,6 +220,21 @@ export default function AdminPage() {
               <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'ACTIVE', b.monthlyFeeCents)}>{t.activateBilling}</button>
               <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'SUSPENDED', b.monthlyFeeCents)}>{t.suspend}</button>
             </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={card}>
+        <h3>👥 Clientes</h3>
+        <input style={input} placeholder="buscar por nome ou telefone" value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} />
+        <button style={smallBtn} onClick={loadCustomers}>Buscar</button>
+        {customers.map((c, i) => (
+          <div key={c.id} style={{ borderTop: '1px solid #e2e8f0', padding: '10px 0' }}>
+            <input style={{ ...input, width: 140 }} value={c.name || ''} placeholder="nome" onChange={(e) => { const arr = [...customers]; arr[i] = { ...c, name: e.target.value }; setCustomers(arr); }} />
+            <input style={{ ...input, width: 140 }} value={c.email || ''} placeholder="e-mail" onChange={(e) => { const arr = [...customers]; arr[i] = { ...c, email: e.target.value }; setCustomers(arr); }} />
+            <span style={{ fontSize: 12 }}>Tel: {c.phone}</span>
+            <button style={smallBtn} onClick={() => saveCustomer(c)}>Salvar</button>
+            <button style={smallBtn} onClick={() => saveCustomer({ ...c, isActive: !c.isActive })}>{c.isActive ? 'Desativar' : 'Ativar'}</button>
           </div>
         ))}
       </div>

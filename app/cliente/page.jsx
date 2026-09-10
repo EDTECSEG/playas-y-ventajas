@@ -77,6 +77,17 @@ export default function ClientePage() {
     setMyCoupons(await res.json());
   }
 
+  async function finalizeRegistration() {
+    if (!phone) { setMsg('Informe seu telefone.'); return; }
+    const res = await fetch('/.netlify/functions/identify', { method: 'POST', body: JSON.stringify({ phone, name, email, instagram }) });
+    const data = await res.json();
+    if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
+    localStorage.setItem('pyv_customer', JSON.stringify({ phone, name, instagram, email, customerId: data.customerId }));
+    setCustomerId(data.customerId);
+    setMsg('✅ Cadastro finalizado com sucesso!');
+    loadMyCoupons(data.customerId);
+  }
+
   async function claim(templateId) {
     if (!phone) { setMsg('Informe seu telefone primeiro.'); return; }
     const res = await fetch('/.netlify/functions/claim-coupon', {
@@ -187,6 +198,7 @@ export default function ClientePage() {
           <input style={input} placeholder={t.email} value={email} onChange={(e) => setEmail(e.target.value)} />
           <input style={input} placeholder={t.instagram} value={instagram} onChange={(e) => setInstagram(e.target.value)} />
           <p style={{ fontSize: 12 }}>{t.noPasswordNote}</p>
+          <button style={btn} onClick={finalizeRegistration}>Finalizar cadastro</button>
         </div>
       )}
 

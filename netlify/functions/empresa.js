@@ -12,6 +12,11 @@ exports.handler = async (event) => {
         if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
         return { statusCode: 200, body: JSON.stringify(data) };
       }
+      if (mode === 'my-data') {
+        const { data, error } = await supabase.rpc('business_get_own', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+        return { statusCode: 200, body: JSON.stringify(data) };
+      }
       const { data, error } = await supabase.rpc('empresa_dashboard', { p_tenant_id: actor.tenantId, p_business_id: actor.businessId });
       if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
       return { statusCode: 200, body: JSON.stringify(data) };
@@ -37,6 +42,14 @@ exports.handler = async (event) => {
         });
         if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
         return { statusCode: 200, body: JSON.stringify(data) };
+      }
+      if (body.action === 'update_my_data') {
+        const { error } = await supabase.rpc('business_update_own', {
+          p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_name: body.name || null,
+          p_phone: body.phone || null, p_email: body.email || null, p_city: body.city || null, p_logo_url: body.logoUrl || null,
+        });
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
+        return { statusCode: 200, body: JSON.stringify({ ok: true }) };
       }
       return { statusCode: 400, body: JSON.stringify({ error: 'action inválida' }) };
     }

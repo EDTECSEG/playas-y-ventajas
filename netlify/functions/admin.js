@@ -12,6 +12,12 @@ exports.handler = async (event) => {
         if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
         return { statusCode: 200, body: JSON.stringify(data) };
       }
+      if (mode === 'customers') {
+        const { search } = event.queryStringParameters || {};
+        const { data, error } = await supabase.rpc('admin_list_customers', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_search: search || null });
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+        return { statusCode: 200, body: JSON.stringify(data) };
+      }
       const { data, error } = await supabase.rpc('admin_list_businesses', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
       if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
       return { statusCode: 200, body: JSON.stringify(data) };
@@ -43,6 +49,23 @@ exports.handler = async (event) => {
         const { error } = await supabase.rpc('admin_set_billing', {
           p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_business_id: body.businessId,
           p_plan: body.plan, p_status: body.status, p_fee_cents: body.feeCents,
+        });
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
+        return { statusCode: 200, body: JSON.stringify({ ok: true }) };
+      }
+      if (body.action === 'update_customer') {
+        const { error } = await supabase.rpc('admin_update_customer', {
+          p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_customer_id: body.customerId,
+          p_name: body.name || null, p_email: body.email || null, p_instagram: body.instagram || null, p_is_active: body.isActive ?? null,
+        });
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
+        return { statusCode: 200, body: JSON.stringify({ ok: true }) };
+      }
+      if (body.action === 'update_business') {
+        const { error } = await supabase.rpc('admin_update_business', {
+          p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_business_id: body.businessId,
+          p_name: body.name || null, p_phone: body.phone || null, p_email: body.email || null, p_category: body.category || null,
+          p_city: body.city || null, p_cnpj: body.cnpj || null, p_website: body.website || null, p_logo_url: body.logoUrl || null,
         });
         if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
         return { statusCode: 200, body: JSON.stringify({ ok: true }) };

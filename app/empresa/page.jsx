@@ -49,6 +49,31 @@ export default function EmpresaPage() {
   const [stats, setStats] = useState(null);
   const [justCreatedTemplate, setJustCreatedTemplate] = useState(null);
   const [tab, setTab] = useState('criar');
+  const [myData, setMyData] = useState({ name: '', phone: '', email: '', city: '', logoUrl: '' });
+
+  async function loadMyData() {
+    const res = await fetch(`/.netlify/functions/empresa?sessionToken=${session.sessionToken}&mode=my-data`);
+    const data = await res.json();
+    if (res.ok) setMyData({ name: data.name || '', phone: data.phone || '', email: data.email || '', city: data.city || '', logoUrl: data.logoUrl || '' });
+  }
+
+  async function handleMyLogoUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const url = await uploadImage(file, 'business-logos');
+      setMyData({ ...myData, logoUrl: url });
+    } catch (err) { setMsg(`Erro no upload: ${err.message}`); }
+  }
+
+  async function saveMyData() {
+    const res = await fetch('/.netlify/functions/empresa', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'update_my_data', sessionToken: session.sessionToken, ...myData }),
+    });
+    const data = await res.json();
+    setMsg(res.ok ? 'Dados atualizados.' : `Erro: ${data.error}`);
+  }
   const [validateForm, setValidateForm] = useState({ publicId: '', rawToken: '', shortCode: '' });
   const [validateResult, setValidateResult] = useState(null);
   const [scanning, setScanning] = useState(false);
@@ -173,6 +198,7 @@ export default function EmpresaPage() {
           <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
             <button style={tab === 'criar' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('criar')}>📋 Criar e gerenciar ofertas</button>
             <button style={tab === 'validar' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('validar')}>✅ Validar cupom</button>
+            <button style={tab === 'dados' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setTab('dados'); loadMyData(); }}>🏢 Meus dados</button>
           </div>
 
           {tab === 'validar' && (
@@ -207,6 +233,18 @@ export default function EmpresaPage() {
 
           {tab === 'criar' && (
           <>
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>📖 Como criar um cupom</h3>
+            <ol style={{ fontSize: 13, lineHeight: 1.8 }}>
+              <li>Crie ou selecione uma campanha.</li>
+              <li>Informe o nome da oferta.</li>
+              <li>Defina o desconto/benefício.</li>
+              <li>Defina a quantidade disponível (ou deixe em branco para ilimitado).</li>
+              <li>Adicione uma imagem de propaganda.</li>
+              <li>Confira os dados e crie o cupom.</li>
+              <li>Confira o código gerado na confirmação.</li>
+            </ol>
+          </div>
           <div style={card}>
             <h3>{t.newCampaign}</h3>
             <input style={input} value={campaignTitle} onChange={(e) => setCampaignTitle(e.target.value)} />
@@ -267,6 +305,21 @@ export default function EmpresaPage() {
             </div>
           )}
           </>
+          )}
+
+          {tab === 'dados' && (
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>🏢 Meus dados</h3>
+            <input style={input} placeholder="nome da empresa" value={myData.name} onChange={(e) => setMyData({ ...myData, name: e.target.value })} />
+            <input style={input} placeholder="telefone" value={myData.phone} onChange={(e) => setMyData({ ...myData, phone: e.target.value })} />
+            <input style={input} placeholder="e-mail" value={myData.email} onChange={(e) => setMyData({ ...myData, email: e.target.value })} />
+            <input style={input} placeholder="cidade" value={myData.city} onChange={(e) => setMyData({ ...myData, city: e.target.value })} />
+            <br />
+            <label style={{ fontSize: 13 }}>Logo: <input type="file" accept="image/*" onChange={handleMyLogoUpload} /></label>
+            {myData.logoUrl && <img src={myData.logoUrl} alt="" style={{ height: 40, marginLeft: 8, verticalAlign: 'middle' }} />}
+            <br />
+            <button style={{ ...btn, marginTop: 8 }} onClick={saveMyData}>Salvar dados</button>
+          </div>
           )}
         </>
       )}
