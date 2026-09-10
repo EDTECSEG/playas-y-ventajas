@@ -48,6 +48,7 @@ export default function EmpresaPage() {
   const [templateForm, setTemplateForm] = useState({ campaignId: '', title: '10% OFF', benefitType: 'DISCOUNT_PERCENT', benefitValue: 10, totalStock: '', imageUrl: '' });
   const [stats, setStats] = useState(null);
   const [justCreatedTemplate, setJustCreatedTemplate] = useState(null);
+  const [tab, setTab] = useState('criar');
   const [validateForm, setValidateForm] = useState({ publicId: '', rawToken: '', shortCode: '' });
   const [validateResult, setValidateResult] = useState(null);
   const [scanning, setScanning] = useState(false);
@@ -169,9 +170,13 @@ export default function EmpresaPage() {
         </div>
       ) : (
         <>
-          <div style={card}>
-            <p>Logado como <strong>{session.role}</strong> (business: {session.businessId})</p>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            <button style={tab === 'criar' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('criar')}>📋 Criar e gerenciar ofertas</button>
+            <button style={tab === 'validar' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('validar')}>✅ Validar cupom</button>
+          </div>
 
+          {tab === 'validar' && (
+          <div style={card}>
             <h3>{t.validateCoupon}</h3>
             {!scanning ? (
               <button style={btn} onClick={startScan}>{t.scanQr}</button>
@@ -186,17 +191,32 @@ export default function EmpresaPage() {
               <button style={btn} onClick={() => validateCoupon(validateForm.publicId, null, null)}>{t.validateManually}</button>
             </div>
             {validateResult && (
-              <p style={{ marginTop: 8, fontWeight: 600, color: validateResult.ok ? '#0B6E4F' : '#c0392b' }}>
-                {validateResult.ok ? `✔ Validado! (idempotent=${validateResult.idempotent})` : `✘ ${validateResult.error}`}
-              </p>
+              validateResult.ok ? (
+                <div style={{ marginTop: 8, padding: 12, background: theme.greenLight, borderRadius: 10 }}>
+                  <strong>✔ Cupom validado!</strong>
+                  <p style={{ fontSize: 13, margin: '4px 0' }}>Oferta: {validateResult.offerTitle || '—'}</p>
+                  <p style={{ fontSize: 13, margin: '4px 0' }}>Cliente: {validateResult.customerName || validateResult.customerPhone || 'não identificado'}</p>
+                  {validateResult.idempotent && <p style={{ fontSize: 12, opacity: 0.7 }}>(já tinha sido validado antes)</p>}
+                </div>
+              ) : (
+                <p style={{ marginTop: 8, fontWeight: 600, color: '#c0392b' }}>✘ {validateResult.error}</p>
+              )
             )}
+          </div>
+          )}
 
+          {tab === 'criar' && (
+          <>
+          <div style={card}>
             <h3>{t.newCampaign}</h3>
             <input style={input} value={campaignTitle} onChange={(e) => setCampaignTitle(e.target.value)} />
             <button style={btn} onClick={createCampaign}>{t.createCampaign}</button>
 
             <h3>{t.newTemplate}</h3>
-            <input style={input} placeholder={t.campaignId} value={templateForm.campaignId} onChange={(e) => setTemplateForm({ ...templateForm, campaignId: e.target.value })} />
+            <select style={input} value={templateForm.campaignId} onChange={(e) => setTemplateForm({ ...templateForm, campaignId: e.target.value })}>
+              <option value="">Selecione a campanha</option>
+              {(dash?.campaigns || []).map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+            </select>
             <input style={input} placeholder={t.title} value={templateForm.title} onChange={(e) => setTemplateForm({ ...templateForm, title: e.target.value })} />
             <input style={input} placeholder={t.value} value={templateForm.benefitValue} onChange={(e) => setTemplateForm({ ...templateForm, benefitValue: e.target.value })} />
             <input style={input} placeholder={t.stock} value={templateForm.totalStock} onChange={(e) => setTemplateForm({ ...templateForm, totalStock: e.target.value })} />
@@ -234,7 +254,7 @@ export default function EmpresaPage() {
           {dash && (
             <div style={card}>
               <h3>{t.campaigns} ({(dash.campaigns || []).length})</h3>
-              <ul>{(dash.campaigns || []).map((c) => <li key={c.id}>{c.title} — {c.status} — <code>{c.id}</code></li>)}</ul>
+              <ul>{(dash.campaigns || []).map((c) => <li key={c.id}>{c.title} — {c.status === 'PUBLISHED' ? 'ativa' : c.status}</li>)}</ul>
               <h3>{t.templates} ({(dash.templates || []).length})</h3>
               <ul>{(dash.templates || []).map((tpl) => (
                 <li key={tpl.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -243,8 +263,10 @@ export default function EmpresaPage() {
                 </li>
               ))}</ul>
               <h3>{t.couponsIssued} ({(dash.coupons || []).length})</h3>
-              <ul>{(dash.coupons || []).map((c) => <li key={c.id}>{c.publicId} — {c.status} {c.customerPhone ? `· ${c.customerPhone}` : ''}</li>)}</ul>
+              <ul>{(dash.coupons || []).map((c) => <li key={c.id}>{c.publicId} — {c.status} {(c.customerName || c.customerPhone) ? `· ${c.customerName || c.customerPhone}` : ''}</li>)}</ul>
             </div>
+          )}
+          </>
           )}
         </>
       )}

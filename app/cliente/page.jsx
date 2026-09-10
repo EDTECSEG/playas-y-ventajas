@@ -152,7 +152,7 @@ export default function ClientePage() {
       partners.forEach((b) => {
         L.circleMarker([b.lat, b.lng], { radius: 9, color: '#0B6E4F', fillColor: '#F2C14E', fillOpacity: 1 })
           .addTo(mapInstanceRef.current)
-          .bindPopup(`<b>${b.name}</b><br>${b.category}${b.hasActiveOffer ? '<br>🎟️ tem oferta ativa' : ''}`);
+          .bindPopup(`<b>${b.name}</b><br>${b.category}${b.hasActiveOffer ? `<br>${b.offerImageUrl ? `<img src="${b.offerImageUrl}" style="width:60px;height:45px;object-fit:cover;border-radius:6px;margin-top:4px" />` : ''}<br>🎟️ Tem oferta ativa` : ''}`);
       });
 
       // Outros comércios da regiao, cadastrados ou nao no nosso sistema (OpenStreetMap, sem custo)
