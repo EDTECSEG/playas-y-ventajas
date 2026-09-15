@@ -1,6 +1,6 @@
 node_modules/
 .next/
 out/
-.netlify/
+/.netlify/
 .env
 .env.local
