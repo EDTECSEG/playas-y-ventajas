@@ -129,3 +129,17 @@ test('admin: action desconhecida -> 400', async (t) => {
   const res = await handler(makeEvent({ method: 'POST', headers: authHeaders(), body: { action: 'nada' } }));
   assert.strictEqual(res.statusCode, 400);
 });
+
+test('admin: request_password_reset gera PIN temporario so p/ admin', async (t) => {
+  const calls = [];
+  const fake = adminFake(VALID_ACTORS.admin, async (name, args) => {
+    if (name === 'admin_request_password_reset') { calls.push(args); return { data: '482913', error: null }; }
+    return { data: null, error: { message: 'unexpected rpc ' + name } };
+  });
+  const { handler, restore } = loadFunction('admin.js', fake);
+  t.after(restore);
+  const res = await handler(makeEvent({ method: 'POST', headers: authHeaders(), body: { action: 'request_password_reset', businessId: 'b-1' } }));
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(parseBody(res).tempPin, '482913');
+  assert.strictEqual(calls[0].p_business_id, 'b-1');
+});

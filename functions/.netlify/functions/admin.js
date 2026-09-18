@@ -79,6 +79,13 @@ export async function onRequestPost(context) {
       if (error) return json({ error: (error.message || '').split(':')[0].trim() }, 400);
       return json({ ok: true });
     }
+    if (body.action === 'request_password_reset') {
+      const { data, error } = await supabase.rpc('admin_request_password_reset', {
+        p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_business_id: body.businessId,
+      });
+      if (error) return json({ error: (error.message || '').split(':')[0].trim() }, 400);
+      return json({ tempPin: data });
+    }
     return json({ error: 'action inválida' }, 400);
   } catch (err) {
     const status = err.message === 'SESSION_REQUIRED' || err.message === 'SESSION_EXPIRED' ? 401 : 500;

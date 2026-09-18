@@ -59,6 +59,13 @@ export async function onRequestPost(context) {
       if (error) return json({ error: (error.message || '').split(':')[0].trim() }, 400);
       return json({ ok: true });
     }
+    if (body.action === 'set_pin') {
+      const { data, error } = await supabase.rpc('business_set_pin', {
+        p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_new_pin: body.newPin,
+      });
+      if (error) return json({ error: (error.message || '').split(':')[0].trim() }, 400);
+      return json({ ok: true, changed: !!data });
+    }
     return json({ error: 'action inválida' }, 400);
   } catch (err) {
     const status = err.message === 'SESSION_REQUIRED' || err.message === 'SESSION_EXPIRED' ? 401 : 500;

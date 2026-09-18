@@ -51,6 +51,13 @@ exports.handler = async (event) => {
         if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
         return { statusCode: 200, body: JSON.stringify({ ok: true }) };
       }
+      if (body.action === 'set_pin') {
+        const { data, error } = await supabase.rpc('business_set_pin', {
+          p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_new_pin: body.newPin,
+        });
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
+        return { statusCode: 200, body: JSON.stringify({ ok: true, changed: !!data }) };
+      }
       return { statusCode: 400, body: JSON.stringify({ error: 'action inválida' }) };
     }
 

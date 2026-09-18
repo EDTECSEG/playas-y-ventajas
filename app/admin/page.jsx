@@ -160,6 +160,19 @@ export default function AdminPage() {
     loadBusinesses();
   }
 
+  async function resetPassword(b) {
+    const res = await fetch('/.netlify/functions/admin', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
+      body: JSON.stringify({ action: 'request_password_reset', businessId: b.id }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
+    setResetPin({ business: b.name, tempPin: data.tempPin });
+  }
+
+  const [resetPin, setResetPin] = useState(null);
+
   function useMyLocation() {
     navigator.geolocation.getCurrentPosition(
       (pos) => setForm({ ...form, lat: pos.coords.latitude.toFixed(6), lng: pos.coords.longitude.toFixed(6) }),
@@ -240,7 +253,21 @@ export default function AdminPage() {
               <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'ACTIVE', b.monthlyFeeCents)}>{t.activateBilling}</button>
               <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'SUSPENDED', b.monthlyFeeCents)}>{t.suspend}</button>
               <button style={smallBtn} onClick={() => setEditingBusiness({ ...b })}>✏️ Editar</button>
+              <button style={{ ...smallBtn, background: '#c0392b', color: '#fff' }} onClick={() => resetPassword(b)}>🔑 Resetar senha</button>
             </div>
+            {resetPin && (
+              <div style={{ marginTop: 8, padding: 12, background: theme.greenLight, borderRadius: 8, border: `1px solid ${theme.border}` }}>
+                <strong>🔄 Senha temporária de {resetPin.business}</strong>
+                <p style={{ fontSize: 13, margin: '6px 0' }}>
+                  PIN provisório: <strong style={{ fontSize: 18, letterSpacing: 2 }}>{resetPin.tempPin}</strong>
+                </p>
+                <p style={{ fontSize: 12, margin: '6px 0', opacity: 0.85 }}>
+                  Repasse este PIN à empresa. No próximo login em <strong>/empresa</strong> ela será obrigada a definir uma nova senha.
+                </p>
+                <button style={smallBtn} onClick={() => { navigator.clipboard?.writeText(resetPin.tempPin); setMsg('PIN copiado.'); }}>Copiar PIN</button>
+                <button style={{ ...smallBtn, background: theme.border, color: theme.text }} onClick={() => setResetPin(null)}>Fechar</button>
+              </div>
+            )}
             {editingBusiness?.id === b.id && (
               <div style={{ marginTop: 8, padding: 10, background: theme.bg, borderRadius: 8 }}>
                 <input style={input} placeholder="nome" value={editingBusiness.name} onChange={(e) => setEditingBusiness({ ...editingBusiness, name: e.target.value })} />

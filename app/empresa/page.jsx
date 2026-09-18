@@ -51,6 +51,26 @@ export default function EmpresaPage() {
   const [justCreatedTemplate, setJustCreatedTemplate] = useState(null);
   const [tab, setTab] = useState('criar');
   const [myData, setMyData] = useState({ name: '', phone: '', email: '', city: '', logoUrl: '' });
+  const [mustChangePin, setMustChangePin] = useState(false);
+  const [newPin, setNewPin] = useState('');
+  const [newPin2, setNewPin2] = useState('');
+
+  async function saveNewPin() {
+    if (newPin.length < 6) { setMsg('A nova senha precisa ter no mínimo 6 caracteres.'); return; }
+    if (newPin !== newPin2) { setMsg('As senhas não conferem.'); return; }
+    const res = await fetch('/.netlify/functions/empresa', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
+      body: JSON.stringify({ action: 'set_pin', newPin }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
+    setMustChangePin(false);
+    setNewPin(''); setNewPin2('');
+    setMsg('Senha atualizada com sucesso.');
+    loadDashboard(session);
+    loadStats(session);
+  }
 
   async function loadMyData() {
     const res = await fetch(`/.netlify/functions/empresa?mode=my-data`, { headers: { Authorization: `Bearer ${session.sessionToken}` } });
@@ -87,6 +107,11 @@ export default function EmpresaPage() {
     const data = await res.json();
     if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
     setSession(data);
+    if (data.mustChangePin) {
+      setMustChangePin(true);
+      setMsg('Sua senha foi redefinida. Defina uma nova senha para continuar.');
+      return;
+    }
     setMsg('Login ok.');
     loadDashboard(data);
     loadStats(data);
@@ -196,6 +221,16 @@ export default function EmpresaPage() {
           <input style={input} placeholder="Código da empresa" value={form.internalCode} onChange={(e) => setForm({ ...form, internalCode: e.target.value })} />
           <input style={input} placeholder="Senha" value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} />
           <button style={btn} onClick={login}>{t.enter}</button>
+        </div>
+      ) : mustChangePin ? (
+        <div style={card}>
+          <h3>🔑 Defina uma nova senha</h3>
+          <p style={{ fontSize: 13 }}>Por segurança, defina uma nova senha para continuar usando o painel.</p>
+          <input style={input} type="password" placeholder="Nova senha (mín. 6 caracteres)" value={newPin} onChange={(e) => setNewPin(e.target.value)} />
+          <input style={input} type="password" placeholder="Confirme a nova senha" value={newPin2} onChange={(e) => setNewPin2(e.target.value)} />
+          <br />
+          <button style={btn} onClick={saveNewPin}>Salvar nova senha</button>
+          <button style={{ ...btn, background: theme.border, color: theme.text }} onClick={() => setSession(null)}>Sair</button>
         </div>
       ) : (
         <>

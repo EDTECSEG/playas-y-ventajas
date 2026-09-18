@@ -109,6 +109,25 @@ test('empresa: POST update_my_data atualiza dados proprios', async (t) => {
   assert.deepStrictEqual(parseBody(res), { ok: true });
 });
 
+test('empresa: POST set_pin chama business_set_pin com nova senha', async (t) => {
+  const calls = [];
+  const fake = actorFake(VALID_ACTORS.merchant, async (name, args) => {
+    if (name === 'business_set_pin') { calls.push(args); return { data: true, error: null }; }
+    return { data: null, error: { message: 'unexpected rpc ' + name } };
+  });
+  const { handler, restore } = loadFunction('empresa.js', fake);
+  t.after(restore);
+  const res = await handler(makeEvent({
+    method: 'POST',
+    headers: authHeaders(),
+    body: { action: 'set_pin', newPin: '987654' },
+  }));
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(calls[0].p_actor_user_id, 'u-merchant-1');
+  assert.strictEqual(calls[0].p_new_pin, '987654');
+  assert.strictEqual(parseBody(res).changed, true);
+});
+
 test('empresa: action invalida -> 400', async (t) => {
   const fake = actorFake(VALID_ACTORS.merchant);
   const { handler, restore } = loadFunction('empresa.js', fake);

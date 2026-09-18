@@ -72,7 +72,12 @@ export async function onRequestPost(context) {
       return json({ error: data.error }, 401);
     }
     recordSuccess(key);
-    return json(data);
+    let mustChangePin = false;
+    try {
+      const { data: flag, error: flagErr } = await supabase.rpc('auth_pin_reset_required', { p_user_id: data.userId });
+      if (!flagErr && flag === true) mustChangePin = true;
+    } catch { /* flag ausente: segue sem exigir troca */ }
+    return json({ ...data, mustChangePin });
   } catch (err) {
     return json({ error: err.message }, 500);
   }

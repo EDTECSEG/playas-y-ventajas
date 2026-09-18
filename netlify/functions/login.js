@@ -85,7 +85,12 @@ exports.handler = async (event) => {
       return { statusCode: 401, body: JSON.stringify({ error: data.error }) };
     }
     recordSuccess(key);
-    return { statusCode: 200, body: JSON.stringify(data) };
+    let mustChangePin = false;
+    try {
+      const { data: flag, error: flagErr } = await supabase.rpc('auth_pin_reset_required', { p_user_id: data.userId });
+      if (!flagErr && flag === true) mustChangePin = true;
+    } catch { /* flag ausente: segue sem exigir troca */ }
+    return { statusCode: 200, body: JSON.stringify({ ...data, mustChangePin }) };
   } catch (err) {
     return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }

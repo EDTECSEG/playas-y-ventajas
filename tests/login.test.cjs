@@ -11,11 +11,14 @@ test('login com credenciais corretas retorna 200 + sessionToken', async (t) => {
   let called = null;
   const fake = makeFakeSupabase({
     rpc: async (name, args) => {
-      called = { name, args };
-      if (name === 'auth_login') return {
-        data: { sessionToken: 'tok-1', userId: 'u1', tenantId: 't1', role: 'MERCHANT', businessId: 'b1' },
-        error: null,
-      };
+      if (name === 'auth_login') {
+        called = { name, args };
+        return {
+          data: { sessionToken: 'tok-1', userId: 'u1', tenantId: 't1', role: 'MERCHANT', businessId: 'b1' },
+          error: null,
+        };
+      }
+      if (name === 'auth_pin_reset_required') return { data: false, error: null };
       return { data: null, error: { message: 'unexpected rpc' } };
     },
   });
@@ -28,6 +31,27 @@ test('login com credenciais corretas retorna 200 + sessionToken', async (t) => {
   assert.strictEqual(res.statusCode, 200);
   assert.strictEqual(parseBody(res).sessionToken, 'tok-1');
   assert.strictEqual(called.args.p_tenant_slug, 'playas-y-ventajas');
+});
+
+test('login retorna mustChangePin=true quando o admin resetou a senha', async (t) => {
+  const fake = makeFakeSupabase({
+    rpc: async (name, args) => {
+      if (name === 'auth_login') return {
+        data: { sessionToken: 'tok-1', userId: 'u1', tenantId: 't1', role: 'MERCHANT', businessId: 'b1' },
+        error: null,
+      };
+      if (name === 'auth_pin_reset_required') {
+        assert.strictEqual(args.p_user_id, 'u1');
+        return { data: true, error: null };
+      }
+      return { data: null, error: { message: 'unexpected rpc' } };
+    },
+  });
+  const { handler, restore } = loadFunction('login.js', fake);
+  t.after(restore);
+  const res = await handler(makeEvent({ method: 'POST', body: { tenantSlug: 'x', internalCode: 'M-1', pin: '123456' } }));
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(parseBody(res).mustChangePin, true);
 });
 
 test('login com pin errado retorna 401 INVALID_CREDENTIALS', async (t) => {
