@@ -174,12 +174,35 @@ export default function ClientePage() {
       L.marker([latitude, longitude]).addTo(mapInstanceRef.current).bindPopup('Você está aqui');
 
       // Nossos parceiros (verde)
+      let currentOffers = offers;
+      if (!currentOffers || currentOffers.length === 0) {
+        const ores = await fetch(`/.netlify/functions/offers?tenantId=${TENANT_ID}`);
+        currentOffers = await ores.json();
+      }
+      const offersByBiz = {};
+      (currentOffers || []).forEach((o) => { if (o.businessId && !offersByBiz[o.businessId]) offersByBiz[o.businessId] = o; });
+      const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       const res = await fetch(`/.netlify/functions/radar?tenantId=${TENANT_ID}&lat=${latitude}&lng=${longitude}&radiusKm=50`);
       const partners = await res.json();
       partners.forEach((b) => {
-        L.circleMarker([b.lat, b.lng], { radius: 9, color: '#0B6E4F', fillColor: '#F2C14E', fillOpacity: 1 })
+        const offer = offersByBiz[b.id];
+        const claimAttr = offer ? ` data-claim="${esc(offer.templateId)}"` : '';
+        let content = `<b>${esc(b.name)}</b><br>${esc(b.category)}`;
+        if (offer) {
+          content += `<br>🎟️ Oferta ativa`;
+          if (offer.imageUrl) {
+            content += `<br><img src="${esc(offer.imageUrl)}"${claimAttr} style="width:92px;height:68px;object-fit:cover;border-radius:8px;margin-top:6px;cursor:pointer;display:block" title="Toque para resgatar" />`;
+          }
+          content += `<br><button${claimAttr} style="margin-top:6px;background:#F2C14E;border:none;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;color:#083b2a">🎟️ Resgatar cupom</button>`;
+        } else if (b.hasActiveOffer) {
+          content += `<br>🎟️ Tem oferta ativa`;
+        }
+        const marker = L.circleMarker([b.lat, b.lng], { radius: 9, color: '#0B6E4F', fillColor: '#F2C14E', fillOpacity: 1 })
           .addTo(mapInstanceRef.current)
-          .bindPopup(`<b>${b.name}</b><br>${b.category}${b.hasActiveOffer ? `<br>${b.offerImageUrl ? `<img src="${b.offerImageUrl}" style="width:60px;height:45px;object-fit:cover;border-radius:6px;margin-top:4px" />` : ''}<br>🎟️ Tem oferta ativa` : ''}`);
+          .bindPopup(content);
+        marker.on('popupopen', (e) => {
+          e.popup.getElement().querySelectorAll?.('[data-claim]').forEach((el) => el.addEventListener('click', () => claim(el.getAttribute('data-claim'))));
+        });
       });
 
       // Outros comércios da regiao, cadastrados ou nao no nosso sistema (OpenStreetMap, sem custo)
