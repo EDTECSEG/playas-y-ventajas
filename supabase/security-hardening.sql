@@ -14,45 +14,37 @@
 
 -- ------------------------------------------------------------
 -- 1) Bloqueio de tentativas de login no próprio banco
---    (backoff exponencial por código interno + IP-like fingerprint)
 -- ------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS login_attempts (
-  attempt_key     TEXT PRIMARY KEY,        -- 'tenant\0internal_code' ou origem
-  fails           INT  NOT NULL DEFAULT 0,
-  blocked_until   TIMESTAMPTZ,
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+-- ESTADO ATUAL (verificado no Supabase em 18/09/2026):
+--   a tabela login_attempts JÁ EXISTE neste schema:
+--     tenant_id     uuid
+--     internal_code text
+--     fail_count    integer
+--     locked_until  timestamptz
+--   e o RPC auth_login JÁ implementa o bloqueio:
+--     * 5 falhas seguidas => locked_until = now() + 5 minutes
+--     * sucesso => apaga a linha de tentativas
+--     * retorno ACCOUNT_LOCKED enquanto bloqueado
+-- Os reforços abaixo são idempotentes e apenas GARANTEM o estado
+-- esperado (colunas e índice) + limpeza periódica de linhas antigas.
+-- ------------------------------------------------------------
+ALTER TABLE login_attempts
+  ADD COLUMN IF NOT EXISTS fail_count integer NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS locked_until timestamptz;
 
--- Limpa janelas antigas periodicamente (ex.: a cada chamada)
-DELETE FROM login_attempts WHERE blocked_until IS NOT NULL AND blocked_until < now() - interval '1 day';
-DELETE FROM login_attempts WHERE blocked_until IS NULL AND updated_at < now() - interval '1 day';
+CREATE UNIQUE INDEX IF NOT EXISTS login_attempts_tenant_code_key
+  ON login_attempts (tenant_id, internal_code);
 
--- Exemplo de uso dentro de auth_login (adaptar ao corpo atual do RPC):
---
---   DECLARE
---     v_key      TEXT  := p_internal_code;
---     v_attempt  login_attempts%ROWTYPE;
---     v_max      INT   := 5;
---     v_window   INTERVAL := interval '15 minutes';
---   BEGIN
---     SELECT * INTO v_attempt FROM login_attempts WHERE attempt_key = v_key FOR UPDATE;
---
---     IF v_attempt.blocked_until IS NOT NULL AND v_attempt.blocked_until > now() THEN
---       RETURN (SELECT jsonb_build_object('error', 'TOO_MANY_ATTEMPTS'));
---     END IF;
---
---     IF p_pin IS DISTINCT FROM (SELECT pin FROM users WHERE internal_code = p_internal_code) THEN
---       INSERT INTO login_attempts(attempt_key, fails, blocked_until, updated_at)
---       VALUES (v_key, 1, NULL, now())
---       ON CONFLICT (attempt_key) DO UPDATE
---         SET fails = login_attempts.fails + 1,
---             blocked_until = CASE WHEN login_attempts.fails + 1 >= v_max THEN now() + v_window END,
---             updated_at = now();
---       RETURN (SELECT jsonb_build_object('error', 'INVALID_CREDENTIALS'));
---     END IF;
---
---     DELETE FROM login_attempts WHERE attempt_key = v_key;
---   END;
+-- Limpa janelas antigas periodicamente (ex.: rodar no agendador ou na
+-- primeira chamada de auth_login). Sem `updated_at`/`created_at` nesta tabela,
+-- limpa apenas por locked_until:
+DELETE FROM login_attempts
+WHERE locked_until IS NOT NULL AND locked_until < now() - interval '1 day';
+
+-- MELHORIA RECOMENDADA (opcional) no auth_login, além do que já existe:
+-- bloquear também por ORIGEM/IP para frustrar brute-force distribuído
+-- entre vários códigos internos. Exigiria passar o IP como argumento do RPC
+-- (as functions já capturam cf-connecting-ip/x-forwarded-for).
 
 -- ------------------------------------------------------------
 -- 2) RLS: o anon NÃO pode ler dados sensíveis do cliente direto via REST
