@@ -203,6 +203,14 @@ export default function ClientePage() {
 
   return (
     <main style={{ background: theme.bg, minHeight: '100vh' }}>
+      <style>{`
+        @media (max-width: 400px) {
+          .offer-row { flex-wrap: wrap; }
+          .offer-info { flex: 1 1 100% !important; order: 2; }
+          .offer-btn { order: 3; width: 100%; }
+          .offer-img { order: 1; }
+        }
+      `}</style>
       <Header title={t.offersTitle} />
       <div style={wrap}>
 
@@ -233,14 +241,14 @@ export default function ClientePage() {
       <div style={card}>
         <h3 style={{ marginTop: 0 }}>{t.availableOffers}</h3>
         {offers.length === 0 ? <p>{t.noOffers}</p> : offers.map((o) => (
-          <div key={o.templateId} style={{
+          <div key={o.templateId} className="offer-row" style={{
             display: 'flex', alignItems: 'center', gap: 14, border: `1px solid ${theme.border}`,
             borderRadius: 12, padding: 12, marginBottom: 10, background: theme.bg,
           }}>
             {o.imageUrl ? (
-              <img src={o.imageUrl} alt={o.title} style={{ width: 56, height: 44, objectFit: 'cover', borderRadius: 10, flexShrink: 0 }} />
+              <img className="offer-img" src={o.imageUrl} alt={o.title} style={{ width: 56, height: 44, objectFit: 'cover', borderRadius: 10, flexShrink: 0 }} />
             ) : (
-              <div style={{
+              <div className="offer-img" style={{
                 background: theme.gold, color: theme.greenDark, fontWeight: 900, fontSize: 15,
                 borderRadius: 10, width: 56, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
                 textAlign: 'center', lineHeight: 1.1, flexShrink: 0,
@@ -248,11 +256,11 @@ export default function ClientePage() {
                 {Number(o.benefitValue)}%<br /><span style={{ fontSize: 9, fontWeight: 700 }}>OFF</span>
               </div>
             )}
-            <div style={{ flex: 1 }}>
+            <div className="offer-info" style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
               <strong>{o.title}</strong>
               <div style={{ fontSize: 12, color: theme.textMuted }}>{o.businessName} · {o.category} · {Number(o.benefitValue)}% OFF</div>
             </div>
-            <button style={btn} onClick={() => claim(o.templateId)}>{t.redeem}</button>
+            <button className="offer-btn" style={{ ...btn, flexShrink: 0 }} onClick={() => claim(o.templateId)}>{t.redeem}</button>
           </div>
         ))}
       </div>
