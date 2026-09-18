@@ -1,13 +1,12 @@
-import { getSupabaseAdminClient, resolveSession, json } from './_shared.js';
+import { getSupabaseAdminClient, resolveSession, extractSessionToken, json } from './_shared.js';
 
 export async function onRequestGet(context) {
   const { request, env } = context;
   const supabase = getSupabaseAdminClient(env);
   try {
     const url = new URL(request.url);
-    const sessionToken = url.searchParams.get('sessionToken');
     const mode = url.searchParams.get('mode');
-    const actor = await resolveSession(supabase, sessionToken);
+    const actor = await resolveSession(supabase, extractSessionToken(request));
     if (actor.role !== 'ADMIN' && actor.role !== 'SUPER_ADMIN') return json({ error: 'FORBIDDEN' }, 403);
 
     if (mode === 'billing') {
@@ -35,7 +34,7 @@ export async function onRequestPost(context) {
   const supabase = getSupabaseAdminClient(env);
   try {
     const body = await request.json();
-    const actor = await resolveSession(supabase, body.sessionToken);
+    const actor = await resolveSession(supabase, extractSessionToken(request, body));
     if (actor.role !== 'ADMIN' && actor.role !== 'SUPER_ADMIN') return json({ error: 'FORBIDDEN' }, 403);
 
     if (body.action === 'create_business') {

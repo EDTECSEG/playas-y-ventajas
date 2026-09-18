@@ -28,7 +28,7 @@ function maskCnpj(v) {
   return out;
 }
 
-async function uploadImage(file, folder) {
+async function uploadImage(file, folder, sessionToken) {
   const base64 = await new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(r.result.split(',')[1]);
@@ -37,6 +37,7 @@ async function uploadImage(file, folder) {
   });
   const res = await fetch('/.netlify/functions/upload-image', {
     method: 'POST',
+    headers: { Authorization: `Bearer ${sessionToken}` },
     body: JSON.stringify({ base64, contentType: file.type, folder }),
   });
   const data = await res.json();
@@ -47,7 +48,7 @@ async function uploadImage(file, folder) {
 export default function AdminPage() {
   const { t } = useLanguage();
   const [session, setSession] = useState(null);
-  const [loginForm, setLoginForm] = useState({ tenantSlug: 'playas-y-ventajas', internalCode: 'ADMIN-001', pin: '' });
+  const [loginForm, setLoginForm] = useState({ tenantSlug: 'playas-y-ventajas', internalCode: '', pin: '' });
   const [businesses, setBusinesses] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [customerSearch, setCustomerSearch] = useState('');
@@ -56,7 +57,8 @@ export default function AdminPage() {
   async function saveBusinessEdit() {
     const res = await fetch('/.netlify/functions/admin', {
       method: 'POST',
-      body: JSON.stringify({ action: 'update_business', sessionToken: session.sessionToken, businessId: editingBusiness.id, ...editingBusiness }),
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
+      body: JSON.stringify({ action: 'update_business', businessId: editingBusiness.id, ...editingBusiness }),
     });
     const data = await res.json();
     if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
@@ -65,7 +67,7 @@ export default function AdminPage() {
   }
 
   async function loadCustomers() {
-    const res = await fetch(`/.netlify/functions/admin?sessionToken=${session.sessionToken}&mode=customers&search=${customerSearch}`);
+    const res = await fetch(`/.netlify/functions/admin?mode=customers&search=${customerSearch}`, { headers: { Authorization: `Bearer ${session.sessionToken}` } });
     const data = await res.json();
     if (res.ok) setCustomers(data);
   }
@@ -73,7 +75,8 @@ export default function AdminPage() {
   async function saveCustomer(c) {
     await fetch('/.netlify/functions/admin', {
       method: 'POST',
-      body: JSON.stringify({ action: 'update_customer', sessionToken: session.sessionToken, customerId: c.id, name: c.name, email: c.email, instagram: c.instagram, isActive: c.isActive }),
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
+      body: JSON.stringify({ action: 'update_customer', customerId: c.id, name: c.name, email: c.email, instagram: c.instagram, isActive: c.isActive }),
     });
     loadCustomers();
   }
@@ -96,7 +99,7 @@ export default function AdminPage() {
 
   async function loadBusinesses(s) {
     const sess = s || session;
-    const res = await fetch(`/.netlify/functions/admin?sessionToken=${sess.sessionToken}`);
+    const res = await fetch(`/.netlify/functions/admin`, { headers: { Authorization: `Bearer ${sess.sessionToken}` } });
     const data = await res.json();
     if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
     setBusinesses(data);
@@ -104,7 +107,7 @@ export default function AdminPage() {
 
   async function loadBilling(s) {
     const sess = s || session;
-    const res = await fetch(`/.netlify/functions/admin?sessionToken=${sess.sessionToken}&mode=billing`);
+    const res = await fetch(`/.netlify/functions/admin?mode=billing`, { headers: { Authorization: `Bearer ${sess.sessionToken}` } });
     const data = await res.json();
     if (res.ok) setBilling(data);
   }
@@ -113,7 +116,7 @@ export default function AdminPage() {
     const file = e.target.files[0];
     if (!file) return;
     try {
-      const url = await uploadImage(file, 'business-logos');
+      const url = await uploadImage(file, 'business-logos', session.sessionToken);
       setForm({ ...form, logoUrl: url });
       setMsg('Logo enviada.');
     } catch (err) { setMsg(`Erro no upload: ${err.message}`); }
@@ -123,8 +126,9 @@ export default function AdminPage() {
     if (form.ownerPin.length < 6) { setMsg('O PIN da empresa precisa ter no mínimo 6 caracteres.'); return; }
     const res = await fetch('/.netlify/functions/admin', {
       method: 'POST',
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
       body: JSON.stringify({
-        action: 'create_business', sessionToken: session.sessionToken,
+        action: 'create_business',
         name: form.name, category: form.category, city: form.city, phone: form.phone, email: form.email,
         cnpj: form.cnpj, website: form.website, logoUrl: form.logoUrl,
         lat: form.lat ? Number(form.lat) : null, lng: form.lng ? Number(form.lng) : null,
@@ -141,7 +145,8 @@ export default function AdminPage() {
   async function toggleActive(b) {
     await fetch('/.netlify/functions/admin', {
       method: 'POST',
-      body: JSON.stringify({ action: 'toggle_business', sessionToken: session.sessionToken, businessId: b.id, isActive: !b.isActive }),
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
+      body: JSON.stringify({ action: 'toggle_business', businessId: b.id, isActive: !b.isActive }),
     });
     loadBusinesses();
   }
@@ -149,7 +154,8 @@ export default function AdminPage() {
   async function setBillingPlan(b, plan, status, feeCents) {
     await fetch('/.netlify/functions/admin', {
       method: 'POST',
-      body: JSON.stringify({ action: 'set_billing', sessionToken: session.sessionToken, businessId: b.id, plan, status, feeCents }),
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
+      body: JSON.stringify({ action: 'set_billing', businessId: b.id, plan, status, feeCents }),
     });
     loadBusinesses();
   }
@@ -180,7 +186,9 @@ export default function AdminPage() {
 
   return (
     <main style={{ background: theme.bg, minHeight: '100vh' }}>
-      <Header title={t.adminPanel} />
+      <Header title={t.adminPanel} right={(
+        <button style={{ ...smallBtn, background: '#0B6E4F', color: '#FFFFFF', border: '1px solid rgba(255,255,255,0.6)' }} onClick={() => setSession(null)}>Sair</button>
+      )} />
       <div style={wrap}>
 
       <div style={card}>

@@ -61,7 +61,7 @@ export default function ClientePage() {
     if (saved) {
       const s = JSON.parse(saved);
       setPhone(s.phone); setName(s.name); setInstagram(s.instagram || ''); setEmail(s.email || ''); setCustomerId(s.customerId);
-      loadMyCoupons(s.customerId);
+      loadMyCoupons(s.customerId, s.customerToken);
     }
     loadOffers();
     showMap(); // abre o mapa automaticamente ao entrar no modulo, sem precisar clicar
@@ -72,9 +72,25 @@ export default function ClientePage() {
     setOffers(await res.json());
   }
 
-  async function loadMyCoupons(cid) {
-    const res = await fetch(`/.netlify/functions/offers?tenantId=${TENANT_ID}&mode=my-coupons&customerId=${cid}`);
-    setMyCoupons(await res.json());
+  async function loadMyCoupons(cid, token) {
+    const saved = JSON.parse(localStorage.getItem('pyv_customer') || 'null');
+    let tk = token || (saved && saved.customerToken);
+    let res = await fetch(`/.netlify/functions/offers?tenantId=${TENANT_ID}&mode=my-coupons&customerId=${cid}&customerToken=${tk}`);
+    if (res.status === 401) {
+      // Token invalido: re-identifica pelo telefone salvo para renovar o customerToken.
+      const idRes = await fetch('/.netlify/functions/identify', {
+        method: 'POST',
+        body: JSON.stringify({ phone: (saved && saved.phone) || phone }),
+      });
+      const idData = await idRes.json();
+      if (!idRes.ok || !idData.customerToken) return;
+      const cur = JSON.parse(localStorage.getItem('pyv_customer') || 'null') || {};
+      localStorage.setItem('pyv_customer', JSON.stringify({ ...cur, customerToken: idData.customerToken }));
+      tk = idData.customerToken;
+      res = await fetch(`/.netlify/functions/offers?tenantId=${TENANT_ID}&mode=my-coupons&customerId=${cid}&customerToken=${tk}`);
+    }
+    const data = await res.json();
+    if (res.ok) setMyCoupons(data);
   }
 
   async function finalizeRegistration() {
@@ -82,7 +98,7 @@ export default function ClientePage() {
     const res = await fetch('/.netlify/functions/identify', { method: 'POST', body: JSON.stringify({ phone, name, email, instagram }) });
     const data = await res.json();
     if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
-    localStorage.setItem('pyv_customer', JSON.stringify({ phone, name, instagram, email, customerId: data.customerId }));
+    localStorage.setItem('pyv_customer', JSON.stringify({ phone, name, instagram, email, customerId: data.customerId, customerToken: data.customerToken }));
     setCustomerId(data.customerId);
     setMsg('✅ Cadastro finalizado com sucesso!');
     loadMyCoupons(data.customerId);
@@ -96,7 +112,7 @@ export default function ClientePage() {
     });
     const data = await res.json();
     if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
-    localStorage.setItem('pyv_customer', JSON.stringify({ phone, name, instagram, email, customerId: data.customerId }));
+    localStorage.setItem('pyv_customer', JSON.stringify({ phone, name, instagram, email, customerId: data.customerId, customerToken: data.customerToken }));
     const tokens = JSON.parse(localStorage.getItem('pyv_coupon_tokens') || '{}');
     tokens[data.publicId] = data.rawToken;
     localStorage.setItem('pyv_coupon_tokens', JSON.stringify(tokens));

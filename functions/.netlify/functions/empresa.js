@@ -1,13 +1,12 @@
-import { getSupabaseAdminClient, resolveSession, json } from './_shared.js';
+import { getSupabaseAdminClient, resolveSession, extractSessionToken, json } from './_shared.js';
 
 export async function onRequestGet(context) {
   const { request, env } = context;
   const supabase = getSupabaseAdminClient(env);
   try {
     const url = new URL(request.url);
-    const sessionToken = url.searchParams.get('sessionToken');
     const mode = url.searchParams.get('mode');
-    const actor = await resolveSession(supabase, sessionToken);
+    const actor = await resolveSession(supabase, extractSessionToken(request));
     if (!actor.businessId) return json({ error: 'ator não vinculado a um estabelecimento' }, 400);
     if (mode === 'stats') {
       const { data, error } = await supabase.rpc('business_coupon_stats', { p_tenant_id: actor.tenantId, p_business_id: actor.businessId });
@@ -33,7 +32,7 @@ export async function onRequestPost(context) {
   const supabase = getSupabaseAdminClient(env);
   try {
     const body = await request.json();
-    const actor = await resolveSession(supabase, body.sessionToken);
+    const actor = await resolveSession(supabase, extractSessionToken(request, body));
     if (!actor.businessId) return json({ error: 'ator não vinculado a um estabelecimento' }, 400);
 
     if (body.action === 'create_campaign') {

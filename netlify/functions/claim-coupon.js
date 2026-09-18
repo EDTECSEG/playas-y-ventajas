@@ -1,4 +1,4 @@
-const { getSupabaseAdminClient } = require('./_supabaseAdmin');
+const { getSupabaseAdminClient, buildCustomerToken } = require('./_supabaseAdmin');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return { statusCode: 405, body: '{}' };
@@ -11,7 +11,7 @@ exports.handler = async (event) => {
       p_customer_instagram: instagram || null, p_customer_email: email || null,
     });
     if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
-    return { statusCode: 200, body: JSON.stringify(data) };
+    return { statusCode: 200, body: JSON.stringify({ ...data, customerToken: buildCustomerToken(data.customerId) }) };
   } catch (err) {
     return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }

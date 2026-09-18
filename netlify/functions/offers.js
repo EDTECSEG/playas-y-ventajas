@@ -1,13 +1,17 @@
-const { getSupabaseAdminClient } = require('./_supabaseAdmin');
+const { getSupabaseAdminClient, verifyCustomerToken } = require('./_supabaseAdmin');
 
 exports.handler = async (event) => {
   try {
-    const { tenantId, customerId, mode } = event.queryStringParameters || {};
+    const { tenantId, customerId, customerToken, mode } = event.queryStringParameters || {};
     if (!tenantId) return { statusCode: 400, body: JSON.stringify({ error: 'tenantId obrigatório' }) };
     const supabase = getSupabaseAdminClient();
 
     if (mode === 'my-coupons') {
       if (!customerId) return { statusCode: 400, body: JSON.stringify({ error: 'customerId obrigatório' }) };
+      // Anti-IDOR: sem o token assinado (HMAC) do proprio cliente, nao listamos.
+      if (!verifyCustomerToken(customerId, customerToken)) {
+        return { statusCode: 401, body: JSON.stringify({ error: 'CUSTOMER_TOKEN_INVALID' }) };
+      }
       const { data, error } = await supabase.rpc('list_customer_coupons', { p_tenant_id: tenantId, p_customer_id: customerId });
       if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
       return { statusCode: 200, body: JSON.stringify(data) };

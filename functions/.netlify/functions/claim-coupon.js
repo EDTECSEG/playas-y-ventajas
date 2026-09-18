@@ -1,4 +1,4 @@
-import { getSupabaseAdminClient, json } from './_shared.js';
+import { getSupabaseAdminClient, buildCustomerToken, json } from './_shared.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -11,7 +11,7 @@ export async function onRequestPost(context) {
       p_customer_instagram: instagram || null, p_customer_email: email || null,
     });
     if (error) return json({ error: (error.message || '').split(':')[0].trim() }, 400);
-    return json(data);
+    return json({ ...data, customerToken: await buildCustomerToken(env, data.customerId) });
   } catch (err) {
     return json({ error: err.message }, 500);
   }

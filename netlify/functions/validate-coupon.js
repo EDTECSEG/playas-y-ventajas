@@ -1,4 +1,4 @@
-const { getSupabaseAdminClient, resolveSession } = require('./_supabaseAdmin');
+const { getSupabaseAdminClient, resolveSession, extractSessionToken } = require('./_supabaseAdmin');
 const { randomUUID } = require('crypto');
 
 exports.handler = async (event) => {
@@ -14,7 +14,7 @@ exports.handler = async (event) => {
       return { statusCode: 400, body: JSON.stringify({ error: 'publicId é obrigatório' }) };
     }
 
-    const actor = await resolveSession(supabase, body.sessionToken);
+    const actor = await resolveSession(supabase, extractSessionToken(event, body));
     if (!actor.businessId) return { statusCode: 400, body: JSON.stringify({ error: 'ator não vinculado a um estabelecimento' }) };
 
     const { data, error } = await supabase.rpc('validate_and_redeem_coupon', {

@@ -15,7 +15,7 @@ function loadQrScanner() {
   });
 }
 
-async function uploadImage(file, folder) {
+async function uploadImage(file, folder, sessionToken) {
   const base64 = await new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(r.result.split(',')[1]);
@@ -24,6 +24,7 @@ async function uploadImage(file, folder) {
   });
   const res = await fetch('/.netlify/functions/upload-image', {
     method: 'POST',
+    headers: { Authorization: `Bearer ${sessionToken}` },
     body: JSON.stringify({ base64, contentType: file.type, folder }),
   });
   const data = await res.json();
@@ -41,7 +42,7 @@ const smallBtn = { ...btn, padding: '5px 12px', fontSize: 12 };
 export default function EmpresaPage() {
   const { t } = useLanguage();
   const [session, setSession] = useState(null);
-  const [form, setForm] = useState({ tenantSlug: 'playas-y-ventajas', internalCode: 'MERCHANT-001', pin: '1234' });
+  const [form, setForm] = useState({ tenantSlug: 'playas-y-ventajas', internalCode: '', pin: '' });
   const [dash, setDash] = useState(null);
   const [msg, setMsg] = useState('');
   const [campaignTitle, setCampaignTitle] = useState('Nova campanha');
@@ -52,7 +53,7 @@ export default function EmpresaPage() {
   const [myData, setMyData] = useState({ name: '', phone: '', email: '', city: '', logoUrl: '' });
 
   async function loadMyData() {
-    const res = await fetch(`/.netlify/functions/empresa?sessionToken=${session.sessionToken}&mode=my-data`);
+    const res = await fetch(`/.netlify/functions/empresa?mode=my-data`, { headers: { Authorization: `Bearer ${session.sessionToken}` } });
     const data = await res.json();
     if (res.ok) setMyData({ name: data.name || '', phone: data.phone || '', email: data.email || '', city: data.city || '', logoUrl: data.logoUrl || '' });
   }
@@ -61,7 +62,7 @@ export default function EmpresaPage() {
     const file = e.target.files[0];
     if (!file) return;
     try {
-      const url = await uploadImage(file, 'business-logos');
+      const url = await uploadImage(file, 'business-logos', session.sessionToken);
       setMyData({ ...myData, logoUrl: url });
     } catch (err) { setMsg(`Erro no upload: ${err.message}`); }
   }
@@ -69,7 +70,8 @@ export default function EmpresaPage() {
   async function saveMyData() {
     const res = await fetch('/.netlify/functions/empresa', {
       method: 'POST',
-      body: JSON.stringify({ action: 'update_my_data', sessionToken: session.sessionToken, ...myData }),
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
+      body: JSON.stringify({ action: 'update_my_data', ...myData }),
     });
     const data = await res.json();
     setMsg(res.ok ? 'Dados atualizados.' : `Erro: ${data.error}`);
@@ -92,7 +94,7 @@ export default function EmpresaPage() {
 
   async function loadStats(s) {
     const sess = s || session;
-    const res = await fetch(`/.netlify/functions/empresa?sessionToken=${sess.sessionToken}&mode=stats`);
+    const res = await fetch(`/.netlify/functions/empresa?mode=stats`, { headers: { Authorization: `Bearer ${sess.sessionToken}` } });
     const data = await res.json();
     if (res.ok) setStats(data);
   }
@@ -100,7 +102,7 @@ export default function EmpresaPage() {
   async function loadDashboard(s) {
     const sess = s || session;
     if (!sess?.businessId) { setMsg('Este usuário não está vinculado a um estabelecimento.'); return; }
-    const res = await fetch(`/.netlify/functions/empresa?sessionToken=${sess.sessionToken}`);
+    const res = await fetch(`/.netlify/functions/empresa`, { headers: { Authorization: `Bearer ${sess.sessionToken}` } });
     const data = await res.json();
     if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
     setDash(data);
@@ -109,7 +111,8 @@ export default function EmpresaPage() {
   async function createCampaign() {
     const res = await fetch('/.netlify/functions/empresa', {
       method: 'POST',
-      body: JSON.stringify({ action: 'create_campaign', sessionToken: session.sessionToken, title: campaignTitle }),
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
+      body: JSON.stringify({ action: 'create_campaign', title: campaignTitle }),
     });
     const data = await res.json();
     setMsg(res.ok ? 'Campanha criada.' : `Erro: ${data.error}`);
@@ -120,7 +123,7 @@ export default function EmpresaPage() {
     const file = e.target.files[0];
     if (!file) return;
     try {
-      const url = await uploadImage(file, 'campaign-images');
+      const url = await uploadImage(file, 'campaign-images', session.sessionToken);
       setTemplateForm({ ...templateForm, imageUrl: url });
       setMsg('Imagem enviada.');
     } catch (err) { setMsg(`Erro no upload: ${err.message}`); }
@@ -129,8 +132,9 @@ export default function EmpresaPage() {
   async function createTemplate() {
     const res = await fetch('/.netlify/functions/empresa', {
       method: 'POST',
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
       body: JSON.stringify({
-        action: 'create_template', sessionToken: session.sessionToken,
+        action: 'create_template',
         campaignId: templateForm.campaignId, title: templateForm.title, benefitType: templateForm.benefitType,
         benefitValue: Number(templateForm.benefitValue), totalStock: templateForm.totalStock ? Number(templateForm.totalStock) : null,
         imageUrl: templateForm.imageUrl || null,
@@ -146,9 +150,8 @@ export default function EmpresaPage() {
   async function validateCoupon(publicId, rawToken, shortCode) {
     const res = await fetch('/.netlify/functions/validate-coupon', {
       method: 'POST',
-      body: JSON.stringify({
-        sessionToken: session.sessionToken, publicId, rawToken: rawToken || undefined, shortCode: shortCode || undefined,
-      }),
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
+      body: JSON.stringify({ publicId, rawToken: rawToken || undefined, shortCode: shortCode || undefined }),
     });
     const data = await res.json();
     setValidateResult({ ok: res.ok, ...data });
@@ -182,7 +185,9 @@ export default function EmpresaPage() {
 
   return (
     <main style={{ background: theme.bg, minHeight: '100vh' }}>
-      <Header title={t.businessPanel} />
+      <Header title={t.businessPanel} right={session && (
+        <button style={{ ...smallBtn, background: '#0B6E4F', color: '#FFFFFF', border: '1px solid rgba(255,255,255,0.6)' }} onClick={() => setSession(null)}>Sair</button>
+      )} />
       <div style={wrap}>
 
       {!session ? (
@@ -191,7 +196,6 @@ export default function EmpresaPage() {
           <input style={input} placeholder="Código da empresa" value={form.internalCode} onChange={(e) => setForm({ ...form, internalCode: e.target.value })} />
           <input style={input} placeholder="Senha" value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} />
           <button style={btn} onClick={login}>{t.enter}</button>
-          <p style={{ fontSize: 12, opacity: 0.8 }}>Código: MERCHANT-001 · Senha: 1234</p>
         </div>
       ) : (
         <>
@@ -220,6 +224,7 @@ export default function EmpresaPage() {
               validateResult.ok ? (
                 <div style={{ marginTop: 8, padding: 12, background: theme.greenLight, borderRadius: 10 }}>
                   <strong>✔ Cupom validado!</strong>
+                  <p style={{ fontSize: 13, margin: '4px 0' }}>Empresa: {validateResult.businessName || '—'}</p>
                   <p style={{ fontSize: 13, margin: '4px 0' }}>Oferta: {validateResult.offerTitle || '—'}</p>
                   <p style={{ fontSize: 13, margin: '4px 0' }}>Cliente: {validateResult.customerName || validateResult.customerPhone || 'não identificado'}</p>
                   {validateResult.idempotent && <p style={{ fontSize: 12, opacity: 0.7 }}>(já tinha sido validado antes)</p>}

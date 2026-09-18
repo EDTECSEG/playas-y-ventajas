@@ -1,11 +1,11 @@
-const { getSupabaseAdminClient, resolveSession } = require('./_supabaseAdmin');
+const { getSupabaseAdminClient, resolveSession, extractSessionToken } = require('./_supabaseAdmin');
 
 exports.handler = async (event) => {
   const supabase = getSupabaseAdminClient();
   try {
     if (event.httpMethod === 'GET') {
-      const { sessionToken, mode } = event.queryStringParameters || {};
-      const actor = await resolveSession(supabase, sessionToken);
+      const { mode, search } = event.queryStringParameters || {};
+      const actor = await resolveSession(supabase, extractSessionToken(event));
       if (actor.role !== 'ADMIN' && actor.role !== 'SUPER_ADMIN') return { statusCode: 403, body: JSON.stringify({ error: 'FORBIDDEN' }) };
       if (mode === 'billing') {
         const { data, error } = await supabase.rpc('admin_billing_panel', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
@@ -13,7 +13,6 @@ exports.handler = async (event) => {
         return { statusCode: 200, body: JSON.stringify(data) };
       }
       if (mode === 'customers') {
-        const { search } = event.queryStringParameters || {};
         const { data, error } = await supabase.rpc('admin_list_customers', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_search: search || null });
         if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
         return { statusCode: 200, body: JSON.stringify(data) };
@@ -25,7 +24,7 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === 'POST') {
       const body = JSON.parse(event.body || '{}');
-      const actor = await resolveSession(supabase, body.sessionToken);
+      const actor = await resolveSession(supabase, extractSessionToken(event, body));
       if (actor.role !== 'ADMIN' && actor.role !== 'SUPER_ADMIN') return { statusCode: 403, body: JSON.stringify({ error: 'FORBIDDEN' }) };
 
       if (body.action === 'create_business') {

@@ -1,4 +1,4 @@
-import { getSupabaseAdminClient, resolveSession, json } from './_shared.js';
+import { getSupabaseAdminClient, resolveSession, extractSessionToken, json } from './_shared.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -9,7 +9,7 @@ export async function onRequestPost(context) {
     if (!publicId) return json({ error: 'publicId é obrigatório' }, 400);
 
     const supabase = getSupabaseAdminClient(env);
-    const actor = await resolveSession(supabase, body.sessionToken);
+    const actor = await resolveSession(supabase, extractSessionToken(request, body));
     if (!actor.businessId) return json({ error: 'ator não vinculado a um estabelecimento' }, 400);
 
     const { data, error } = await supabase.rpc('validate_and_redeem_coupon', {
