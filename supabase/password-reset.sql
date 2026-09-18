@@ -28,7 +28,7 @@ CREATE OR REPLACE FUNCTION admin_request_password_reset(
   p_actor_user_id uuid,
   p_business_id uuid
 ) RETURNS text
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
 AS $$
 DECLARE
   v_role     text;
@@ -83,7 +83,7 @@ CREATE OR REPLACE FUNCTION business_set_pin(
   p_actor_user_id uuid,
   p_new_pin text
 ) RETURNS boolean
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
 AS $$
 DECLARE
   v_reset boolean;

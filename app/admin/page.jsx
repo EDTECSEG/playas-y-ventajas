@@ -168,7 +168,7 @@ export default function AdminPage() {
     });
     const data = await res.json();
     if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
-    setResetPin({ business: b.name, tempPin: data.tempPin });
+    setResetPin({ businessId: b.id, business: b.name, tempPin: data.tempPin });
   }
 
   const [resetPin, setResetPin] = useState(null);
@@ -255,7 +255,7 @@ export default function AdminPage() {
               <button style={smallBtn} onClick={() => setEditingBusiness({ ...b })}>✏️ Editar</button>
               <button style={{ ...smallBtn, background: '#c0392b', color: '#fff' }} onClick={() => resetPassword(b)}>🔑 Resetar senha</button>
             </div>
-            {resetPin && (
+            {resetPin?.businessId === b.id && (
               <div style={{ marginTop: 8, padding: 12, background: theme.greenLight, borderRadius: 8, border: `1px solid ${theme.border}` }}>
                 <strong>🔄 Senha temporária de {resetPin.business}</strong>
                 <p style={{ fontSize: 13, margin: '6px 0' }}>
