@@ -170,6 +170,11 @@ export default function ClientePage() {
       if (!mapInstanceRef.current) {
         mapInstanceRef.current = L.map(mapRef.current).setView([latitude, longitude], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapInstanceRef.current);
+        // O contêiner da div sai de display:none e o Leaflet precisa recalcular o
+        // tamanho (senão marcadores "escapam" do lugar ao dar zoom).
+        setTimeout(() => mapInstanceRef.current.invalidateSize(), 0);
+        setTimeout(() => mapInstanceRef.current.invalidateSize(), 300);
+        window.addEventListener('resize', () => mapInstanceRef.current.invalidateSize());
       }
       L.marker([latitude, longitude]).addTo(mapInstanceRef.current).bindPopup('Você está aqui');
 
