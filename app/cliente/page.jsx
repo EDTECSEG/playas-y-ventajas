@@ -209,10 +209,10 @@ export default function ClientePage() {
             if (of.imageUrl) {
               h += `<img src="${esc(of.imageUrl)}" data-claim="${esc(of.templateId)}" style="width:92px;height:68px;object-fit:cover;border-radius:8px;margin-top:6px;cursor:pointer;display:block" title="Toque para resgatar" />`;
             }
-            h += `<br><button data-claim="${esc(of.templateId)}" style="margin-top:6px;background:#F2C14E;border:none;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;color:#083b2a">🎟️ Resgatar cupom</button></div>`;
+            h += `<br><button data-claim="${esc(of.templateId)}" style="margin-top:6px;background:#F2C14E;border:none;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;color:#083b2a">🎟️ ${t.redeem}</button></div>`;
           });
         } else if (g.hasActiveOffer) {
-          h += `<br>🎟️ Tem oferta ativa`;
+          h += `<br>🎟️ ${t.hasActiveOffer}`;
         }
         return h;
       };
@@ -232,7 +232,7 @@ export default function ClientePage() {
             cc += `<button data-claim="${esc(of.templateId)}" style="margin-top:4px;background:#F2C14E;border:none;border-radius:6px;padding:3px 6px;font-size:10px;font-weight:700;cursor:pointer;color:#083b2a;width:100%">🎟️ ${esc(of.title)}</button>`;
           });
         } else if (g.hasActiveOffer) {
-          cc += `<div style="font-size:9px;color:#0B6E4F;margin-top:4px">Tem oferta ativa</div>`;
+          cc += `<div style="font-size:9px;color:#0B6E4F;margin-top:4px">${t.hasActiveOffer}</div>`;
         }
         cc += `</div>`;
         return cc;
@@ -319,7 +319,7 @@ export default function ClientePage() {
           <input style={input} placeholder={t.email} value={email} onChange={(e) => setEmail(e.target.value)} />
           <input style={input} placeholder={t.instagram} value={instagram} onChange={(e) => setInstagram(e.target.value)} />
           <p style={{ fontSize: 12 }}>{t.noPasswordNote}</p>
-          <button style={btn} onClick={finalizeRegistration}>Finalizar cadastro</button>
+          <button style={btn} onClick={finalizeRegistration}>{t.finishRegistration}</button>
         </div>
       )}
 
@@ -386,7 +386,7 @@ export default function ClientePage() {
                 fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999,
                 background: c.status === 'VALIDATED' ? theme.greenLight : theme.gold,
                 color: c.status === 'VALIDATED' ? theme.green : theme.greenDark,
-              }}>{c.status === 'AVAILABLE' ? 'Activo' : c.status}</span>
+              }}>{c.status === 'AVAILABLE' ? t.statusAvailable : c.status}</span>
             </div>
           ))}
           {openCoupon && (

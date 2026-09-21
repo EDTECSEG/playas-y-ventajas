@@ -294,33 +294,33 @@ export default function EmpresaPage() {
   return (
     <main style={{ background: theme.bg, minHeight: '100vh' }}>
       <Header title={t.businessPanel} right={session && (
-        <button style={{ ...smallBtn, background: '#0B6E4F', color: '#FFFFFF', border: '1px solid rgba(255,255,255,0.6)' }} onClick={() => setSession(null)}>Sair</button>
+        <button style={{ ...smallBtn, background: '#0B6E4F', color: '#FFFFFF', border: '1px solid rgba(255,255,255,0.6)' }} onClick={() => setSession(null)}>{t.logout}</button>
       )} />
       <div style={wrap}>
 
       {!session ? (
         <div style={card}>
           <h3>{t.login}</h3>
-          <input style={input} placeholder="Código da empresa" value={form.internalCode} onChange={(e) => setForm({ ...form, internalCode: e.target.value })} />
-          <input style={input} placeholder="Senha" value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} />
+          <input style={input} placeholder={t.companyCode} value={form.internalCode} onChange={(e) => setForm({ ...form, internalCode: e.target.value })} />
+          <input style={input} placeholder={t.password} value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} />
           <button style={btn} onClick={login}>{t.enter}</button>
         </div>
       ) : mustChangePin ? (
         <div style={card}>
-          <h3>🔑 Defina uma nova senha</h3>
-          <p style={{ fontSize: 13 }}>Por segurança, defina uma nova senha para continuar usando o painel.</p>
-          <input style={input} type="password" placeholder="Nova senha (mín. 6 caracteres)" value={newPin} onChange={(e) => setNewPin(e.target.value)} />
-          <input style={input} type="password" placeholder="Confirme a nova senha" value={newPin2} onChange={(e) => setNewPin2(e.target.value)} />
+          <h3>{t.defineNewPasswordTitle}</h3>
+          <p style={{ fontSize: 13 }}>{t.defineNewPasswordNotice}</p>
+          <input style={input} type="password" placeholder={t.newPassword} value={newPin} onChange={(e) => setNewPin(e.target.value)} />
+          <input style={input} type="password" placeholder={t.confirmPassword} value={newPin2} onChange={(e) => setNewPin2(e.target.value)} />
           <br />
-          <button style={btn} onClick={saveNewPin}>Salvar nova senha</button>
-          <button style={{ ...btn, background: theme.border, color: theme.text }} onClick={() => setSession(null)}>Sair</button>
+          <button style={btn} onClick={saveNewPin}>{t.saveNewPassword}</button>
+          <button style={{ ...btn, background: theme.border, color: theme.text }} onClick={() => setSession(null)}>{t.logout}</button>
         </div>
       ) : (
         <>
           <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-            <button style={tab === 'criar' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('criar')}>📋 Criar e gerenciar ofertas</button>
-            <button style={tab === 'validar' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('validar')}>✅ Validar cupom</button>
-            <button style={tab === 'dados' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setTab('dados'); loadMyData(); }}>🏢 Meus dados</button>
+            <button style={tab === 'criar' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('criar')}>{t.tabManageOffers}</button>
+            <button style={tab === 'validar' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('validar')}>{t.tabValidate}</button>
+            <button style={tab === 'dados' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setTab('dados'); loadMyData(); }}>{t.tabMyData}</button>
           </div>
 
           {tab === 'validar' && (
@@ -341,11 +341,11 @@ export default function EmpresaPage() {
             {validateResult && (
               validateResult.ok ? (
                 <div style={{ marginTop: 8, padding: 12, background: theme.greenLight, borderRadius: 10 }}>
-                  <strong>✔ Cupom validado!</strong>
-                  <p style={{ fontSize: 13, margin: '4px 0' }}>Empresa: {validateResult.businessName || '—'}</p>
-                  <p style={{ fontSize: 13, margin: '4px 0' }}>Oferta: {validateResult.offerTitle || '—'}</p>
-                  <p style={{ fontSize: 13, margin: '4px 0' }}>Cliente: {validateResult.customerName || validateResult.customerPhone || 'não identificado'}</p>
-                  {validateResult.idempotent && <p style={{ fontSize: 12, opacity: 0.7 }}>(já tinha sido validado antes)</p>}
+                  <strong>{t.couponValidated}</strong>
+                  <p style={{ fontSize: 13, margin: '4px 0' }}>{t.fieldBusiness} {validateResult.businessName || '—'}</p>
+                  <p style={{ fontSize: 13, margin: '4px 0' }}>{t.fieldOffer} {validateResult.offerTitle || '—'}</p>
+                  <p style={{ fontSize: 13, margin: '4px 0' }}>{t.fieldCustomer} {validateResult.customerName || validateResult.customerPhone || t.notIdentified}</p>
+                  {validateResult.idempotent && <p style={{ fontSize: 12, opacity: 0.7 }}>{t.validatedBefore}</p>}
                 </div>
               ) : (
                 <p style={{ marginTop: 8, fontWeight: 600, color: '#c0392b' }}>✘ {validateResult.errorLabel || validateResult.error}</p>
@@ -357,15 +357,15 @@ export default function EmpresaPage() {
           {tab === 'criar' && (
           <>
           <div style={card}>
-            <h3 style={{ marginTop: 0 }}>📖 Como criar um cupom</h3>
+            <h3 style={{ marginTop: 0 }}>{t.howToCreateTitle}</h3>
             <ol style={{ fontSize: 13, lineHeight: 1.8 }}>
-              <li>Crie ou selecione uma campanha.</li>
-              <li>Informe o nome da oferta.</li>
-              <li>Defina o desconto/benefício.</li>
-              <li>Defina a quantidade disponível (ou deixe em branco para ilimitado).</li>
-              <li>Adicione uma imagem de propaganda.</li>
-              <li>Confira os dados e crie o cupom.</li>
-              <li>Confira o código gerado na confirmação.</li>
+              <li>{t.howToStep1}</li>
+              <li>{t.howToStep2}</li>
+              <li>{t.howToStep3}</li>
+              <li>{t.howToStep4}</li>
+              <li>{t.howToStep5}</li>
+              <li>{t.howToStep6}</li>
+              <li>{t.howToStep7}</li>
             </ol>
           </div>
           <div style={card}>
@@ -375,7 +375,7 @@ export default function EmpresaPage() {
 
             <h3>{t.newTemplate}</h3>
             <select style={input} value={templateForm.campaignId} onChange={(e) => setTemplateForm({ ...templateForm, campaignId: e.target.value })}>
-              <option value="">Selecione a campanha</option>
+              <option value="">{t.selectCampaign}</option>
               {(dash?.campaigns || []).map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
             </select>
             <input style={input} placeholder={t.title} value={templateForm.title} onChange={(e) => setTemplateForm({ ...templateForm, title: e.target.value })} />
@@ -389,12 +389,12 @@ export default function EmpresaPage() {
 
             {justCreatedTemplate && (
               <div style={{ marginTop: 12, padding: 12, background: theme.greenLight, borderRadius: 10, border: `1px solid ${theme.border}` }}>
-                <strong>✅ Oferta criada com sucesso!</strong>
+                <strong>{t.offerCreated}</strong>
                 <p style={{ fontSize: 13, margin: '6px 0' }}>
-                  {justCreatedTemplate.title} · {justCreatedTemplate.benefitValue}% OFF · Estoque: {justCreatedTemplate.totalStock || 'ilimitado'}
+                  {justCreatedTemplate.title} · {justCreatedTemplate.benefitValue}% OFF · {t.stockField} {justCreatedTemplate.totalStock || t.unlimited}
                 </p>
-                <button style={smallBtn} onClick={() => { navigator.clipboard?.writeText(justCreatedTemplate.title); setMsg('Copiado.'); }}>Copiar nome da oferta</button>
-                <button style={smallBtn} onClick={() => setJustCreatedTemplate(null)}>Fechar</button>
+                <button style={smallBtn} onClick={() => { navigator.clipboard?.writeText(justCreatedTemplate.title); setMsg('Copiado.'); }}>{t.copyOfferName}</button>
+                <button style={smallBtn} onClick={() => setJustCreatedTemplate(null)}>{t.close}</button>
               </div>
             )}
           </div>
@@ -415,7 +415,7 @@ export default function EmpresaPage() {
           {dash && (
             <div style={card}>
               <h3>{t.campaigns} ({(dash.campaigns || []).length})</h3>
-              <ul>{(dash.campaigns || []).map((c) => <li key={c.id}>{c.title} — {c.status === 'PUBLISHED' ? 'ativa' : c.status}</li>)}</ul>
+              <ul>{(dash.campaigns || []).map((c) => <li key={c.id}>{c.title} — {c.status === 'PUBLISHED' ? t.campaignActive : c.status}</li>)}</ul>
               <h3>{t.templates} ({(dash.templates || []).length})</h3>
               <ul>{(dash.templates || []).map((tpl) => (
                 <li key={tpl.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
@@ -423,23 +423,23 @@ export default function EmpresaPage() {
                   <span style={{ textDecoration: tpl.is_active === false ? 'line-through' : 'none', opacity: tpl.is_active === false ? 0.6 : 1 }}>
                     {tpl.title} — {t.issued} {tpl.issued_count}
                   </span>
-                  {tpl.is_active === false && <strong style={{ fontSize: 11, color: '#c0392b' }}>desativado</strong>}
+                  {tpl.is_active === false && <strong style={{ fontSize: 11, color: '#c0392b' }}>{t.disabledLabel}</strong>}
                   <button style={{ ...smallBtn, background: tpl.is_active === false ? '#0B6E4F' : '#c0392b', color: '#fff' }} onClick={() => toggleTemplate(tpl)}>
-                    {tpl.is_active === false ? 'Ativar' : 'Desativar'}
+                    {tpl.is_active === false ? t.active : t.deactivate}
                   </button>
-                  <button style={smallBtn} onClick={() => startEditTemplate(tpl)}>Editar</button>
-                  <button style={{ ...smallBtn, background: '#c0392b', color: '#fff' }} onClick={() => deleteTemplate(tpl)}>🗑️ Apagar</button>
+                  <button style={smallBtn} onClick={() => startEditTemplate(tpl)}>{t.edit}</button>
+                  <button style={{ ...smallBtn, background: '#c0392b', color: '#fff' }} onClick={() => deleteTemplate(tpl)}>🗑️ {t.delete}</button>
                   {editingTemplate?.id === tpl.id && (
                     <div style={{ width: '100%', marginTop: 6, padding: 10, background: theme.bg, borderRadius: 8 }}>
-                      <input style={input} placeholder="nome da oferta" value={editingTemplate.title} onChange={(e) => setEditingTemplate({ ...editingTemplate, title: e.target.value })} />
+                      <input style={input} placeholder={t.offerName} value={editingTemplate.title} onChange={(e) => setEditingTemplate({ ...editingTemplate, title: e.target.value })} />
                       <input style={input} placeholder={t.value} value={editingTemplate.benefitValue} onChange={(e) => setEditingTemplate({ ...editingTemplate, benefitValue: e.target.value })} />
                       <input style={input} placeholder={t.stock} value={editingTemplate.totalStock} onChange={(e) => setEditingTemplate({ ...editingTemplate, totalStock: e.target.value })} />
                       <br />
                       <label style={{ fontSize: 13 }}>{t.campaignImage} <input type="file" accept="image/*" onChange={handleEditTemplateImage} /></label>
                       {editingTemplate.imageUrl && <img src={editingTemplate.imageUrl} alt="" style={{ height: 50, marginLeft: 8, verticalAlign: 'middle' }} />}
                       <br />
-                      <button style={{ ...btn, marginTop: 8 }} onClick={saveEditTemplate}>Salvar edição</button>
-                      <button style={{ ...smallBtn, background: theme.border, color: theme.text }} onClick={() => setEditingTemplate(null)}>Cancelar</button>
+                      <button style={{ ...btn, marginTop: 8 }} onClick={saveEditTemplate}>{t.saveEdit}</button>
+                      <button style={{ ...smallBtn, background: theme.border, color: theme.text }} onClick={() => setEditingTemplate(null)}>{t.cancel}</button>
                     </div>
                   )}
                 </li>
@@ -453,19 +453,19 @@ export default function EmpresaPage() {
 
           {tab === 'dados' && (
           <div style={card}>
-            <h3 style={{ marginTop: 0 }}>🏢 Meus dados</h3>
-            <input style={input} placeholder="nome da empresa" value={myData.name} onChange={(e) => setMyData({ ...myData, name: e.target.value })} />
-            <input style={input} placeholder="telefone" value={myData.phone} onChange={(e) => setMyData({ ...myData, phone: e.target.value })} />
-            <input style={input} placeholder="e-mail" value={myData.email} onChange={(e) => setMyData({ ...myData, email: e.target.value })} />
-            <input style={input} placeholder="cidade" value={myData.city} onChange={(e) => setMyData({ ...myData, city: e.target.value })} />
-            <input style={input} placeholder="latitude (ex.: -22.9064)" value={myData.lat} onChange={(e) => setMyData({ ...myData, lat: e.target.value })} />
-            <input style={input} placeholder="longitude (ex.: -43.1785)" value={myData.lng} onChange={(e) => setMyData({ ...myData, lng: e.target.value })} />
-            <button style={{ ...smallBtn, marginLeft: 8 }} onClick={useMyLocation}>📍 Usar minha localização atual</button>
+            <h3 style={{ marginTop: 0 }}>{t.myCompanyData}</h3>
+            <input style={input} placeholder={t.businessNameField} value={myData.name} onChange={(e) => setMyData({ ...myData, name: e.target.value })} />
+            <input style={input} placeholder={t.phoneField} value={myData.phone} onChange={(e) => setMyData({ ...myData, phone: e.target.value })} />
+            <input style={input} placeholder={t.emailField} value={myData.email} onChange={(e) => setMyData({ ...myData, email: e.target.value })} />
+            <input style={input} placeholder={t.cityField} value={myData.city} onChange={(e) => setMyData({ ...myData, city: e.target.value })} />
+            <input style={input} placeholder={t.latField} value={myData.lat} onChange={(e) => setMyData({ ...myData, lat: e.target.value })} />
+            <input style={input} placeholder={t.lngField} value={myData.lng} onChange={(e) => setMyData({ ...myData, lng: e.target.value })} />
+            <button style={{ ...smallBtn, marginLeft: 8 }} onClick={useMyLocation}>{t.useMyLocation}</button>
             <br />
-            <label style={{ fontSize: 13 }}>Logo: <input type="file" accept="image/*" onChange={handleMyLogoUpload} /></label>
+            <label style={{ fontSize: 13 }}>{t.logoField} <input type="file" accept="image/*" onChange={handleMyLogoUpload} /></label>
             {myData.logoUrl && <img src={myData.logoUrl} alt="" style={{ height: 40, marginLeft: 8, verticalAlign: 'middle' }} />}
             <br />
-            <button style={{ ...btn, marginTop: 8 }} onClick={saveMyData}>Salvar dados</button>
+            <button style={{ ...btn, marginTop: 8 }} onClick={saveMyData}>{t.saveData}</button>
           </div>
           )}
         </>

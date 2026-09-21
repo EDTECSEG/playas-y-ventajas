@@ -200,7 +200,7 @@ export default function AdminPage() {
         <div style={wrap}>
         <div style={card}>
           <h3>{t.login}</h3>
-          <input style={input} placeholder="Usuário" value={loginForm.internalCode} onChange={(e) => setLoginForm({ ...loginForm, internalCode: e.target.value })} />
+          <input style={input} placeholder={t.user} value={loginForm.internalCode} onChange={(e) => setLoginForm({ ...loginForm, internalCode: e.target.value })} />
           <input style={input} placeholder={t.pin} type="password" value={loginForm.pin} onChange={(e) => setLoginForm({ ...loginForm, pin: e.target.value })} />
           <button style={btn} onClick={login}>{t.enter}</button>
           {msg && <p style={{ fontSize: 13, color: '#c0392b' }}>{msg}</p>}
@@ -213,7 +213,7 @@ export default function AdminPage() {
   return (
     <main style={{ background: theme.bg, minHeight: '100vh' }}>
       <Header title={t.adminPanel} right={(
-        <button style={{ ...smallBtn, background: '#0B6E4F', color: '#FFFFFF', border: '1px solid rgba(255,255,255,0.6)' }} onClick={() => setSession(null)}>Sair</button>
+        <button style={{ ...smallBtn, background: '#0B6E4F', color: '#FFFFFF', border: '1px solid rgba(255,255,255,0.6)' }} onClick={() => setSession(null)}>{t.logout}</button>
       )} />
       <div style={wrap}>
 
@@ -265,9 +265,9 @@ export default function AdminPage() {
               <button style={smallBtn} onClick={() => toggleActive(b)}>{b.isActive ? t.deactivate : t.active}</button>
               <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'ACTIVE', b.monthlyFeeCents)}>{t.activateBilling}</button>
               <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'SUSPENDED', b.monthlyFeeCents)}>{t.suspend}</button>
-              <button style={smallBtn} onClick={() => setEditingBusiness({ ...b })}>✏️ Editar</button>
-              <button style={{ ...smallBtn, background: '#c0392b', color: '#fff' }} onClick={() => resetPassword(b)}>🔑 Resetar senha</button>
-              <button style={{ ...smallBtn, background: '#c0392b', color: '#fff' }} onClick={() => deleteBusiness(b)}>🗑️ Deletar</button>
+              <button style={smallBtn} onClick={() => setEditingBusiness({ ...b })}>{t.editBusiness}</button>
+              <button style={{ ...smallBtn, background: '#c0392b', color: '#fff' }} onClick={() => resetPassword(b)}>{t.resetPassword}</button>
+              <button style={{ ...smallBtn, background: '#c0392b', color: '#fff' }} onClick={() => deleteBusiness(b)}>{t.deleteBusiness}</button>
             </div>
             {resetPin?.businessId === b.id && (
               <div style={{ marginTop: 8, padding: 12, background: theme.greenLight, borderRadius: 8, border: `1px solid ${theme.border}` }}>
@@ -278,27 +278,27 @@ export default function AdminPage() {
                 <p style={{ fontSize: 12, margin: '6px 0', opacity: 0.85 }}>
                   Repasse este PIN à empresa. No próximo login em <strong>/empresa</strong> ela será obrigada a definir uma nova senha.
                 </p>
-                <button style={smallBtn} onClick={() => { navigator.clipboard?.writeText(resetPin.tempPin); setMsg('PIN copiado.'); }}>Copiar PIN</button>
-                <button style={{ ...smallBtn, background: theme.border, color: theme.text }} onClick={() => setResetPin(null)}>Fechar</button>
+                <button style={smallBtn} onClick={() => { navigator.clipboard?.writeText(resetPin.tempPin); setMsg('PIN copiado.'); }}>{t.copyPin}</button>
+                <button style={{ ...smallBtn, background: theme.border, color: theme.text }} onClick={() => setResetPin(null)}>{t.close}</button>
               </div>
             )}
             {editingBusiness?.id === b.id && (
               <div style={{ marginTop: 8, padding: 10, background: theme.bg, borderRadius: 8 }}>
-                <input style={input} placeholder="nome" value={editingBusiness.name} onChange={(e) => setEditingBusiness({ ...editingBusiness, name: e.target.value })} />
-                <input style={input} placeholder="telefone" value={editingBusiness.phone || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, phone: maskPhone(e.target.value) })} />
-                <input style={input} placeholder="e-mail" value={editingBusiness.email || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, email: e.target.value })} />
-                <input style={input} placeholder="cidade" value={editingBusiness.city || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, city: e.target.value })} />
+                <input style={input} placeholder={t.businessName} value={editingBusiness.name} onChange={(e) => setEditingBusiness({ ...editingBusiness, name: e.target.value })} />
+                <input style={input} placeholder={t.phoneField} value={editingBusiness.phone || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, phone: maskPhone(e.target.value) })} />
+                <input style={input} placeholder={t.emailField} value={editingBusiness.email || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, email: e.target.value })} />
+                <input style={input} placeholder={t.cityField} value={editingBusiness.city || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, city: e.target.value })} />
                 <br />
                 <select style={input} value={editingBusiness.category} onChange={(e) => setEditingBusiness({ ...editingBusiness, category: e.target.value })}>
                   <option value="passeio">Passeio</option><option value="hotel">Hotel</option><option value="pousada">Pousada</option>
                   <option value="restaurante">Restaurante</option><option value="bar">Bar</option>
                   <option value="translado">Translado</option><option value="servico">Serviço</option>
                 </select>
-                <input style={input} placeholder="CNPJ" value={editingBusiness.cnpj || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, cnpj: maskCnpj(e.target.value) })} />
-                <input style={input} placeholder="site" value={editingBusiness.website || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, website: e.target.value })} />
+                <input style={input} placeholder={t.cnpjShort} value={editingBusiness.cnpj || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, cnpj: maskCnpj(e.target.value) })} />
+                <input style={input} placeholder={t.websiteShort} value={editingBusiness.website || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, website: e.target.value })} />
                 <br />
-                <button style={btn} onClick={saveBusinessEdit}>Salvar</button>
-                <button style={smallBtn} onClick={() => setEditingBusiness(null)}>Cancelar</button>
+                <button style={btn} onClick={saveBusinessEdit}>{t.save}</button>
+                <button style={smallBtn} onClick={() => setEditingBusiness(null)}>{t.cancel}</button>
               </div>
             )}
           </div>
@@ -306,17 +306,17 @@ export default function AdminPage() {
       </div>
 
       <div style={card}>
-        <h3>👥 Clientes</h3>
-        <input style={input} placeholder="buscar por nome ou telefone" value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} />
-        <button style={smallBtn} onClick={loadCustomers}>Buscar</button>
+        <h3>{t.clientsTitle}</h3>
+        <input style={input} placeholder={t.customerSearchHint} value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} />
+        <button style={smallBtn} onClick={loadCustomers}>{t.search}</button>
         {customers.map((c, i) => (
           <div key={c.id} style={{ borderTop: '1px solid #e2e8f0', padding: '10px 0' }}>
-            <input style={{ ...input, width: 140 }} value={c.name || ''} placeholder="nome" onChange={(e) => { const arr = [...customers]; arr[i] = { ...c, name: e.target.value }; setCustomers(arr); }} />
-            <input style={{ ...input, width: 140 }} value={c.email || ''} placeholder="e-mail" onChange={(e) => { const arr = [...customers]; arr[i] = { ...c, email: e.target.value }; setCustomers(arr); }} />
-            <input style={{ ...input, width: 120 }} value={c.instagram || ''} placeholder="instagram" onChange={(e) => { const arr = [...customers]; arr[i] = { ...c, instagram: e.target.value }; setCustomers(arr); }} />
+            <input style={{ ...input, width: 140 }} value={c.name || ''} placeholder={t.nameField} onChange={(e) => { const arr = [...customers]; arr[i] = { ...c, name: e.target.value }; setCustomers(arr); }} />
+            <input style={{ ...input, width: 140 }} value={c.email || ''} placeholder={t.emailField} onChange={(e) => { const arr = [...customers]; arr[i] = { ...c, email: e.target.value }; setCustomers(arr); }} />
+            <input style={{ ...input, width: 120 }} value={c.instagram || ''} placeholder={t.instagramField} onChange={(e) => { const arr = [...customers]; arr[i] = { ...c, instagram: e.target.value }; setCustomers(arr); }} />
             <span style={{ fontSize: 12 }}>Tel: {c.phone}</span>
-            <button style={smallBtn} onClick={() => saveCustomer(c)}>Salvar</button>
-            <button style={smallBtn} onClick={() => saveCustomer({ ...c, isActive: !c.isActive })}>{c.isActive ? 'Desativar' : 'Ativar'}</button>
+            <button style={smallBtn} onClick={() => saveCustomer(c)}>{t.save}</button>
+            <button style={smallBtn} onClick={() => saveCustomer({ ...c, isActive: !c.isActive })}>{c.isActive ? t.deactivate : t.active}</button>
           </div>
         ))}
       </div>
