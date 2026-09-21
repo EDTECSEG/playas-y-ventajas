@@ -22,9 +22,10 @@ async function uploadImage(file, folder, sessionToken) {
     r.onerror = reject;
     r.readAsDataURL(file);
   });
+  const headers = sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {};
   const res = await fetch('/.netlify/functions/upload-image', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${sessionToken}` },
+    headers,
     body: JSON.stringify({ base64, contentType: file.type, folder }),
   });
   const data = await res.json();
@@ -55,6 +56,48 @@ export default function EmpresaPage() {
   const [mustChangePin, setMustChangePin] = useState(false);
   const [newPin, setNewPin] = useState('');
   const [newPin2, setNewPin2] = useState('');
+  const [authMode, setAuthMode] = useState('login');
+  const [regForm, setRegForm] = useState({
+    tenantSlug: 'playas-y-ventajas', name: '', category: 'passeio', city: '', phone: '', email: '',
+    cnpj: '', website: '', logoUrl: '', lat: '', lng: '', internalCode: '', pin: '', pin2: '',
+  });
+
+  async function registerBusiness() {
+    if (regForm.name.length < 2) { setMsg('Informe o nome da empresa.'); return; }
+    if (regForm.internalCode.length < 2) { setMsg('Informe um código de login.'); return; }
+    if (regForm.pin.length < 6) { setMsg('A senha precisa ter no mínimo 6 caracteres.'); return; }
+    if (regForm.pin !== regForm.pin2) { setMsg('As senhas não conferem.'); return; }
+    const res = await fetch('/.netlify/functions/empresa', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'register_business', ...regForm }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setMsg(data.error === 'CODE_TAKEN' ? 'Este código de login já está em uso. Escolha outro.' : `Erro: ${data.error}`);
+      return;
+    }
+    setMsg(`Empresa cadastrada! Use o código "${data.internalCode}" e sua senha para entrar.`);
+    setForm({ ...form, internalCode: data.internalCode });
+    setAuthMode('login');
+  }
+
+  function useRegisterLocation() {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setRegForm({ ...regForm, lat: pos.coords.latitude.toFixed(6), lng: pos.coords.longitude.toFixed(6) }),
+      () => setMsg('Não foi possível obter a localização.'),
+    );
+  }
+
+  async function handleRegisterLogoUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const url = await uploadImage(file, 'business-logos');
+      setRegForm({ ...regForm, logoUrl: url });
+    } catch (err) {
+      setMsg(`Não foi possível enviar a logo agora (${err.message}). Você poderá adicionar depois em "Meus dados".`);
+    }
+  }
 
   async function saveNewPin() {
     if (newPin.length < 6) { setMsg('A nova senha precisa ter no mínimo 6 caracteres.'); return; }
@@ -299,12 +342,52 @@ export default function EmpresaPage() {
       <div style={wrap}>
 
       {!session ? (
-        <div style={card}>
-          <h3>{t.login}</h3>
-          <input style={input} placeholder={t.companyCode} value={form.internalCode} onChange={(e) => setForm({ ...form, internalCode: e.target.value })} />
-          <input style={input} placeholder={t.password} value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} />
-          <button style={btn} onClick={login}>{t.enter}</button>
-        </div>
+        <>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <button style={authMode === 'login' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setAuthMode('login'); setMsg(''); }}>{t.authLogin}</button>
+            <button style={authMode === 'register' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setAuthMode('register'); setMsg(''); }}>{t.authRegister}</button>
+          </div>
+
+          {authMode === 'login' ? (
+            <div style={card}>
+              <h3>{t.login}</h3>
+              <input style={input} placeholder={t.companyCode} value={form.internalCode} onChange={(e) => setForm({ ...form, internalCode: e.target.value })} />
+              <input style={input} placeholder={t.password} value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} />
+              <button style={btn} onClick={login}>{t.enter}</button>
+            </div>
+          ) : (
+            <div style={card}>
+              <h3>{t.authRegisterTitle}</h3>
+              <p style={{ fontSize: 13 }}>{t.authRegisterSub}</p>
+              <input style={input} placeholder={t.businessName} value={regForm.name} onChange={(e) => setRegForm({ ...regForm, name: e.target.value })} />
+              <select style={input} value={regForm.category} onChange={(e) => setRegForm({ ...regForm, category: e.target.value })}>
+                <option value="passeio">Passeio</option><option value="hotel">Hotel</option><option value="pousada">Pousada</option>
+                <option value="restaurante">Restaurante</option><option value="bar">Bar</option>
+                <option value="translado">Translado</option><option value="servico">Serviço</option>
+              </select>
+              <input style={input} placeholder={t.city} value={regForm.city} onChange={(e) => setRegForm({ ...regForm, city: e.target.value })} />
+              <br />
+              <input style={input} placeholder="(00) 00000-0000" value={regForm.phone} onChange={(e) => setRegForm({ ...regForm, phone: e.target.value })} />
+              <input style={input} placeholder={t.email} value={regForm.email} onChange={(e) => setRegForm({ ...regForm, email: e.target.value })} />
+              <br />
+              <input style={input} placeholder={t.cnpjPlaceholder} value={regForm.cnpj} onChange={(e) => setRegForm({ ...regForm, cnpj: e.target.value })} />
+              <input style={input} placeholder={t.website} value={regForm.website} onChange={(e) => setRegForm({ ...regForm, website: e.target.value })} />
+              <br />
+              <label style={{ fontSize: 13 }}>{t.businessLogo} <input type="file" accept="image/*" onChange={handleRegisterLogoUpload} /></label>
+              {regForm.logoUrl && <img src={regForm.logoUrl} alt="logo" style={{ height: 40, marginLeft: 8, verticalAlign: 'middle' }} />}
+              <br />
+              <input style={input} placeholder={t.latitude} value={regForm.lat} onChange={(e) => setRegForm({ ...regForm, lat: e.target.value })} />
+              <input style={input} placeholder={t.longitude} value={regForm.lng} onChange={(e) => setRegForm({ ...regForm, lng: e.target.value })} />
+              <button style={smallBtn} onClick={useRegisterLocation}>{t.useLocation}</button>
+              <br />
+              <input style={input} placeholder={t.loginCode} value={regForm.internalCode} onChange={(e) => setRegForm({ ...regForm, internalCode: e.target.value })} />
+              <input style={input} placeholder={t.pinMin} type="password" value={regForm.pin} onChange={(e) => setRegForm({ ...regForm, pin: e.target.value })} />
+              <input style={input} placeholder={t.confirmPin} type="password" value={regForm.pin2} onChange={(e) => setRegForm({ ...regForm, pin2: e.target.value })} />
+              <br />
+              <button style={btn} onClick={registerBusiness}>{t.authRegisterButton}</button>
+            </div>
+          )}
+        </>
       ) : mustChangePin ? (
         <div style={card}>
           <h3>{t.defineNewPasswordTitle}</h3>

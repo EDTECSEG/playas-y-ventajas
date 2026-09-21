@@ -24,6 +24,21 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === 'POST') {
       const body = JSON.parse(event.body || '{}');
+
+      // Auto-cadastro público da empresa (não exige sessão).
+      if (body.action === 'register_business') {
+        const lat = body.lat === null || body.lat === undefined || body.lat === '' ? null : Number(body.lat);
+        const lng = body.lng === null || body.lng === undefined || body.lng === '' ? null : Number(body.lng);
+        const { data, error } = await supabase.rpc('register_business', {
+          p_tenant_slug: body.tenantSlug, p_name: body.name || null, p_category: body.category || null,
+          p_city: body.city || null, p_phone: body.phone || null, p_email: body.email || null,
+          p_cnpj: body.cnpj || null, p_website: body.website || null, p_logo_url: body.logoUrl || null,
+          p_lat: lat, p_lng: lng, p_internal_code: body.internalCode || null, p_pin: body.pin || null,
+        });
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
+        return { statusCode: 200, body: JSON.stringify({ ok: true, internalCode: data.internalCode }) };
+      }
+
       const actor = await resolveSession(supabase, extractSessionToken(event, body));
       if (!actor.businessId) return { statusCode: 400, body: JSON.stringify({ error: 'ator não vinculado a um estabelecimento' }) };
 

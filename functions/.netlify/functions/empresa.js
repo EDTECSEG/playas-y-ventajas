@@ -32,6 +32,18 @@ export async function onRequestPost(context) {
   const supabase = getSupabaseAdminClient(env);
   try {
     const body = await request.json();
+    if (body.action === 'register_business') {
+      const lat = body.lat === null || body.lat === undefined || body.lat === '' ? null : Number(body.lat);
+      const lng = body.lng === null || body.lng === undefined || body.lng === '' ? null : Number(body.lng);
+      const { data, error } = await supabase.rpc('register_business', {
+        p_tenant_slug: body.tenantSlug, p_name: body.name || null, p_category: body.category || null,
+        p_city: body.city || null, p_phone: body.phone || null, p_email: body.email || null,
+        p_cnpj: body.cnpj || null, p_website: body.website || null, p_logo_url: body.logoUrl || null,
+        p_lat: lat, p_lng: lng, p_internal_code: body.internalCode || null, p_pin: body.pin || null,
+      });
+      if (error) return json({ error: (error.message || '').split(':')[0].trim() }, 400);
+      return json({ ok: true, internalCode: data.internalCode });
+    }
     const actor = await resolveSession(supabase, extractSessionToken(request, body));
     if (!actor.businessId) return json({ error: 'ator não vinculado a um estabelecimento' }, 400);
 
