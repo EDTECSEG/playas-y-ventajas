@@ -123,6 +123,9 @@ export default function ClientePage() {
     const tokens = JSON.parse(localStorage.getItem('pyv_coupon_tokens') || '{}');
     tokens[data.publicId] = data.rawToken;
     localStorage.setItem('pyv_coupon_tokens', JSON.stringify(tokens));
+    const logos = JSON.parse(localStorage.getItem('pyv_coupon_logos') || '{}');
+    logos[data.publicId] = { businessName: offer.businessName, logoUrl: offer.logoUrl || null, businessId: offer.businessId || null, title: offer.title, benefitValue: offer.benefitValue };
+    localStorage.setItem('pyv_coupon_logos', JSON.stringify(logos));
     setCustomerId(data.customerId);
     setJustClaimed({ ...data, businessName: offer.businessName, title: offer.title, benefitValue: offer.benefitValue, logoUrl: offer.logoUrl || null });
     setMsg('Cupom resgatado! Guarde o QR abaixo — mostre no estabelecimento.');
@@ -161,18 +164,29 @@ export default function ClientePage() {
     return () => { cancelled = true; };
   }, [openCoupon]);
 
-  async function handleOpenCoupon(c) {
+  function handleOpenCoupon(c) {
     const tokens = JSON.parse(localStorage.getItem('pyv_coupon_tokens') || '{}');
     const rawToken = tokens[c.publicId];
     if (!rawToken) { setMsg('Código não disponível neste aparelho. Se você o resgatou em outro dispositivo ou limpou os dados do navegador, ele não pode ser recuperado — é necessário ter salvo o print no momento do resgate.'); setOpenCoupon(null); return; }
     setMsg('');
-    setOpenCoupon({ ...c, rawToken });
-    if (c.businessId) {
-      try {
-        const res = await fetch(`/.netlify/functions/offers?tenantId=${TENANT_ID}&businessLogoFor=${c.businessId}`);
-        const logo = await res.json();
-        if (res.ok && logo && logo.logoUrl) setOpenCoupon((prev) => (prev ? { ...prev, logoUrl: logo.logoUrl } : prev));
-      } catch { /* logo opcional */ }
+    const logos = JSON.parse(localStorage.getItem('pyv_coupon_logos') || '{}');
+    const meta = logos[c.publicId];
+    const businessId = c.businessId || (meta && meta.businessId);
+    setOpenCoupon({
+      ...c,
+      rawToken,
+      logoUrl: (meta && meta.logoUrl) || null,
+      businessName: c.businessName || (meta && meta.businessName) || '—',
+      title: c.title || (meta && meta.title) || '',
+    });
+    if (businessId) {
+      (async () => {
+        try {
+          const res = await fetch(`/.netlify/functions/offers?tenantId=${TENANT_ID}&businessLogoFor=${businessId}`);
+          const logo = await res.json();
+          if (res.ok && logo && logo.logoUrl) setOpenCoupon((prev) => (prev ? { ...prev, logoUrl: logo.logoUrl } : prev));
+        } catch { /* logo opcional */ }
+      })();
     }
   }
 
