@@ -380,7 +380,7 @@ export default function EmpresaPage() {
               <input style={input} placeholder={t.longitude} value={regForm.lng} onChange={(e) => setRegForm({ ...regForm, lng: e.target.value })} />
               <button style={smallBtn} onClick={useRegisterLocation}>{t.useLocation}</button>
               <br />
-              <input style={input} placeholder={t.loginCode} value={regForm.internalCode} onChange={(e) => setRegForm({ ...regForm, internalCode: e.target.value })} />
+              <input style={input} placeholder={t.loginShort} autoComplete="off" value={regForm.internalCode} onChange={(e) => setRegForm({ ...regForm, internalCode: e.target.value })} />
               <input style={input} placeholder={t.pinMin} type="password" value={regForm.pin} onChange={(e) => setRegForm({ ...regForm, pin: e.target.value })} />
               <input style={input} placeholder={t.confirmPin} type="password" value={regForm.pin2} onChange={(e) => setRegForm({ ...regForm, pin2: e.target.value })} />
               <br />
