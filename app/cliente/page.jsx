@@ -231,10 +231,17 @@ export default function ClientePage() {
               : null;
             group.forEach((b, idx) => {
               try {
-                // Espalha os marcadores em diagonal para não ficarem empilhados.
-                const off = (idx - (group.length - 1) / 2) * 0.00025;
-                const lat = b.lat + off;
-                const lng = b.lng + (idx % 2 === 0 ? off : -off) * 0.6;
+                // Espalha os marcadores em leque ao redor da coordenada real,
+                // afastados por pixels (nao por graus), assim nunca ficam
+                // um em cima do outro, independente do zoom.
+                const map = mapInstanceRef.current;
+                const center = map.latLngToContainerPoint([b.lat, b.lng]);
+                const spread = 34;
+                const angle = (2 * Math.PI / group.length) * idx;
+                const pt = L.point(center.x + Math.cos(angle) * spread, center.y + Math.sin(angle) * spread);
+                const ll = map.containerPointToLatLng(pt);
+                const lat = ll.lat;
+                const lng = ll.lng;
                 const marker = b.logoUrl
                   ? L.marker([lat, lng], { icon: L.divIcon({ className: 'pyv-biz-marker', html: `<img src="${esc(b.logoUrl)}" alt="" style="width:28px;height:28px;object-fit:cover;border-radius:50%;border:2px solid #FFFFFF;box-shadow:0 1px 4px rgba(0,0,0,0.4)" />` }) })
                   : L.circleMarker([lat, lng], { radius: 6, color: '#0B6E4F', fillColor: '#F2C14E', fillOpacity: 1 });
