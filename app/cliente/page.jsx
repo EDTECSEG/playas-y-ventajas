@@ -216,6 +216,24 @@ export default function ClientePage() {
         }
         return h;
       };
+      // Card compacto de uma empresa (para grupos, lado a lado).
+      const businessCard = (g) => {
+        const offs = offersByBiz[g.id] || [];
+        let cc = `<div style="flex:1 1 42%;min-width:82px;max-width:48%;border:1px solid #e2e8f0;border-radius:10px;padding:8px;text-align:center;background:#fff">`;
+        if (g.logoUrl) {
+          cc += `<img src="${esc(g.logoUrl)}" style="width:32px;height:32px;object-fit:cover;border-radius:50%;margin:0 auto 4px;display:block" alt="" />`;
+        }
+        cc += `<div style="font-size:11px;font-weight:700;color:#083b2a;overflow-wrap:anywhere">${esc(g.name)}</div>`;
+        if (offs.length) {
+          offs.forEach((of) => {
+            cc += `<button data-claim="${esc(of.templateId)}" style="margin-top:4px;background:#F2C14E;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;color:#083b2a;width:100%">🎟️ ${esc(of.title)}</button>`;
+          });
+        } else if (g.hasActiveOffer) {
+          cc += `<div style="font-size:10px;color:#0B6E4F;margin-top:4px">Tem oferta ativa</div>`;
+        }
+        cc += `</div>`;
+        return cc;
+      };
       try {
         const res = await fetch(`/.netlify/functions/radar?tenantId=${TENANT_ID}&lat=${latitude}&lng=${longitude}&radiusKm=50`);
         const partners = await res.json();
@@ -230,7 +248,7 @@ export default function ClientePage() {
             try {
               const shared = group.length > 1;
               const popupHtml = shared
-                ? group.map((g) => businessBlock(g)).join('<hr style="border:none;border-top:1px solid #e2e8f0;margin:8px 0">')
+                ? `<div style="display:flex;flex-wrap:wrap;gap:8px;max-width:260px">${group.map(businessCard).join('')}</div>`
                 : businessBlock(group[0]);
               let marker;
               if (shared) {
