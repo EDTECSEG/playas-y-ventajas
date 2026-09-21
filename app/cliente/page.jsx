@@ -199,7 +199,10 @@ export default function ClientePage() {
       const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       const businessBlock = (g) => {
         const offs = offersByBiz[g.id] || [];
-        let h = `<b>${esc(g.name)}</b><br>${esc(g.category)}`;
+        let h = g.logoUrl
+          ? `<img src="${esc(g.logoUrl)}" alt="" style="width:24px;height:24px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-right:6px" />`
+          : '';
+        h += `<b>${esc(g.name)}</b><br>${esc(g.category)}`;
         if (offs.length) {
           offs.forEach((of) => {
             h += `<div style="margin-top:6px;border-top:1px solid #e2e8f0;padding-top:6px"><strong>🎟️ ${esc(of.title)}</strong>`;
@@ -217,40 +220,40 @@ export default function ClientePage() {
         const res = await fetch(`/.netlify/functions/radar?tenantId=${TENANT_ID}&lat=${latitude}&lng=${longitude}&radiusKm=50`);
         const partners = await res.json();
         if (Array.isArray(partners)) {
-          // Empresas com a mesma coordenada (mesmo prédio) viram um grupo.
+          // Empresas a menos de ~110m (mesmo précio/endereço) viram um grupo.
           const groups = {};
           partners.forEach((b) => {
-            const key = `${Math.round(b.lat * 10000)}|${Math.round(b.lng * 10000)}`;
+            const key = `${Math.round(b.lat * 1000)}|${Math.round(b.lng * 1000)}`;
             (groups[key] = groups[key] || []).push(b);
           });
           Object.values(groups).forEach((group) => {
-            const shared = group.length > 1;
-            // Balão combinado: lista todas as empresas e todos os cupons do ponto.
-            const popupHtml = shared
-              ? group.map((g) => businessBlock(g)).join('<hr style="border:none;border-top:1px solid #e2e8f0;margin:8px 0">')
-              : null;
-            group.forEach((b, idx) => {
-              try {
-                // Espalha os marcadores em leque ao redor da coordenada real,
-                // afastados por pixels (nao por graus), assim nunca ficam
-                // um em cima do outro, independente do zoom.
-                const map = mapInstanceRef.current;
-                const center = map.latLngToContainerPoint([b.lat, b.lng]);
-                const spread = 34;
-                const angle = (2 * Math.PI / group.length) * idx;
-                const pt = L.point(center.x + Math.cos(angle) * spread, center.y + Math.sin(angle) * spread);
-                const ll = map.containerPointToLatLng(pt);
-                const lat = ll.lat;
-                const lng = ll.lng;
-                const marker = b.logoUrl
-                  ? L.marker([lat, lng], { icon: L.divIcon({ className: 'pyv-biz-marker', html: `<img src="${esc(b.logoUrl)}" alt="" style="width:28px;height:28px;object-fit:cover;border-radius:50%;border:2px solid #FFFFFF;box-shadow:0 1px 4px rgba(0,0,0,0.4)" />` }) })
-                  : L.circleMarker([lat, lng], { radius: 6, color: '#0B6E4F', fillColor: '#F2C14E', fillOpacity: 1 });
-                marker.addTo(mapInstanceRef.current).bindPopup(popupHtml || businessBlock(b));
-                marker.on('popupopen', (e) => {
-                  e.popup.getElement().querySelectorAll?.('[data-claim]').forEach((el) => el.addEventListener('click', () => claim(el.getAttribute('data-claim'))));
-                });
-              } catch { /* um partner falho nao derruba os demais */ }
-            });
+            try {
+              const shared = group.length > 1;
+              const popupHtml = shared
+                ? group.map((g) => businessBlock(g)).join('<hr style="border:none;border-top:1px solid #e2e8f0;margin:8px 0">')
+                : businessBlock(group[0]);
+              let marker;
+              if (shared) {
+                // Um único marcador na coordenada exata com os logos lado a lado.
+                const logos = group.filter((g) => g.logoUrl).slice(0, 2).map((g) =>
+                  `<img src="${esc(g.logoUrl)}" alt="" style="width:18px;height:18px;object-fit:cover;border-radius:50%;border:2px solid #FFFFFF;margin-left:${group.filter((x) => x.logoUrl).length > 1 ? -7 : 0}px;box-shadow:0 1px 3px rgba(0,0,0,0.4)" />`
+                ).join('');
+                const countBadge = group.length > 2 ? `<span style="color:#083b2a;font-weight:800;font-size:10px;background:#F2C14E;border-radius:999px;padding:0 4px;margin-left:2px">+${group.length - 2}</span>` : '';
+                const html = logos
+                  ? `<div style="display:flex;align-items:center;min-width:${18 + group.filter((x) => x.logoUrl).length * 11}px;justify-content:flex-start">${logos}${countBadge}</div>`
+                  : `<div style="width:26px;height:26px;border-radius:50%;background:#F2C14E;color:#083b2a;font-weight:900;font-size:12px;display:flex;align-items:center;justify-content:center;border:2px solid #FFFFFF;box-shadow:0 1px 3px rgba(0,0,0,0.4)">${group.length}</div>`;
+                marker = L.marker([group[0].lat, group[0].lng], { icon: L.divIcon({ className: 'pyv-biz-marker', iconSize: [36, 26], iconAnchor: [18, 13], html }) });
+              } else {
+                const b = group[0];
+                marker = b.logoUrl
+                  ? L.marker([b.lat, b.lng], { icon: L.divIcon({ className: 'pyv-biz-marker', iconSize: [28, 28], iconAnchor: [14, 14], html: `<img src="${esc(b.logoUrl)}" alt="" style="width:28px;height:28px;object-fit:cover;border-radius:50%;border:2px solid #FFFFFF;box-shadow:0 1px 4px rgba(0,0,0,0.4)" />` }) })
+                  : L.circleMarker([b.lat, b.lng], { radius: 6, color: '#0B6E4F', fillColor: '#F2C14E', fillOpacity: 1 });
+              }
+              marker.addTo(mapInstanceRef.current).bindPopup(popupHtml);
+              marker.on('popupopen', (e) => {
+                e.popup.getElement().querySelectorAll?.('[data-claim]').forEach((el) => el.addEventListener('click', () => claim(el.getAttribute('data-claim'))));
+              });
+            } catch { /* um grupo falho nao derruba os demais */ }
           });
         }
       } catch { /* radar indisponivel nao derruba o mapa */ }
