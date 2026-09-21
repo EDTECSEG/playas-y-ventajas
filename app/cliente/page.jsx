@@ -376,7 +376,7 @@ export default function ClientePage() {
         <div style={card}>
           <h3 style={{ marginTop: 0 }}>{t.myCoupons}</h3>
           <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-            {['all', 'available', 'redeemed'].map((f) => (
+            {['available', 'redeemed', 'all'].map((f) => (
               <button key={f} onClick={() => setCouponFilter(f)} style={{
                 ...smallBtn,
                 background: couponFilter === f ? theme.gold : theme.bg,
