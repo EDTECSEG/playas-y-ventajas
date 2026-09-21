@@ -101,6 +101,7 @@ export default function EmpresaPage() {
   const [validateResult, setValidateResult] = useState(null);
   const [scanning, setScanning] = useState(false);
   const scannerRef = useRef(null);
+  const lastDecodedRef = useRef({ text: '', at: 0 });
   const scannerDivId = 'qr-reader';
 
   async function login() {
@@ -237,7 +238,15 @@ export default function EmpresaPage() {
       body: JSON.stringify({ publicId, rawToken: rawToken || undefined, shortCode: shortCode || undefined }),
     });
     const data = await res.json();
-    setValidateResult({ ok: res.ok, ...data });
+    const friendly = {
+      PROMOTION_ENDED: 'A promoção acabou — este cupom não pode mais ser usado.',
+      COUPON_CANCELLED: 'A promoção acabou — este cupom não pode mais ser usado.',
+      COUPON_ALREADY_USED: 'Este cupom já foi usado antes.',
+      COUPON_EXPIRED: 'Este cupom expirou.',
+      INVALID_TOKEN: 'Código inválido para este cupom.',
+      NOT_FOUND: 'Cupom não encontrado.',
+    };
+    setValidateResult({ ok: res.ok, ...data, errorLabel: friendly[data.error] });
   }
 
   async function startScan() {
@@ -251,8 +260,10 @@ export default function EmpresaPage() {
       async (decodedText) => {
         const parts = decodedText.split('|');
         if (parts[0] === 'PYV1' && parts.length === 3) {
-          await scanner.stop();
-          setScanning(false);
+          // Evita revalidar o mesmo QR repetidamente enquanto a câmera fica aberta.
+          const now = Date.now();
+          if (lastDecodedRef.current.text === decodedText && now - lastDecodedRef.current.at < 4000) return;
+          lastDecodedRef.current = { text: decodedText, at: now };
           setValidateForm({ publicId: parts[1], rawToken: parts[2], shortCode: '' });
           validateCoupon(parts[1], parts[2], null);
         }
@@ -323,7 +334,7 @@ export default function EmpresaPage() {
                   {validateResult.idempotent && <p style={{ fontSize: 12, opacity: 0.7 }}>(já tinha sido validado antes)</p>}
                 </div>
               ) : (
-                <p style={{ marginTop: 8, fontWeight: 600, color: '#c0392b' }}>✘ {validateResult.error}</p>
+                <p style={{ marginTop: 8, fontWeight: 600, color: '#c0392b' }}>✘ {validateResult.errorLabel || validateResult.error}</p>
               )
             )}
           </div>

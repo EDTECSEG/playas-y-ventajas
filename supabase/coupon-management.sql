@@ -108,8 +108,9 @@ $$;
 
 -- ------------------------------------------------------------
 -- 4) Empresa deleta um cupom próprio
---    Só pode apagar se ainda NÃO gerou nenhum cupom resgatado
---    (se já teve clientes, use Desativar para preservar o histórico).
+--    Mesmo que já tenha gerado cupons: apaga o cupom e INVALIDA
+--    os cupons emitidos. Ao tentar validá-los, a resposta é
+--    PROMOTION_ENDED ("promoção acabou").
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION business_delete_template(
   p_tenant_id uuid,
@@ -134,13 +135,12 @@ BEGIN
     RAISE EXCEPTION 'FORBIDDEN';
   END IF;
 
-  SELECT count(*) INTO v_used
-  FROM public.coupons
-  WHERE template_id = p_template_id;
-
-  IF v_used > 0 THEN
-    RAISE EXCEPTION 'TEMPLATE_ALREADY_USED: este cupom já gerou cupons; desative em vez de apagar';
-  END IF;
+  -- Invalida os cupons que ainda não foram usados (mantém o histórico).
+  UPDATE public.coupons
+  SET status = 'CANCELLED'
+  WHERE template_id = p_template_id
+    AND tenant_id = p_tenant_id
+    AND status IN ('AVAILABLE', 'EXPIRED');
 
   DELETE FROM public.coupon_templates
   WHERE id = p_template_id AND tenant_id = p_tenant_id;
