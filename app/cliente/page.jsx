@@ -105,7 +105,8 @@ export default function ClientePage() {
     loadMyCoupons(data.customerId);
   }
 
-  async function claim(templateId) {
+  async function claim(offer) {
+    const templateId = offer.templateId;
     const saved = JSON.parse(localStorage.getItem('pyv_customer') || 'null') || {};
     const effPhone = phone || saved.phone;
     if (!effPhone) { setMsg('Informe seu telefone primeiro.'); return; }
@@ -123,8 +124,8 @@ export default function ClientePage() {
     tokens[data.publicId] = data.rawToken;
     localStorage.setItem('pyv_coupon_tokens', JSON.stringify(tokens));
     setCustomerId(data.customerId);
-    setJustClaimed(data);
-    setMsg('Cupom resgatado! Guarde o código abaixo — mostre no estabelecimento.');
+    setJustClaimed({ ...data, businessName: offer.businessName, title: offer.title, benefitValue: offer.benefitValue });
+    setMsg('Cupom resgatado! Guarde o QR abaixo — mostre no estabelecimento.');
     loadMyCoupons(data.customerId);
   }
 
@@ -327,12 +328,12 @@ export default function ClientePage() {
 
       {justClaimed && (
         <div style={{ ...card, border: '3px solid #F2C14E', textAlign: 'center' }}>
-          <h3>{t.yourCoupon}</h3>
+          <h3>{justClaimed.businessName || t.yourCoupon}</h3>
           <div ref={qrDivRef} style={{ display: 'flex', justifyContent: 'center', margin: '0 auto' }} />
-          <p style={{ fontSize: 20, fontWeight: 700, letterSpacing: 2, marginTop: 12 }}>{justClaimed.publicId}</p>
-          <p style={{ fontSize: 11 }}>{t.shortCodeLabel}</p>
-          <p style={{ fontSize: 22, fontWeight: 700, letterSpacing: 3 }}>{justClaimed.shortCode}</p>
-          <p style={{ fontSize: 11 }}>{t.fullCodeLabel} <code>{justClaimed.rawToken}</code></p>
+          <p style={{ fontSize: 17, fontWeight: 700, letterSpacing: 1, marginTop: 12 }}>
+            {justClaimed.title}
+            {justClaimed.benefitValue != null && <> · {Number(justClaimed.benefitValue)}% OFF</>}
+          </p>
           <p style={{ fontSize: 12, color: '#c0392b' }}>{t.saveWarning}</p>
         </div>
       )}
@@ -407,10 +408,9 @@ export default function ClientePage() {
           })()}
           {openCoupon && (
             <div style={{ textAlign: 'center', marginTop: 12, borderTop: `1px solid ${theme.border}`, paddingTop: 12 }}>
-              <strong style={{ fontSize: 15 }}>{openCoupon.title}</strong>
-              <p style={{ fontSize: 13, margin: '4px 0' }}>{openCoupon.businessName}</p>
+              <strong style={{ fontSize: 15 }}>{openCoupon.businessName}</strong>
               <div ref={myCouponQrDivRef} style={{ display: 'flex', justifyContent: 'center', margin: '0 auto' }} />
-              <p style={{ fontSize: 13, fontWeight: 700, margin: '6px 0 0' }}>{openCoupon.publicId}</p>
+              <p style={{ fontSize: 14, fontWeight: 700, margin: '8px 0 0' }}>{openCoupon.title}</p>
             </div>
           )}
         </div>
