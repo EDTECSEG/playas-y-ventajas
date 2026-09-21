@@ -226,6 +226,9 @@ export default function ClientePage() {
         cc += `<div style="font-size:11px;font-weight:700;color:#083b2a;overflow-wrap:anywhere">${esc(g.name)}</div>`;
         if (offs.length) {
           offs.forEach((of) => {
+            if (of.imageUrl) {
+              cc += `<img src="${esc(of.imageUrl)}" data-claim="${esc(of.templateId)}" style="width:100%;height:56px;object-fit:cover;border-radius:6px;margin-top:6px;cursor:pointer;display:block" title="Toque para resgatar" />`;
+            }
             cc += `<button data-claim="${esc(of.templateId)}" style="margin-top:4px;background:#F2C14E;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;color:#083b2a;width:100%">🎟️ ${esc(of.title)}</button>`;
           });
         } else if (g.hasActiveOffer) {
