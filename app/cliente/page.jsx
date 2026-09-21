@@ -160,12 +160,12 @@ export default function ClientePage() {
     return () => { cancelled = true; };
   }, [openCoupon]);
 
-  function handleOpenCoupon(publicId) {
+  function handleOpenCoupon(c) {
     const tokens = JSON.parse(localStorage.getItem('pyv_coupon_tokens') || '{}');
-    const rawToken = tokens[publicId];
+    const rawToken = tokens[c.publicId];
     if (!rawToken) { setMsg('Código não disponível neste aparelho. Se você o resgatou em outro dispositivo ou limpou os dados do navegador, ele não pode ser recuperado — é necessário ter salvo o print no momento do resgate.'); setOpenCoupon(null); return; }
     setMsg('');
-    setOpenCoupon({ publicId, rawToken });
+    setOpenCoupon({ ...c, rawToken });
   }
 
   async function showMap() {
@@ -389,7 +389,7 @@ export default function ClientePage() {
             const filtered = myCoupons.filter((c) => couponFilter === 'all' || (couponFilter === 'available' ? c.status !== 'VALIDATED' : c.status === 'VALIDATED'));
             if (filtered.length === 0) return <p>{t.noMatchedCoupons}</p>;
             return filtered.map((c) => (
-            <div key={c.publicId} onClick={() => handleOpenCoupon(c.publicId)} style={{
+            <div key={c.publicId} onClick={() => handleOpenCoupon(c)} style={{
               display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', border: `1px solid ${theme.border}`,
               borderRadius: 12, padding: 12, marginBottom: 8, background: theme.bg,
             }}>
@@ -407,8 +407,10 @@ export default function ClientePage() {
           })()}
           {openCoupon && (
             <div style={{ textAlign: 'center', marginTop: 12, borderTop: `1px solid ${theme.border}`, paddingTop: 12 }}>
+              <strong style={{ fontSize: 15 }}>{openCoupon.title}</strong>
+              <p style={{ fontSize: 13, margin: '4px 0' }}>{openCoupon.businessName}</p>
               <div ref={myCouponQrDivRef} style={{ display: 'flex', justifyContent: 'center', margin: '0 auto' }} />
-              <p style={{ fontSize: 13, fontWeight: 700 }}>{openCoupon.publicId}</p>
+              <p style={{ fontSize: 13, fontWeight: 700, margin: '6px 0 0' }}>{openCoupon.publicId}</p>
             </div>
           )}
         </div>
