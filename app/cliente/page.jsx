@@ -276,7 +276,7 @@ export default function ClientePage() {
       )}
 
       <div style={card}>
-        <h3 style={{ marginTop: 0 }}>{t.availableOffers}</h3>
+        <h3 style={{ marginTop: 0 }}>{customerId && name ? `${t.availableOffers} · ${name}` : t.availableOffers}</h3>
         {offers.length === 0 ? <p>{t.noOffers}</p> : offers.map((o) => (
           <div key={o.templateId} className="offer-row" style={{
             display: 'flex', alignItems: 'center', gap: 14, border: `1px solid ${theme.border}`,
