@@ -47,7 +47,7 @@ export default function ClientePage() {
   const [customerId, setCustomerId] = useState(null);
   const [offers, setOffers] = useState([]);
   const [myCoupons, setMyCoupons] = useState([]);
-  const [couponFilter, setCouponFilter] = useState('all');
+  const [couponFilter, setCouponFilter] = useState('available');
   const [justClaimed, setJustClaimed] = useState(null);
   const [msg, setMsg] = useState('');
   const [mapStatus, setMapStatus] = useState('idle');
