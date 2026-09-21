@@ -67,9 +67,12 @@ exports.handler = async (event) => {
         return { statusCode: 200, body: JSON.stringify({ ok: true, deleted: !!data }) };
       }
       if (body.action === 'update_my_data') {
+        const lat = body.lat === null || body.lat === undefined || body.lat === '' ? null : Number(body.lat);
+        const lng = body.lng === null || body.lng === undefined || body.lng === '' ? null : Number(body.lng);
         const { error } = await supabase.rpc('business_update_own', {
           p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_name: body.name || null,
           p_phone: body.phone || null, p_email: body.email || null, p_city: body.city || null, p_logo_url: body.logoUrl || null,
+          p_lat: lat, p_lng: lng,
         });
         if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
         return { statusCode: 200, body: JSON.stringify({ ok: true }) };

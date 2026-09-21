@@ -51,7 +51,7 @@ export default function EmpresaPage() {
   const [justCreatedTemplate, setJustCreatedTemplate] = useState(null);
   const [editingTemplate, setEditingTemplate] = useState(null);
   const [tab, setTab] = useState('criar');
-  const [myData, setMyData] = useState({ name: '', phone: '', email: '', city: '', logoUrl: '' });
+  const [myData, setMyData] = useState({ name: '', phone: '', email: '', city: '', logoUrl: '', lat: '', lng: '' });
   const [mustChangePin, setMustChangePin] = useState(false);
   const [newPin, setNewPin] = useState('');
   const [newPin2, setNewPin2] = useState('');
@@ -76,7 +76,7 @@ export default function EmpresaPage() {
   async function loadMyData() {
     const res = await fetch(`/.netlify/functions/empresa?mode=my-data`, { headers: { Authorization: `Bearer ${session.sessionToken}` } });
     const data = await res.json();
-    if (res.ok) setMyData({ name: data.name || '', phone: data.phone || '', email: data.email || '', city: data.city || '', logoUrl: data.logoUrl || '' });
+    if (res.ok) setMyData({ name: data.name || '', phone: data.phone || '', email: data.email || '', city: data.city || '', logoUrl: data.logoUrl || '', lat: data.lat ?? '', lng: data.lng ?? '' });
   }
 
   async function handleMyLogoUpload(e) {
@@ -444,6 +444,8 @@ export default function EmpresaPage() {
             <input style={input} placeholder="telefone" value={myData.phone} onChange={(e) => setMyData({ ...myData, phone: e.target.value })} />
             <input style={input} placeholder="e-mail" value={myData.email} onChange={(e) => setMyData({ ...myData, email: e.target.value })} />
             <input style={input} placeholder="cidade" value={myData.city} onChange={(e) => setMyData({ ...myData, city: e.target.value })} />
+            <input style={input} placeholder="latitude (ex.: -22.9064)" value={myData.lat} onChange={(e) => setMyData({ ...myData, lat: e.target.value })} />
+            <input style={input} placeholder="longitude (ex.: -43.1785)" value={myData.lng} onChange={(e) => setMyData({ ...myData, lng: e.target.value })} />
             <br />
             <label style={{ fontSize: 13 }}>Logo: <input type="file" accept="image/*" onChange={handleMyLogoUpload} /></label>
             {myData.logoUrl && <img src={myData.logoUrl} alt="" style={{ height: 40, marginLeft: 8, verticalAlign: 'middle' }} />}
