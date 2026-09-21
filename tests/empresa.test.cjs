@@ -128,6 +128,65 @@ test('empresa: POST set_pin chama business_set_pin com nova senha', async (t) =>
   assert.strictEqual(parseBody(res).changed, true);
 });
 
+test('empresa: POST toggle_template desativa pelo id do template', async (t) => {
+  const calls = [];
+  const fake = actorFake(VALID_ACTORS.merchant, async (name, args) => {
+    if (name === 'business_toggle_template') { calls.push(args); return { data: true, error: null }; }
+    return { data: null, error: { message: 'unexpected rpc ' + name } };
+  });
+  const { handler, restore } = loadFunction('empresa.js', fake);
+  t.after(restore);
+  const res = await handler(makeEvent({
+    method: 'POST',
+    headers: authHeaders(),
+    body: { action: 'toggle_template', templateId: 'tpl-9', isActive: false },
+  }));
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(calls[0].p_template_id, 'tpl-9');
+  assert.strictEqual(calls[0].p_is_active, false);
+  assert.strictEqual(parseBody(res).changed, true);
+});
+
+test('empresa: POST update_template repassa dados editados', async (t) => {
+  const calls = [];
+  const fake = actorFake(VALID_ACTORS.merchant, async (name, args) => {
+    if (name === 'business_update_template') { calls.push(args); return { data: true, error: null }; }
+    return { data: null, error: { message: 'unexpected rpc ' + name } };
+  });
+  const { handler, restore } = loadFunction('empresa.js', fake);
+  t.after(restore);
+  const res = await handler(makeEvent({
+    method: 'POST',
+    headers: authHeaders(),
+    body: { action: 'update_template', templateId: 'tpl-9', title: 'Novo nome', benefitType: 'DISCOUNT_PERCENT', benefitValue: 15, totalStock: 30, imageUrl: 'https://cdn.example.test/a.png' },
+  }));
+  assert.strictEqual(res.statusCode, 200);
+  const a = calls[0];
+  assert.strictEqual(a.p_template_id, 'tpl-9');
+  assert.strictEqual(a.p_title, 'Novo nome');
+  assert.strictEqual(a.p_benefit_value, 15);
+  assert.strictEqual(a.p_total_stock, 30);
+  assert.strictEqual(a.p_image_url, 'https://cdn.example.test/a.png');
+});
+
+test('empresa: POST update_template com totalStock vazio vira null', async (t) => {
+  const calls = [];
+  const fake = actorFake(VALID_ACTORS.merchant, async (name, args) => {
+    if (name === 'business_update_template') { calls.push(args); return { data: true, error: null }; }
+    return { data: null, error: { message: 'unexpected rpc ' + name } };
+  });
+  const { handler, restore } = loadFunction('empresa.js', fake);
+  t.after(restore);
+  const res = await handler(makeEvent({
+    method: 'POST',
+    headers: authHeaders(),
+    body: { action: 'update_template', templateId: 'tpl-9', title: 'Oferta', benefitType: 'DISCOUNT_PERCENT', benefitValue: 10, totalStock: null, imageUrl: null },
+  }));
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(calls[0].p_total_stock, null);
+  assert.strictEqual(calls[0].p_image_url, null);
+});
+
 test('empresa: action invalida -> 400', async (t) => {
   const fake = actorFake(VALID_ACTORS.merchant);
   const { handler, restore } = loadFunction('empresa.js', fake);

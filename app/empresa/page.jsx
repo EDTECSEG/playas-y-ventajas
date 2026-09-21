@@ -49,6 +49,7 @@ export default function EmpresaPage() {
   const [templateForm, setTemplateForm] = useState({ campaignId: '', title: '10% OFF', benefitType: 'DISCOUNT_PERCENT', benefitValue: 10, totalStock: '', imageUrl: '' });
   const [stats, setStats] = useState(null);
   const [justCreatedTemplate, setJustCreatedTemplate] = useState(null);
+  const [editingTemplate, setEditingTemplate] = useState(null);
   const [tab, setTab] = useState('criar');
   const [myData, setMyData] = useState({ name: '', phone: '', email: '', city: '', logoUrl: '' });
   const [mustChangePin, setMustChangePin] = useState(false);
@@ -152,6 +153,51 @@ export default function EmpresaPage() {
       setTemplateForm({ ...templateForm, imageUrl: url });
       setMsg('Imagem enviada.');
     } catch (err) { setMsg(`Erro no upload: ${err.message}`); }
+  }
+
+  async function toggleTemplate(tpl) {
+    const res = await fetch('/.netlify/functions/empresa', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
+      body: JSON.stringify({ action: 'toggle_template', templateId: tpl.id, isActive: !tpl.is_active }),
+    });
+    const data = await res.json();
+    setMsg(res.ok ? (tpl.is_active ? 'Cupom desativado.' : 'Cupom ativado.') : `Erro: ${data.error}`);
+    if (res.ok) loadDashboard();
+  }
+
+  function startEditTemplate(tpl) {
+    setEditingTemplate({ id: tpl.id, title: tpl.title || '', benefitValue: tpl.benefit_value != null ? Number(tpl.benefit_value) : 10, totalStock: tpl.total_stock != null ? String(tpl.total_stock) : '', imageUrl: tpl.image_url || null });
+    setMsg('');
+  }
+
+  async function handleEditTemplateImage(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const url = await uploadImage(file, 'campaign-images', session.sessionToken);
+      setEditingTemplate({ ...editingTemplate, imageUrl: url });
+      setMsg('Imagem enviada.');
+    } catch (err) { setMsg(`Erro no upload: ${err.message}`); }
+  }
+
+  async function saveEditTemplate() {
+    if (!editingTemplate.title || editingTemplate.title.length < 2) { setMsg('Informe um nome para a oferta.'); return; }
+    const res = await fetch('/.netlify/functions/empresa', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
+      body: JSON.stringify({
+        action: 'update_template',
+        templateId: editingTemplate.id, title: editingTemplate.title, benefitType: templateForm.benefitType,
+        benefitValue: Number(editingTemplate.benefitValue), totalStock: editingTemplate.totalStock ? Number(editingTemplate.totalStock) : null,
+        imageUrl: editingTemplate.imageUrl || null,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
+    setMsg('Cupom atualizado.');
+    setEditingTemplate(null);
+    loadDashboard();
   }
 
   async function createTemplate() {
@@ -335,9 +381,29 @@ export default function EmpresaPage() {
               <ul>{(dash.campaigns || []).map((c) => <li key={c.id}>{c.title} — {c.status === 'PUBLISHED' ? 'ativa' : c.status}</li>)}</ul>
               <h3>{t.templates} ({(dash.templates || []).length})</h3>
               <ul>{(dash.templates || []).map((tpl) => (
-                <li key={tpl.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <li key={tpl.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
                   {tpl.image_url && <img src={tpl.image_url} alt="" style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 6 }} />}
-                  {tpl.title} — {t.issued} {tpl.issued_count}
+                  <span style={{ textDecoration: tpl.is_active === false ? 'line-through' : 'none', opacity: tpl.is_active === false ? 0.6 : 1 }}>
+                    {tpl.title} — {t.issued} {tpl.issued_count}
+                  </span>
+                  {tpl.is_active === false && <strong style={{ fontSize: 11, color: '#c0392b' }}>desativado</strong>}
+                  <button style={{ ...smallBtn, background: tpl.is_active === false ? '#0B6E4F' : '#c0392b', color: '#fff' }} onClick={() => toggleTemplate(tpl)}>
+                    {tpl.is_active === false ? 'Ativar' : 'Desativar'}
+                  </button>
+                  <button style={smallBtn} onClick={() => startEditTemplate(tpl)}>Editar</button>
+                  {editingTemplate?.id === tpl.id && (
+                    <div style={{ width: '100%', marginTop: 6, padding: 10, background: theme.bg, borderRadius: 8 }}>
+                      <input style={input} placeholder="nome da oferta" value={editingTemplate.title} onChange={(e) => setEditingTemplate({ ...editingTemplate, title: e.target.value })} />
+                      <input style={input} placeholder={t.value} value={editingTemplate.benefitValue} onChange={(e) => setEditingTemplate({ ...editingTemplate, benefitValue: e.target.value })} />
+                      <input style={input} placeholder={t.stock} value={editingTemplate.totalStock} onChange={(e) => setEditingTemplate({ ...editingTemplate, totalStock: e.target.value })} />
+                      <br />
+                      <label style={{ fontSize: 13 }}>{t.campaignImage} <input type="file" accept="image/*" onChange={handleEditTemplateImage} /></label>
+                      {editingTemplate.imageUrl && <img src={editingTemplate.imageUrl} alt="" style={{ height: 50, marginLeft: 8, verticalAlign: 'middle' }} />}
+                      <br />
+                      <button style={{ ...btn, marginTop: 8 }} onClick={saveEditTemplate}>Salvar edição</button>
+                      <button style={{ ...smallBtn, background: theme.border, color: theme.text }} onClick={() => setEditingTemplate(null)}>Cancelar</button>
+                    </div>
+                  )}
                 </li>
               ))}</ul>
               <h3>{t.couponsIssued} ({(dash.coupons || []).length})</h3>

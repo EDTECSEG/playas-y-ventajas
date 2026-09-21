@@ -299,6 +299,7 @@ export default function AdminPage() {
           <div key={c.id} style={{ borderTop: '1px solid #e2e8f0', padding: '10px 0' }}>
             <input style={{ ...input, width: 140 }} value={c.name || ''} placeholder="nome" onChange={(e) => { const arr = [...customers]; arr[i] = { ...c, name: e.target.value }; setCustomers(arr); }} />
             <input style={{ ...input, width: 140 }} value={c.email || ''} placeholder="e-mail" onChange={(e) => { const arr = [...customers]; arr[i] = { ...c, email: e.target.value }; setCustomers(arr); }} />
+            <input style={{ ...input, width: 120 }} value={c.instagram || ''} placeholder="instagram" onChange={(e) => { const arr = [...customers]; arr[i] = { ...c, instagram: e.target.value }; setCustomers(arr); }} />
             <span style={{ fontSize: 12 }}>Tel: {c.phone}</span>
             <button style={smallBtn} onClick={() => saveCustomer(c)}>Salvar</button>
             <button style={smallBtn} onClick={() => saveCustomer({ ...c, isActive: !c.isActive })}>{c.isActive ? 'Desativar' : 'Ativar'}</button>

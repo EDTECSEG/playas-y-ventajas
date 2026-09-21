@@ -43,6 +43,22 @@ exports.handler = async (event) => {
         if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
         return { statusCode: 200, body: JSON.stringify(data) };
       }
+      if (body.action === 'toggle_template') {
+        const { data, error } = await supabase.rpc('business_toggle_template', {
+          p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_template_id: body.templateId, p_is_active: !!body.isActive,
+        });
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
+        return { statusCode: 200, body: JSON.stringify({ ok: true, changed: !!data }) };
+      }
+      if (body.action === 'update_template') {
+        const { data, error } = await supabase.rpc('business_update_template', {
+          p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_template_id: body.templateId,
+          p_title: body.title, p_benefit_type: body.benefitType, p_benefit_value: body.benefitValue,
+          p_total_stock: body.totalStock ?? null, p_image_url: body.imageUrl || null,
+        });
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
+        return { statusCode: 200, body: JSON.stringify({ ok: true, changed: !!data }) };
+      }
       if (body.action === 'update_my_data') {
         const { error } = await supabase.rpc('business_update_own', {
           p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_name: body.name || null,
