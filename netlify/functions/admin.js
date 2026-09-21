@@ -76,6 +76,13 @@ exports.handler = async (event) => {
         if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
         return { statusCode: 200, body: JSON.stringify({ tempPin: data }) };
       }
+      if (body.action === 'delete_business') {
+        const { data, error } = await supabase.rpc('admin_delete_business', {
+          p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_business_id: body.businessId,
+        });
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
+        return { statusCode: 200, body: JSON.stringify({ ok: true, deleted: !!data }) };
+      }
       return { statusCode: 400, body: JSON.stringify({ error: 'action inválida' }) };
     }
 

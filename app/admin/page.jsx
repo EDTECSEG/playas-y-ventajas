@@ -8,8 +8,8 @@ import { theme } from '../../lib/theme';
 const wrap = { maxWidth: 780, margin: '0 auto', padding: '20px 20px 80px', color: theme.text };
 const card = { background: theme.card, color: theme.text, borderRadius: 14, padding: 20, marginBottom: 16, border: `1px solid ${theme.border}`, boxShadow: '0 2px 8px rgba(11,110,79,0.06)' };
 const input = { padding: 9, borderRadius: 8, border: `1px solid ${theme.border}`, marginRight: 8, marginBottom: 8 };
-const btn = { padding: '9px 16px', borderRadius: 10, border: 'none', cursor: 'pointer', background: theme.gold, color: theme.greenDark, fontWeight: 700, marginRight: 8 };
-const smallBtn = { ...btn, padding: '5px 12px', fontSize: 12 };
+const btn = { padding: '7px 13px', borderRadius: 10, border: 'none', cursor: 'pointer', background: theme.gold, color: theme.greenDark, fontWeight: 700, marginRight: 8 };
+const smallBtn = { ...btn, padding: '4px 9px', fontSize: 11 };
 
 function maskPhone(v) {
   const d = v.replace(/\D/g, '').slice(0, 11);
@@ -173,6 +173,19 @@ export default function AdminPage() {
 
   const [resetPin, setResetPin] = useState(null);
 
+  async function deleteBusiness(b) {
+    if (!window.confirm(`Deletar a empresa "${b.name}" definitivamente? Esta ação não pode ser desfeita.`)) return;
+    const res = await fetch('/.netlify/functions/admin', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
+      body: JSON.stringify({ action: 'delete_business', businessId: b.id }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
+    setMsg(`Empresa "${b.name}" deletada.`);
+    loadBusinesses();
+  }
+
   function useMyLocation() {
     navigator.geolocation.getCurrentPosition(
       (pos) => setForm({ ...form, lat: pos.coords.latitude.toFixed(6), lng: pos.coords.longitude.toFixed(6) }),
@@ -254,6 +267,7 @@ export default function AdminPage() {
               <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'SUSPENDED', b.monthlyFeeCents)}>{t.suspend}</button>
               <button style={smallBtn} onClick={() => setEditingBusiness({ ...b })}>✏️ Editar</button>
               <button style={{ ...smallBtn, background: '#c0392b', color: '#fff' }} onClick={() => resetPassword(b)}>🔑 Resetar senha</button>
+              <button style={{ ...smallBtn, background: '#c0392b', color: '#fff' }} onClick={() => deleteBusiness(b)}>🗑️ Deletar</button>
             </div>
             {resetPin?.businessId === b.id && (
               <div style={{ marginTop: 8, padding: 12, background: theme.greenLight, borderRadius: 8, border: `1px solid ${theme.border}` }}>
