@@ -88,6 +88,19 @@ export default function EmpresaPage() {
     } catch (err) { setMsg(`Erro no upload: ${err.message}`); }
   }
 
+  function useMyLocation() {
+    if (!navigator.geolocation) { setMsg('Seu navegador não suporta geolocalização.'); return; }
+    setMsg('Buscando sua localização…');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setMyData({ ...myData, lat: pos.coords.latitude.toFixed(6), lng: pos.coords.longitude.toFixed(6) });
+        setMsg('Localização preenchida. Clique em "Salvar dados".');
+      },
+      (err) => setMsg(`Não foi possível obter a localização (${err.message}).`),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
+
   async function saveMyData() {
     const res = await fetch('/.netlify/functions/empresa', {
       method: 'POST',
@@ -97,6 +110,7 @@ export default function EmpresaPage() {
     const data = await res.json();
     setMsg(res.ok ? 'Dados atualizados.' : `Erro: ${data.error}`);
   }
+
   const [validateForm, setValidateForm] = useState({ publicId: '', rawToken: '', shortCode: '' });
   const [validateResult, setValidateResult] = useState(null);
   const [scanning, setScanning] = useState(false);
@@ -446,6 +460,7 @@ export default function EmpresaPage() {
             <input style={input} placeholder="cidade" value={myData.city} onChange={(e) => setMyData({ ...myData, city: e.target.value })} />
             <input style={input} placeholder="latitude (ex.: -22.9064)" value={myData.lat} onChange={(e) => setMyData({ ...myData, lat: e.target.value })} />
             <input style={input} placeholder="longitude (ex.: -43.1785)" value={myData.lng} onChange={(e) => setMyData({ ...myData, lng: e.target.value })} />
+            <button style={{ ...smallBtn, marginLeft: 8 }} onClick={useMyLocation}>📍 Usar minha localização atual</button>
             <br />
             <label style={{ fontSize: 13 }}>Logo: <input type="file" accept="image/*" onChange={handleMyLogoUpload} /></label>
             {myData.logoUrl && <img src={myData.logoUrl} alt="" style={{ height: 40, marginLeft: 8, verticalAlign: 'middle' }} />}
