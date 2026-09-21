@@ -105,14 +105,19 @@ export default function ClientePage() {
   }
 
   async function claim(templateId) {
-    if (!phone) { setMsg('Informe seu telefone primeiro.'); return; }
+    const saved = JSON.parse(localStorage.getItem('pyv_customer') || 'null') || {};
+    const effPhone = phone || saved.phone;
+    if (!effPhone) { setMsg('Informe seu telefone primeiro.'); return; }
+    const effName = name || saved.name || '';
+    const effInstagram = instagram || saved.instagram || '';
+    const effEmail = email || saved.email || '';
     const res = await fetch('/.netlify/functions/claim-coupon', {
       method: 'POST',
-      body: JSON.stringify({ tenantId: TENANT_ID, templateId, phone, name, instagram, email }),
+      body: JSON.stringify({ tenantId: TENANT_ID, templateId, phone: effPhone, name: effName, instagram: effInstagram, email: effEmail }),
     });
     const data = await res.json();
     if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
-    localStorage.setItem('pyv_customer', JSON.stringify({ phone, name, instagram, email, customerId: data.customerId, customerToken: data.customerToken }));
+    localStorage.setItem('pyv_customer', JSON.stringify({ ...saved, phone: effPhone, name: effName, instagram: effInstagram, email: effEmail, customerId: data.customerId, customerToken: data.customerToken }));
     const tokens = JSON.parse(localStorage.getItem('pyv_coupon_tokens') || '{}');
     tokens[data.publicId] = data.rawToken;
     localStorage.setItem('pyv_coupon_tokens', JSON.stringify(tokens));
@@ -194,27 +199,39 @@ export default function ClientePage() {
         const res = await fetch(`/.netlify/functions/radar?tenantId=${TENANT_ID}&lat=${latitude}&lng=${longitude}&radiusKm=50`);
         const partners = await res.json();
         if (Array.isArray(partners)) {
+          // Empresas com a mesma coordenada sao afastadas lado a lado (~10m).
+          const groups = {};
           partners.forEach((b) => {
-            try {
-              const offer = offersByBiz[b.id];
-              const claimAttr = offer ? ` data-claim="${esc(offer.templateId)}"` : '';
-              let content = `<b>${esc(b.name)}</b><br>${esc(b.category)}`;
-              if (offer) {
-                content += `<br>🎟️ Oferta ativa`;
-                if (offer.imageUrl) {
-                  content += `<br><img src="${esc(offer.imageUrl)}"${claimAttr} style="width:92px;height:68px;object-fit:cover;border-radius:8px;margin-top:6px;cursor:pointer;display:block" title="Toque para resgatar" />`;
+            const key = `${Math.round(b.lat * 10000)}|${Math.round(b.lng * 10000)}`;
+            (groups[key] = groups[key] || []).push(b);
+          });
+          Object.values(groups).forEach((group) => {
+            group.forEach((b, idx) => {
+              try {
+                const shift = ((group.length - 1) / 2 - idx) * 0.0001;
+                const lat = b.lat + shift;
+                const lng = b.lng + shift;
+                const offer = offersByBiz[b.id];
+                const claimAttr = offer ? ` data-claim="${esc(offer.templateId)}"` : '';
+                let content = `<b>${esc(b.name)}</b><br>${esc(b.category)}`;
+                if (offer) {
+                  content += `<br>🎟️ Oferta ativa`;
+                  if (offer.imageUrl) {
+                    content += `<br><img src="${esc(offer.imageUrl)}"${claimAttr} style="width:92px;height:68px;object-fit:cover;border-radius:8px;margin-top:6px;cursor:pointer;display:block" title="Toque para resgatar" />`;
+                  }
+                  content += `<br><button${claimAttr} style="margin-top:6px;background:#F2C14E;border:none;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;color:#083b2a">🎟️ Resgatar cupom</button>`;
+                } else if (b.hasActiveOffer) {
+                  content += `<br>🎟️ Tem oferta ativa`;
                 }
-                content += `<br><button${claimAttr} style="margin-top:6px;background:#F2C14E;border:none;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;color:#083b2a">🎟️ Resgatar cupom</button>`;
-              } else if (b.hasActiveOffer) {
-                content += `<br>🎟️ Tem oferta ativa`;
-              }
-              const marker = L.circleMarker([b.lat, b.lng], { radius: 9, color: '#0B6E4F', fillColor: '#F2C14E', fillOpacity: 1 })
-                .addTo(mapInstanceRef.current)
-                .bindPopup(content);
-              marker.on('popupopen', (e) => {
-                e.popup.getElement().querySelectorAll?.('[data-claim]').forEach((el) => el.addEventListener('click', () => claim(el.getAttribute('data-claim'))));
-              });
-            } catch { /* um partner falho nao derruba os demais */ }
+                const marker = b.logoUrl
+                  ? L.marker([lat, lng], { icon: L.divIcon({ className: 'pyv-biz-marker', html: `<img src="${esc(b.logoUrl)}" alt="" style="width:28px;height:28px;object-fit:cover;border-radius:50%;border:2px solid #FFFFFF;box-shadow:0 1px 4px rgba(0,0,0,0.4)" />` }) })
+                  : L.circleMarker([lat, lng], { radius: 6, color: '#0B6E4F', fillColor: '#F2C14E', fillOpacity: 1 });
+                marker.addTo(mapInstanceRef.current).bindPopup(content);
+                marker.on('popupopen', (e) => {
+                  e.popup.getElement().querySelectorAll?.('[data-claim]').forEach((el) => el.addEventListener('click', () => claim(el.getAttribute('data-claim'))));
+                });
+              } catch { /* um partner falho nao derruba os demais */ }
+            });
           });
         }
       } catch { /* radar indisponivel nao derruba o mapa */ }
