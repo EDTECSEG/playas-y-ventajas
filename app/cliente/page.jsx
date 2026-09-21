@@ -9,6 +9,7 @@ const wrap = { maxWidth: 720, margin: '0 auto', padding: '20px 20px 80px', color
 const card = { background: theme.card, color: theme.text, borderRadius: 14, padding: 20, marginBottom: 16, border: `1px solid ${theme.border}`, boxShadow: '0 2px 8px rgba(11,110,79,0.06)' };
 const input = { padding: 9, borderRadius: 8, border: `1px solid ${theme.border}`, marginRight: 8, marginBottom: 8 };
 const btn = { padding: '9px 16px', borderRadius: 10, border: 'none', cursor: 'pointer', background: theme.gold, color: theme.greenDark, fontWeight: 700 };
+const smallBtn = { ...btn, padding: '5px 12px', fontSize: 12 };
 
 const TENANT_ID = '0dc57eeb-46c8-47ac-aad4-640d9d59e7b9';
 
@@ -46,6 +47,7 @@ export default function ClientePage() {
   const [customerId, setCustomerId] = useState(null);
   const [offers, setOffers] = useState([]);
   const [myCoupons, setMyCoupons] = useState([]);
+  const [couponFilter, setCouponFilter] = useState('all');
   const [justClaimed, setJustClaimed] = useState(null);
   const [msg, setMsg] = useState('');
   const [mapStatus, setMapStatus] = useState('idle');
@@ -373,7 +375,20 @@ export default function ClientePage() {
       {customerId && (
         <div style={card}>
           <h3 style={{ marginTop: 0 }}>{t.myCoupons}</h3>
-          {myCoupons.length === 0 ? <p>{t.noneYet}</p> : myCoupons.map((c) => (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+            {['all', 'available', 'redeemed'].map((f) => (
+              <button key={f} onClick={() => setCouponFilter(f)} style={{
+                ...smallBtn,
+                background: couponFilter === f ? theme.gold : theme.bg,
+                color: couponFilter === f ? theme.greenDark : theme.text,
+                border: `1px solid ${theme.border}`,
+              }}>{t['filter_' + f]}</button>
+            ))}
+          </div>
+          {myCoupons.length === 0 ? <p>{t.noneYet}</p> : (() => {
+            const filtered = myCoupons.filter((c) => couponFilter === 'all' || (couponFilter === 'available' ? c.status !== 'VALIDATED' : c.status === 'VALIDATED'));
+            if (filtered.length === 0) return <p>{t.noMatchedCoupons}</p>;
+            return filtered.map((c) => (
             <div key={c.publicId} onClick={() => handleOpenCoupon(c.publicId)} style={{
               display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', border: `1px solid ${theme.border}`,
               borderRadius: 12, padding: 12, marginBottom: 8, background: theme.bg,
@@ -388,7 +403,8 @@ export default function ClientePage() {
                 color: c.status === 'VALIDATED' ? theme.green : theme.greenDark,
               }}>{c.status === 'AVAILABLE' ? t.statusAvailable : c.status}</span>
             </div>
-          ))}
+            ));
+          })()}
           {openCoupon && (
             <div style={{ textAlign: 'center', marginTop: 12, borderTop: `1px solid ${theme.border}`, paddingTop: 12 }}>
               <div ref={myCouponQrDivRef} style={{ display: 'flex', justifyContent: 'center', margin: '0 auto' }} />
