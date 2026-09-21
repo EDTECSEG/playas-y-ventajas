@@ -64,7 +64,6 @@ export default function ClientePage() {
       loadMyCoupons(s.customerId, s.customerToken);
     }
     loadOffers();
-    showMap(); // abre o mapa automaticamente ao entrar no modulo, sem precisar clicar
   }, []);
 
   async function loadOffers() {
@@ -181,7 +180,10 @@ export default function ClientePage() {
         setTimeout(() => mapInstanceRef.current.invalidateSize(), 300);
         window.addEventListener('resize', () => mapInstanceRef.current.invalidateSize());
       }
-      L.marker([latitude, longitude]).addTo(mapInstanceRef.current).bindPopup('Você está aqui');
+      // Localização do usuário: ponto pequeno, sem clique, para não cobrir a
+      // empresa que ocupa a mesma posição e não atrapalhar ao tocar nela.
+      L.circleMarker([latitude, longitude], { radius: 5, color: '#2563eb', fillColor: '#2563eb', fillOpacity: 0.85, weight: 1, interactive: false })
+        .addTo(mapInstanceRef.current);
 
       // Nossos parceiros (verde)
       let currentOffers = Array.isArray(offers) ? offers : [];
