@@ -306,8 +306,8 @@ export default function ClientePage() {
         @media (max-width: 400px) {
           .offer-row { flex-wrap: wrap; }
           .offer-info { flex: 1 1 100% !important; order: 2; }
-          .offer-btn { order: 3; width: 100%; }
           .offer-img { order: 1; }
+          .offer-btn { order: 3; align-self: center; }
         }
       `}</style>
       <Header title={t.offersTitle} />
@@ -355,11 +355,11 @@ export default function ClientePage() {
                 {Number(o.benefitValue)}%<br /><span style={{ fontSize: 9, fontWeight: 700 }}>OFF</span>
               </div>
             )}
+            <button className="offer-btn" style={{ ...smallBtn, flexShrink: 0 }} onClick={() => claim(o.templateId)}>{t.redeem}</button>
             <div className="offer-info" style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
               <strong>{o.title}</strong>
               <div style={{ fontSize: 12, color: theme.textMuted }}>{o.businessName} · {o.category} · {Number(o.benefitValue)}% OFF</div>
             </div>
-            <button className="offer-btn" style={{ ...btn, flexShrink: 0 }} onClick={() => claim(o.templateId)}>{t.redeem}</button>
           </div>
         ))}
       </div>
