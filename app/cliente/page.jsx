@@ -296,7 +296,10 @@ export default function ClientePage() {
               }
               marker.addTo(mapInstanceRef.current).bindPopup(popupHtml);
               marker.on('popupopen', (e) => {
-                e.popup.getElement().querySelectorAll?.('[data-claim]').forEach((el) => el.addEventListener('click', () => claim(el.getAttribute('data-claim'))));
+                e.popup.getElement().querySelectorAll?.('[data-claim]').forEach((el) => {
+                  const tid = el.getAttribute('data-claim');
+                  el.addEventListener('click', () => claim(currentOffers.find((x) => x.templateId === tid) || { templateId: tid }));
+                });
               });
             } catch { /* um grupo falho nao derruba os demais */ }
           });
@@ -380,7 +383,7 @@ export default function ClientePage() {
                 {Number(o.benefitValue)}%<br /><span style={{ fontSize: 9, fontWeight: 700 }}>OFF</span>
               </div>
             )}
-            <button className="offer-btn" style={{ ...smallBtn, flexShrink: 0 }} onClick={() => claim(o.templateId)}>{t.redeem}</button>
+            <button className="offer-btn" style={{ ...smallBtn, flexShrink: 0 }} onClick={() => claim(o)}>{t.redeem}</button>
             <div className="offer-info" style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
               <strong>{o.title}</strong>
               <div style={{ fontSize: 12, color: theme.textMuted }}>{o.businessName} · {o.category} · {Number(o.benefitValue)}% OFF</div>
