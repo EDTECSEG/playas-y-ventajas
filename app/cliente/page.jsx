@@ -124,7 +124,7 @@ export default function ClientePage() {
     tokens[data.publicId] = data.rawToken;
     localStorage.setItem('pyv_coupon_tokens', JSON.stringify(tokens));
     setCustomerId(data.customerId);
-    setJustClaimed({ ...data, businessName: offer.businessName, title: offer.title, benefitValue: offer.benefitValue });
+    setJustClaimed({ ...data, businessName: offer.businessName, title: offer.title, benefitValue: offer.benefitValue, logoUrl: offer.logoUrl || null });
     setMsg('Cupom resgatado! Guarde o QR abaixo — mostre no estabelecimento.');
     loadMyCoupons(data.customerId);
   }
@@ -161,12 +161,19 @@ export default function ClientePage() {
     return () => { cancelled = true; };
   }, [openCoupon]);
 
-  function handleOpenCoupon(c) {
+  async function handleOpenCoupon(c) {
     const tokens = JSON.parse(localStorage.getItem('pyv_coupon_tokens') || '{}');
     const rawToken = tokens[c.publicId];
     if (!rawToken) { setMsg('Código não disponível neste aparelho. Se você o resgatou em outro dispositivo ou limpou os dados do navegador, ele não pode ser recuperado — é necessário ter salvo o print no momento do resgate.'); setOpenCoupon(null); return; }
     setMsg('');
     setOpenCoupon({ ...c, rawToken });
+    if (c.businessId) {
+      try {
+        const res = await fetch(`/.netlify/functions/offers?tenantId=${TENANT_ID}&businessLogoFor=${c.businessId}`);
+        const logo = await res.json();
+        if (res.ok && logo && logo.logoUrl) setOpenCoupon((prev) => (prev ? { ...prev, logoUrl: logo.logoUrl } : prev));
+      } catch { /* logo opcional */ }
+    }
   }
 
   async function showMap() {
@@ -328,7 +335,10 @@ export default function ClientePage() {
 
       {justClaimed && (
         <div style={{ ...card, border: '3px solid #F2C14E', textAlign: 'center' }}>
-          <h3>{justClaimed.businessName || t.yourCoupon}</h3>
+          {justClaimed.logoUrl && (
+            <img src={justClaimed.logoUrl} alt={justClaimed.businessName} style={{ height: 48, borderRadius: 8, marginBottom: 6 }} />
+          )}
+          <h3 style={{ margin: 0 }}>{justClaimed.businessName || t.yourCoupon}</h3>
           <div ref={qrDivRef} style={{ display: 'flex', justifyContent: 'center', margin: '0 auto' }} />
           <p style={{ fontSize: 17, fontWeight: 700, letterSpacing: 1, marginTop: 12 }}>
             {justClaimed.title}
@@ -408,6 +418,9 @@ export default function ClientePage() {
           })()}
           {openCoupon && (
             <div style={{ textAlign: 'center', marginTop: 12, borderTop: `1px solid ${theme.border}`, paddingTop: 12 }}>
+              {openCoupon.logoUrl && (
+                <img src={openCoupon.logoUrl} alt={openCoupon.businessName} style={{ height: 40, borderRadius: 8, marginBottom: 4 }} />
+              )}
               <strong style={{ fontSize: 15 }}>{openCoupon.businessName}</strong>
               <div ref={myCouponQrDivRef} style={{ display: 'flex', justifyContent: 'center', margin: '0 auto' }} />
               <p style={{ fontSize: 14, fontWeight: 700, margin: '8px 0 0' }}>{openCoupon.title}</p>

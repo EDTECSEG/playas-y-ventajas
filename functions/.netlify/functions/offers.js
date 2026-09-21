@@ -8,8 +8,15 @@ export async function onRequestGet(context) {
     const customerId = url.searchParams.get('customerId');
     const customerToken = url.searchParams.get('customerToken');
     const mode = url.searchParams.get('mode');
+    const businessLogoFor = url.searchParams.get('businessLogoFor');
     if (!tenantId) return json({ error: 'tenantId obrigatório' }, 400);
     const supabase = getSupabaseAdminClient(env);
+
+    if (businessLogoFor) {
+      const { data, error } = await supabase.rpc('business_logo_by_id', { p_business_id: businessLogoFor });
+      if (error) return json({ error: error.message }, 400);
+      return json(data);
+    }
 
     if (mode === 'my-coupons') {
       if (!customerId) return json({ error: 'customerId obrigatório' }, 400);

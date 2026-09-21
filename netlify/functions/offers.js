@@ -2,9 +2,15 @@ const { getSupabaseAdminClient, verifyCustomerToken } = require('./_supabaseAdmi
 
 exports.handler = async (event) => {
   try {
-    const { tenantId, customerId, customerToken, mode } = event.queryStringParameters || {};
+    const { tenantId, customerId, customerToken, mode, businessLogoFor } = event.queryStringParameters || {};
     if (!tenantId) return { statusCode: 400, body: JSON.stringify({ error: 'tenantId obrigatório' }) };
     const supabase = getSupabaseAdminClient();
+
+    if (businessLogoFor) {
+      const { data, error } = await supabase.rpc('business_logo_by_id', { p_business_id: businessLogoFor });
+      if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+      return { statusCode: 200, body: JSON.stringify(data) };
+    }
 
     if (mode === 'my-coupons') {
       if (!customerId) return { statusCode: 400, body: JSON.stringify({ error: 'customerId obrigatório' }) };
