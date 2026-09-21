@@ -195,40 +195,50 @@ export default function ClientePage() {
         } catch { /* segue só com o radar */ }
       }
       const offersByBiz = {};
-      currentOffers.forEach((o) => { if (o.businessId && !offersByBiz[o.businessId]) offersByBiz[o.businessId] = o; });
+      currentOffers.forEach((o) => { if (o.businessId) (offersByBiz[o.businessId] = offersByBiz[o.businessId] || []).push(o); });
       const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      const businessBlock = (g) => {
+        const offs = offersByBiz[g.id] || [];
+        let h = `<b>${esc(g.name)}</b><br>${esc(g.category)}`;
+        if (offs.length) {
+          offs.forEach((of) => {
+            h += `<div style="margin-top:6px;border-top:1px solid #e2e8f0;padding-top:6px"><strong>🎟️ ${esc(of.title)}</strong>`;
+            if (of.imageUrl) {
+              h += `<img src="${esc(of.imageUrl)}" data-claim="${esc(of.templateId)}" style="width:92px;height:68px;object-fit:cover;border-radius:8px;margin-top:6px;cursor:pointer;display:block" title="Toque para resgatar" />`;
+            }
+            h += `<br><button data-claim="${esc(of.templateId)}" style="margin-top:6px;background:#F2C14E;border:none;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;color:#083b2a">🎟️ Resgatar cupom</button></div>`;
+          });
+        } else if (g.hasActiveOffer) {
+          h += `<br>🎟️ Tem oferta ativa`;
+        }
+        return h;
+      };
       try {
         const res = await fetch(`/.netlify/functions/radar?tenantId=${TENANT_ID}&lat=${latitude}&lng=${longitude}&radiusKm=50`);
         const partners = await res.json();
         if (Array.isArray(partners)) {
-          // Empresas com a mesma coordenada sao afastadas lado a lado (~10m).
+          // Empresas com a mesma coordenada (mesmo prédio) viram um grupo.
           const groups = {};
           partners.forEach((b) => {
             const key = `${Math.round(b.lat * 10000)}|${Math.round(b.lng * 10000)}`;
             (groups[key] = groups[key] || []).push(b);
           });
           Object.values(groups).forEach((group) => {
+            const shared = group.length > 1;
+            // Balão combinado: lista todas as empresas e todos os cupons do ponto.
+            const popupHtml = shared
+              ? group.map((g) => businessBlock(g)).join('<hr style="border:none;border-top:1px solid #e2e8f0;margin:8px 0">')
+              : null;
             group.forEach((b, idx) => {
               try {
-                const shift = ((group.length - 1) / 2 - idx) * 0.0001;
-                const lat = b.lat + shift;
-                const lng = b.lng + shift;
-                const offer = offersByBiz[b.id];
-                const claimAttr = offer ? ` data-claim="${esc(offer.templateId)}"` : '';
-                let content = `<b>${esc(b.name)}</b><br>${esc(b.category)}`;
-                if (offer) {
-                  content += `<br>🎟️ Oferta ativa`;
-                  if (offer.imageUrl) {
-                    content += `<br><img src="${esc(offer.imageUrl)}"${claimAttr} style="width:92px;height:68px;object-fit:cover;border-radius:8px;margin-top:6px;cursor:pointer;display:block" title="Toque para resgatar" />`;
-                  }
-                  content += `<br><button${claimAttr} style="margin-top:6px;background:#F2C14E;border:none;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;color:#083b2a">🎟️ Resgatar cupom</button>`;
-                } else if (b.hasActiveOffer) {
-                  content += `<br>🎟️ Tem oferta ativa`;
-                }
+                // Espalha os marcadores em diagonal para não ficarem empilhados.
+                const off = (idx - (group.length - 1) / 2) * 0.00025;
+                const lat = b.lat + off;
+                const lng = b.lng + (idx % 2 === 0 ? off : -off) * 0.6;
                 const marker = b.logoUrl
                   ? L.marker([lat, lng], { icon: L.divIcon({ className: 'pyv-biz-marker', html: `<img src="${esc(b.logoUrl)}" alt="" style="width:28px;height:28px;object-fit:cover;border-radius:50%;border:2px solid #FFFFFF;box-shadow:0 1px 4px rgba(0,0,0,0.4)" />` }) })
                   : L.circleMarker([lat, lng], { radius: 6, color: '#0B6E4F', fillColor: '#F2C14E', fillOpacity: 1 });
-                marker.addTo(mapInstanceRef.current).bindPopup(content);
+                marker.addTo(mapInstanceRef.current).bindPopup(popupHtml || businessBlock(b));
                 marker.on('popupopen', (e) => {
                   e.popup.getElement().querySelectorAll?.('[data-claim]').forEach((el) => el.addEventListener('click', () => claim(el.getAttribute('data-claim'))));
                 });
