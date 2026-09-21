@@ -166,6 +166,18 @@ export default function EmpresaPage() {
     if (res.ok) loadDashboard();
   }
 
+  async function deleteTemplate(tpl) {
+    if (!window.confirm(`Apagar o cupom "${tpl.title}"? Esta ação não pode ser desfeita.`)) return;
+    const res = await fetch('/.netlify/functions/empresa', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
+      body: JSON.stringify({ action: 'delete_template', templateId: tpl.id }),
+    });
+    const data = await res.json();
+    setMsg(res.ok ? 'Cupom apagado.' : `Erro: ${data.error}`);
+    if (res.ok) { setEditingTemplate(null); loadDashboard(); loadStats(); }
+  }
+
   function startEditTemplate(tpl) {
     setEditingTemplate({ id: tpl.id, title: tpl.title || '', benefitValue: tpl.benefit_value != null ? Number(tpl.benefit_value) : 10, totalStock: tpl.total_stock != null ? String(tpl.total_stock) : '', imageUrl: tpl.image_url || null });
     setMsg('');
@@ -391,6 +403,7 @@ export default function EmpresaPage() {
                     {tpl.is_active === false ? 'Ativar' : 'Desativar'}
                   </button>
                   <button style={smallBtn} onClick={() => startEditTemplate(tpl)}>Editar</button>
+                  <button style={{ ...smallBtn, background: '#c0392b', color: '#fff' }} onClick={() => deleteTemplate(tpl)}>🗑️ Apagar</button>
                   {editingTemplate?.id === tpl.id && (
                     <div style={{ width: '100%', marginTop: 6, padding: 10, background: theme.bg, borderRadius: 8 }}>
                       <input style={input} placeholder="nome da oferta" value={editingTemplate.title} onChange={(e) => setEditingTemplate({ ...editingTemplate, title: e.target.value })} />

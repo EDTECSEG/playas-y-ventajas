@@ -107,7 +107,51 @@ END;
 $$;
 
 -- ------------------------------------------------------------
--- 4) Ofertas públicas ignoram cupons desativados
+-- 4) Empresa deleta um cupom próprio
+--    Só pode apagar se ainda NÃO gerou nenhum cupom resgatado
+--    (se já teve clientes, use Desativar para preservar o histórico).
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION business_delete_template(
+  p_tenant_id uuid,
+  p_actor_user_id uuid,
+  p_template_id uuid
+) RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
+AS $$
+DECLARE
+  v_owned text;
+  v_count int;
+  v_used int;
+BEGIN
+  SELECT u.role INTO v_owned
+  FROM public.users u
+  JOIN public.coupon_templates t ON t.business_id = u.business_id
+  WHERE u.id = p_actor_user_id
+    AND u.tenant_id = p_tenant_id
+    AND t.id = p_template_id;
+
+  IF v_owned IS NULL OR v_owned != 'MERCHANT' THEN
+    RAISE EXCEPTION 'FORBIDDEN';
+  END IF;
+
+  SELECT count(*) INTO v_used
+  FROM public.coupons
+  WHERE template_id = p_template_id;
+
+  IF v_used > 0 THEN
+    RAISE EXCEPTION 'TEMPLATE_ALREADY_USED: este cupom já gerou cupons; desative em vez de apagar';
+  END IF;
+
+  DELETE FROM public.coupon_templates
+  WHERE id = p_template_id AND tenant_id = p_tenant_id;
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count > 0;
+END;
+$$;
+
+-- ------------------------------------------------------------
+-- 5) Ofertas públicas ignoram cupons desativados
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.list_offers(p_tenant_id uuid)
  RETURNS jsonb

@@ -67,6 +67,13 @@ export async function onRequestPost(context) {
       if (error) return json({ error: (error.message || '').split(':')[0].trim() }, 400);
       return json({ ok: true, changed: !!data });
     }
+    if (body.action === 'delete_template') {
+      const { data, error } = await supabase.rpc('business_delete_template', {
+        p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_template_id: body.templateId,
+      });
+      if (error) return json({ error: (error.message || '').split(':')[0].trim() }, 400);
+      return json({ ok: true, deleted: !!data });
+    }
     if (body.action === 'update_my_data') {
       const { error } = await supabase.rpc('business_update_own', {
         p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_name: body.name || null,

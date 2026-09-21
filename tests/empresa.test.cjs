@@ -187,6 +187,24 @@ test('empresa: POST update_template com totalStock vazio vira null', async (t) =
   assert.strictEqual(calls[0].p_image_url, null);
 });
 
+test('empresa: POST delete_template apaga pelo id do template', async (t) => {
+  const calls = [];
+  const fake = actorFake(VALID_ACTORS.merchant, async (name, args) => {
+    if (name === 'business_delete_template') { calls.push(args); return { data: true, error: null }; }
+    return { data: null, error: { message: 'unexpected rpc ' + name } };
+  });
+  const { handler, restore } = loadFunction('empresa.js', fake);
+  t.after(restore);
+  const res = await handler(makeEvent({
+    method: 'POST',
+    headers: authHeaders(),
+    body: { action: 'delete_template', templateId: 'tpl-9' },
+  }));
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(calls[0].p_template_id, 'tpl-9');
+  assert.strictEqual(parseBody(res).deleted, true);
+});
+
 test('empresa: action invalida -> 400', async (t) => {
   const fake = actorFake(VALID_ACTORS.merchant);
   const { handler, restore } = loadFunction('empresa.js', fake);

@@ -59,6 +59,13 @@ exports.handler = async (event) => {
         if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
         return { statusCode: 200, body: JSON.stringify({ ok: true, changed: !!data }) };
       }
+      if (body.action === 'delete_template') {
+        const { data, error } = await supabase.rpc('business_delete_template', {
+          p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_template_id: body.templateId,
+        });
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
+        return { statusCode: 200, body: JSON.stringify({ ok: true, deleted: !!data }) };
+      }
       if (body.action === 'update_my_data') {
         const { error } = await supabase.rpc('business_update_own', {
           p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_name: body.name || null,
