@@ -18,7 +18,7 @@ CREATE OR REPLACE FUNCTION public.register_business(
   p_pin text
 ) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
-AS $$
+AS $function$
 declare
   v_tenant tenants%rowtype;
   v_owner_id uuid;
