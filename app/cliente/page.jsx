@@ -219,20 +219,20 @@ export default function ClientePage() {
       // Card compacto de uma empresa (para grupos, lado a lado).
       const businessCard = (g) => {
         const offs = offersByBiz[g.id] || [];
-        let cc = `<div style="flex:1 1 42%;min-width:82px;max-width:48%;border:1px solid #e2e8f0;border-radius:10px;padding:8px;text-align:center;background:#fff">`;
+        let cc = `<div style="flex:1 1 0;min-width:0;max-width:120px;border:1px solid #e2e8f0;border-radius:8px;padding:6px;text-align:center;background:#fff;display:flex;flex-direction:column;align-items:center">`;
         if (g.logoUrl) {
-          cc += `<img src="${esc(g.logoUrl)}" style="width:32px;height:32px;object-fit:cover;border-radius:50%;margin:0 auto 4px;display:block" alt="" />`;
+          cc += `<img src="${esc(g.logoUrl)}" style="width:26px;height:26px;object-fit:cover;border-radius:50%;margin:0 auto 3px;display:block" alt="" />`;
         }
-        cc += `<div style="font-size:11px;font-weight:700;color:#083b2a;overflow-wrap:anywhere">${esc(g.name)}</div>`;
+        cc += `<div style="font-size:10px;font-weight:700;color:#083b2a;overflow-wrap:anywhere;line-height:1.2">${esc(g.name)}</div>`;
         if (offs.length) {
           offs.forEach((of) => {
             if (of.imageUrl) {
-              cc += `<img src="${esc(of.imageUrl)}" data-claim="${esc(of.templateId)}" style="width:100%;height:56px;object-fit:cover;border-radius:6px;margin-top:6px;cursor:pointer;display:block" title="Toque para resgatar" />`;
+              cc += `<img src="${esc(of.imageUrl)}" data-claim="${esc(of.templateId)}" style="width:100%;height:44px;object-fit:cover;border-radius:6px;margin-top:5px;cursor:pointer;display:block" title="Toque para resgatar" />`;
             }
-            cc += `<button data-claim="${esc(of.templateId)}" style="margin-top:4px;background:#F2C14E;border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;color:#083b2a;width:100%">🎟️ ${esc(of.title)}</button>`;
+            cc += `<button data-claim="${esc(of.templateId)}" style="margin-top:4px;background:#F2C14E;border:none;border-radius:6px;padding:3px 6px;font-size:10px;font-weight:700;cursor:pointer;color:#083b2a;width:100%">🎟️ ${esc(of.title)}</button>`;
           });
         } else if (g.hasActiveOffer) {
-          cc += `<div style="font-size:10px;color:#0B6E4F;margin-top:4px">Tem oferta ativa</div>`;
+          cc += `<div style="font-size:9px;color:#0B6E4F;margin-top:4px">Tem oferta ativa</div>`;
         }
         cc += `</div>`;
         return cc;
@@ -251,7 +251,7 @@ export default function ClientePage() {
             try {
               const shared = group.length > 1;
               const popupHtml = shared
-                ? `<div style="display:flex;flex-wrap:wrap;gap:8px;max-width:260px">${group.map(businessCard).join('')}</div>`
+                ? `<div style="display:flex;flex-wrap:nowrap;align-items:flex-start;justify-content:space-between;gap:6px;max-width:210px">${group.map(businessCard).join('')}</div>`
                 : businessBlock(group[0]);
               let marker;
               if (shared) {
