@@ -361,7 +361,14 @@ export default function ClientePage() {
             {justClaimed.title}
             {justClaimed.benefitValue != null && <> · {Number(justClaimed.benefitValue)}% OFF</>}
           </p>
-          <p style={{ fontSize: 12, color: '#c0392b' }}>{t.saveWarning}</p>
+          <p style={{
+            fontSize: 15, fontWeight: 800, letterSpacing: 1.5, color: theme.greenDark,
+            background: theme.goldLight, border: `1px solid ${theme.gold}`, borderRadius: 10,
+            padding: '8px 10px', margin: '10px 0 0', fontFamily: 'monospace',
+          }}>
+            {justClaimed.publicId}
+          </p>
+          <p style={{ fontSize: 12, color: '#c0392b', marginBottom: 0 }}>{t.saveWarning}</p>
         </div>
       )}
 
@@ -441,6 +448,11 @@ export default function ClientePage() {
               <strong style={{ fontSize: 15 }}>{openCoupon.businessName}</strong>
               <div ref={myCouponQrDivRef} style={{ display: 'flex', justifyContent: 'center', margin: '0 auto' }} />
               <p style={{ fontSize: 14, fontWeight: 700, margin: '8px 0 0' }}>{openCoupon.title}</p>
+              <p style={{
+                fontSize: 15, fontWeight: 800, letterSpacing: 1.5, color: '#0B6E4F',
+                background: '#FDF3D7', border: '1px solid #E8C46A', borderRadius: 8,
+                padding: '6px 10px', margin: '8px 0 0', fontFamily: 'monospace',
+              }}>{openCoupon.publicId}</p>
             </div>
           )}
         </div>
