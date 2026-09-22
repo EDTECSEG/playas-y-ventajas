@@ -141,6 +141,7 @@ export default function ClientePage() {
         if (cancelled || !qrDivRef.current) return;
         qrDivRef.current.innerHTML = '';
         new QRCode(qrDivRef.current, { text: `PYV1|${justClaimed.publicId}|${justClaimed.rawToken}`, width: 220, height: 220 });
+        setTimeout(() => qrDivRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
       } catch (err) {
         if (!cancelled) setMsg(`Cupom resgatado, mas o QR code falhou ao gerar (${err.message}). Use o código de texto abaixo.`);
       }
