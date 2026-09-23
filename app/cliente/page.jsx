@@ -369,7 +369,6 @@ export default function ClientePage() {
           }}>
             {justClaimed.publicId}
           </p>
-          <p style={{ fontSize: 12, color: '#c0392b', marginBottom: 0 }}>{t.saveWarning}</p>
         </div>
       )}
 

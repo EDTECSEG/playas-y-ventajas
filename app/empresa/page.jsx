@@ -457,13 +457,25 @@ export default function EmpresaPage() {
             <button style={btn} onClick={createCampaign}>{t.createCampaign}</button>
 
             <h3>{t.newTemplate}</h3>
-            <select style={input} value={templateForm.campaignId} onChange={(e) => setTemplateForm({ ...templateForm, campaignId: e.target.value })}>
+            <select style={input} value={templateForm.campaignId} onChange={(e) => setTemplateForm({ ...templateForm, campaignId: e.target.value })}
+              onFocus={(e) => { if (!e.target.value) e.target.style.color = 'transparent'; }}
+              onBlur={(e) => { e.target.style.color = ''; }}
+            >
               <option value="">{t.selectCampaign}</option>
-              {(dash?.campaigns || []).map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+              {(dash?.campaigns || []).map((c) => <option key={c.id} value={c.id} style={{ color: theme.text }}>{c.title}</option>)}
             </select>
-            <input style={input} placeholder={t.title} value={templateForm.title} onChange={(e) => setTemplateForm({ ...templateForm, title: e.target.value })} />
-            <input style={input} placeholder={t.value} value={templateForm.benefitValue} onChange={(e) => setTemplateForm({ ...templateForm, benefitValue: e.target.value })} />
-            <input style={input} placeholder={t.stock} value={templateForm.totalStock} onChange={(e) => setTemplateForm({ ...templateForm, totalStock: e.target.value })} />
+            <input
+              style={input} placeholder={t.titleDesc} onFocus={(e) => { e.target.placeholder = ''; e.target.style.color = theme.text; }}
+              onBlur={(e) => { if (!e.target.value) e.target.placeholder = t.titleDesc; }}
+              value={templateForm.title} onChange={(e) => setTemplateForm({ ...templateForm, title: e.target.value })} />
+            <input
+              style={input} placeholder={t.valueDesc} onFocus={(e) => { e.target.placeholder = ''; e.target.style.color = theme.text; }}
+              onBlur={(e) => { if (!e.target.value) e.target.placeholder = t.valueDesc; }}
+              value={templateForm.benefitValue} onChange={(e) => setTemplateForm({ ...templateForm, benefitValue: e.target.value })} />
+            <input
+              style={input} placeholder={t.stockDesc} onFocus={(e) => { e.target.placeholder = ''; e.target.style.color = theme.text; }}
+              onBlur={(e) => { if (!e.target.value) e.target.placeholder = t.stockDesc; }}
+              value={templateForm.totalStock} onChange={(e) => setTemplateForm({ ...templateForm, totalStock: e.target.value })} />
             <br />
             <label style={{ fontSize: 13 }}>{t.campaignImage} <input type="file" accept="image/*" onChange={handleTemplateImage} /></label>
             {templateForm.imageUrl && <img src={templateForm.imageUrl} alt="" style={{ height: 50, marginLeft: 8, verticalAlign: 'middle' }} />}
