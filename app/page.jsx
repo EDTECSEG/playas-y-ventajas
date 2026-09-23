@@ -118,7 +118,6 @@ export default function Home() {
         <div style={{ textAlign: 'left' }}>
           <CouponLink href="/cliente" icon="🎟️" title={t.client} subtitle={t.clientSub} />
           <CouponLink href="/empresa" icon="🏪" title={t.business} subtitle={t.businessSub} />
-          <CouponLink href="/admin" icon="🛠️" title={t.admin} subtitle={t.adminSub} />
         </div>
 
         <p style={{ marginTop: 28, fontSize: 12, color: theme.textMuted }}>
