@@ -83,3 +83,21 @@ Antes de tutto deploy seguro, executar testes de segurança:
 5. Bateria de segurança (Regra 3).
 6. Perguntar "posso fazer o deploy?".
 7. Aguardar resposta; executar deploy somente com SIM explícito.
+
+## Push de git (perguntar sempre antes)
+A config `C:\Users\REUNIAO\.config\opencode\opencode.jsonc` tem
+`"git push": "ask"` e `"git push *": "ask"`: o push passa, mas o opencode
+pergunta antes de executar. Isso e intencional e nao deve ser mudado para
+"allow" nem para "deny" sem o dono pedir. Autorizacao dada em conversa nao
+vale como resposta ao prompt: responder o prompt e o que libera o push.
+Ordem antes de qualquer push: backup (Regra 1), implementacao, testes
+(Regra 2), bateria de seguranca (Regra 3), entao perguntar e so entao
+executar. Nao contornar a regra reescrevendo o comando (`cmd /c`, `& git`,
+script, Invoke-Expression).
+
+## Custo de API do Cloudflare
+Plano Free tem creditos/builds limitados. Para verificar deploy, preferir
+`curl` na URL publica (`https://<deploy>.pages.dev`) e respostas HTTP, que
+custam zero. Reservar a API do Cloudflare para o que o curl nao responde:
+ler config do projeto, alterar settings, lista de env vars ou logs de build.
+Agrupar em uma unica chamada o que for Consultar, em vez de uma por item.
