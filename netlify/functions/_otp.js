@@ -44,7 +44,15 @@ async function sendOtp(env, { email, name }) {
       <p style="margin:10px 0 0;font-size:11px;color:#BBB">Suporte: ${SUPPORT_EMAIL}</p>
     </div>`;
   const result = await sendEmail(env, { to: norm, subject: 'Código de confirmação PYV', html });
-  if (!result.ok) return { ok: false, reason: result.reason };
+  if (!result.ok) {
+    // O motivo real (chave ausente, recusa da Resend, falha de rede) fica no log
+    // do servidor; o cliente recebe uma frase neutra. O frontend mostra
+    // `data.error` direto na tela, e repassar a mensagem crua chegava a exibir
+    // "RESEND_API_KEY ausente - configure no painel do Cloudflare", que entrega
+    // a hospedagem e o estado de configuracao para qualquer visitante.
+    console.error('[send-otp] falha ao enviar o codigo', { motivo: result.reason });
+    return { ok: false, reason: 'Não foi possível enviar o código. Tente novamente.' };
+  }
   return { ok: true };
 }
 

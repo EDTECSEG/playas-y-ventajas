@@ -63,6 +63,11 @@ export async function sendOtp(env, { email, name }) {
       <p style="margin:10px 0 0;font-size:11px;color:#BBB">Suporte: atendimento@pyv.com.br</p>
     </div>`;
   const result = await sendEmail(env, { to: norm, subject: 'Código de confirmação PYV', html });
-  if (!result.ok) return { ok: false, reason: result.reason };
+  if (!result.ok) {
+    // Espelho do CJS: o motivo real fica no log do servidor e o cliente recebe
+    // uma frase neutra, porque o frontend imprime `data.error` na tela.
+    console.error('[send-otp] falha ao enviar o codigo', { motivo: result.reason });
+    return { ok: false, reason: 'Não foi possível enviar o código. Tente novamente.' };
+  }
   return { ok: true };
 }

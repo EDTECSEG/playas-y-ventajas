@@ -281,3 +281,68 @@ overload de 8 argumentos (ou removendo o `DEFAULT` do 9º e criando um wrapper
 com nome distinto). Enquanto isso, qualquer chamador que omita o parâmetro
 quebra em runtime.
 
+---
+
+# Envio de email congelado até existir domínio verificado (2026-09-26)
+
+## Contexto
+O cadastro de empresa recebe OTP por email via Resend, e o envio está inoperante
+para destinatários que não sejam o próprio dono da conta Resend.
+
+Motivo: sem domínio verificado, o plano da Resend **só entrega para o e-mail da
+conta**. Isso não é bug da integração, é regra do provedor. O agravante encontrado
+no painel do Cloudflare Pages é que `RESEND_FROM` não está definido nem em produção
+nem em preview, então `netlify/functions/_resend.js:19` cai no fallback
+`PYV <onboarding@resend.dev>`. Variáveis de ambiente hoje no projeto:
+
+- produção: `GEOAPIFY_API_KEY`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+  `NEXT_PUBLIC_SUPABASE_URL`, `RESEND_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+- preview: as mesmas, **sem `RESEND_API_KEY`**
+
+Um segundo problema tornava isso invisível: **o E2E não testa email**. Ele forja
+o OTP com o mesmo HMAC do servidor (`buildOtpCode` em
+`tests/live.driver-approval.test.cjs`) e entrega o código direto no login, sem
+passar por `send-otp`. Os 15 passos passam ao-green sem que um único email seja
+enviado. A chave de Resend guardada no `.dev.vars` local também responde **401** em
+`api.resend.com/domains` — está revogada e é diferente da que está em produção.
+
+## Decisão
+Congelar a parte que depende de domínio até o usuário ter o domínio (previsto
+para terça-feira, 2026-09-29). Não tentar contornar o provedor. Verificar domínio
+na Resend e então definir `RESEND_FROM` no painel do Cloudflare.
+
+Foram avaliados e descartados: Cloudflare Email Routing (só recebe e encaminha,
+não envia), Mailgun/SendGrid/SES (exigem verificação de domínio tanto quanto) e
+SMTP do Gmail (funciona, mas colocaria senha pessoal em variável de ambiente, o
+que é regressão num projeto que já tem rotação de chave pendente). Brevo ficou
+como plano B caso o domínio demore, por validar o remetente por link em vez de
+DNS — a política exata dela não foi confirmada.
+
+## Mitigação que permanece ativa
+- **Vazamento de detalhe interno corrigido.** `send-otp` devolvia `result.reason`
+  e `err.message` no corpo da resposta, e o frontend imprime `data.error` direto
+  na tela em ~12 pontos — um visitante podia ler "RESEND_API_KEY ausente —
+  configure no painel do Cloudflare (Settings > Variables)", o que entrega a
+  hospedagem e o estado de configuração. Agora `sendEmail` (camada interna)
+  continua devolvendo a causa para o log, e `sendOtp` (fronteira com o cliente)
+  devolve frase neutra. Coberto por teste.
+- **`send-otp` ganhou cobertura de teste**, que não tinha nenhuma: ele nunca era
+  exercitado, nem no unitário nem no E2E.
+- A aprovação de documentos não depende de email: é sessão de empresa e
+  `service_role`, sem OTP no caminho.
+- O E2E continua válido como está, porque forja o OTP por HMAC — o que é
+  exatamente o que o torna independente do provedor de email.
+
+## Condição de revisão obrigatória
+Reabrir assim que o domínio existir:
+- Verificar o domínio na Resend (SPF + DKIM) e definir `RESEND_FROM` em
+  produção **e** preview.
+- Definir `RESEND_API_KEY` no ambiente de preview, que hoje não tem — lá o envio
+  falha por ausência de chave, não por domínio.
+- Substituir a chave do `.dev.vars`, que está revogada (401 na API).
+- Conferir se o cadastro e a aprovação funcionam para empresa de terceiros, que é
+  o público que hoje não recebe OTP.
+
+Responsável pela decisão: usuário do projeto (adiou explicitamente até ter o
+domínio, ciente de que o email segue inoperante para terceiros nesse intervalo).
+

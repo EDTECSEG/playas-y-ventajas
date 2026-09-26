@@ -32,9 +32,41 @@ test('sendOtp degrada em vez de estourar quando nao ha chave de email', async ()
   // Este e o teste que reproduz o bug sem tocar a rede: o email aqui e valido,
   // entao o sendOtp chega de fato na chamada do sendEmail. Antes da correcao
   // essa linha lancava TypeError; agora tem de devolver um motivo.
+  //
+  // O motivo devolvido ao CHAMADOR e generico de proposito. O `sendEmail`
+  // continua devolvendo o detalhe (teste abaixo) porque ele e a camada interna:
+  // quem loga precisa saber a causa, quem mostra na tela nao.
   const r = await cjsOtp.sendOtp({ RESEND_API_KEY: '' }, { email: 'alguem@example.com' });
   assert.strictEqual(r.ok, false);
-  assert.match(r.reason, /RESEND_API_KEY/);
+  assert.ok(r.reason, 'precisa devolver algum motivo');
+  assert.doesNotMatch(r.reason, /RESEND_API_KEY|Cloudflare|Settings|painel/i,
+    'o frontend imprime esse motivo na tela: nao pode revelar chave nem hospedagem');
+});
+
+test('sendOtp nao repassa a mensagem de erro do transporte', async () => {
+  // Mesmo motivo pelo caminho do fetch: a Resend responde 403 com um texto
+  // proprio, e esse texto era repassado direto para o corpo da resposta.
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 403,
+    json: async () => ({ message: 'You can only send testing emails to your own email address.' }),
+  });
+  try {
+    const r = await cjsOtp.sendOtp({ RESEND_API_KEY: 'k' }, { email: 'alguem@example.com' });
+    assert.strictEqual(r.ok, false);
+    assert.doesNotMatch(r.reason, /testing emails|own email address/i,
+      'a mensagem do provedor nao pode vazar para o cliente');
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+
+test('o codigo do OTP nunca aparece no motivo de falha', async () => {
+  // `buildOtpCode` e chamado antes do envio, entao o codigo ja existe em
+  // memoria quando o transporte falha. Ele nao pode vazar pelo motivo.
+  const r = await cjsOtp.sendOtp({ RESEND_API_KEY: '' }, { email: 'alguem@example.com' });
+  assert.doesNotMatch(r.reason, /\d{6}/, 'o motivo nao pode conter um codigo de 6 digitos');
 });
 
 test('sendOtp rejeita email vazio antes de qualquer envio', async () => {
@@ -69,9 +101,14 @@ test('o handler send-otp repassa 405 em GET sem tocar no sendOtp', async () => {
   assert.strictEqual(r.statusCode, 405);
 });
 
-test('o handler devolve 500 com o motivo quando algo estoura de verdade', async () => {
-  // Guarda o contrato de erro do handler: nao vaza stack, mas nao engole o motivo.
+test('o handler devolve 500 sem vazar a excecao quando algo estoura de verdade', async () => {
+  // Guarda o contrato de erro do handler: nao vaza stack, nao engole o motivo
+  // (a causa vai para o log) e nao devolve `err.message` no corpo. O corpo
+  // invalido abaixo faria o parse lancar com o proprio input na mensagem.
   const r = await sendOtpHandler({ httpMethod: 'POST', body: 'nao-e-json' }, { env: {} });
   assert.strictEqual(r.statusCode, 500);
-  assert.ok(JSON.parse(r.body).error, 'a resposta de erro precisa trazer um motivo');
+  const { error } = JSON.parse(r.body);
+  assert.ok(error, 'a resposta de erro precisa trazer um motivo');
+  assert.doesNotMatch(error, /nao-e-json|Unexpected token|JSON/i,
+    'o erro do parse nao pode ser devolvido ao cliente');
 });

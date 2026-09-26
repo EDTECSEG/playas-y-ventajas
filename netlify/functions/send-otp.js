@@ -14,6 +14,10 @@ exports.handler = async (event, context) => {
     if (!result.ok) return { statusCode: 400, body: JSON.stringify({ error: result.reason }) };
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
   } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    // Mesmo contrato do caminho de cima: o motivo vai para o log do servidor e
+    // nao para o corpo. `err.message` aqui carregaria, por exemplo, o erro de
+    // parse do proprio body ("Unexpected token ... is not valid JSON").
+    console.error('[send-otp] excecao no handler', { motivo: err && err.message });
+    return { statusCode: 500, body: JSON.stringify({ error: 'Não foi possível enviar o código. Tente novamente.' }) };
   }
 };
