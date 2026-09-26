@@ -95,6 +95,16 @@ const CORS_HEADERS = {
   'access-control-allow-origin': '*',
 };
 
+// Toda rota aqui e API autenticada, e varias devolvem token de sessao, PIN de
+// empresa ou dados de cliente. Sem isto o navegador e o proxy podem guardar a
+// resposta. O handler pode sobrescrever devolvendo o proprio header.
+const DEFAULT_CACHE_CONTROL = 'no-store';
+
+// Erros de sessao sao contrato com o frontend: o cliente compara o texto para
+// decidir se renova a sessao. Qualquer outra mensagem nao pode vazar, porque
+// ela carrega detalhe de Supabase/Postgres.
+const SESSION_ERRORS = new Set(['SESSION_REQUIRED', 'SESSION_EXPIRED']);
+
 // ----------------------------------------------------------------------------
 // DIAGNOSTICO TEMPORARIO de env vars. REMOVER assim que a causa do
 // admin/empresa 500 "Env vars ausentes" estiver corrigida.
@@ -168,7 +178,11 @@ function envDiagReport(env) {
 function json(status, obj) {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { 'content-type': 'application/json', ...CORS_HEADERS },
+    headers: {
+      'content-type': 'application/json',
+      'cache-control': DEFAULT_CACHE_CONTROL,
+      ...CORS_HEADERS,
+    },
   });
 }
 
@@ -212,12 +226,39 @@ export default {
       const status = (netlifyRes && netlifyRes.statusCode) || 200;
       let body = netlifyRes && netlifyRes.body;
       if (body && typeof body === 'object') body = JSON.stringify(body);
-      return new Response(body || '', {
-        status,
-        headers: { 'content-type': 'application/json', ...CORS_HEADERS },
-      });
+
+      // O adaptador antes montava o header do zero e perdia o que o handler
+      // devolvesse, entao um Cache-Control definido no handler era descartado
+      // silenciosamente. Agora o que o handler manda vale, e o no-store fica
+      // como padrao.
+      const outHeaders = {
+        'content-type': 'application/json',
+        'cache-control': DEFAULT_CACHE_CONTROL,
+        ...CORS_HEADERS,
+      };
+      const returned = netlifyRes && netlifyRes.headers;
+      if (returned && typeof returned === 'object') {
+        for (const [k, v] of Object.entries(returned)) {
+          if (typeof k === 'string' && v !== undefined) outHeaders[k.toLowerCase()] = v;
+        }
+      }
+      const multi = netlifyRes && netlifyRes.multiValueHeaders;
+      if (multi && typeof multi === 'object') {
+        for (const [k, v] of Object.entries(multi)) {
+          if (typeof k === 'string' && v !== undefined) {
+            outHeaders[k.toLowerCase()] = Array.isArray(v) ? v.join(', ') : v;
+          }
+        }
+      }
+
+      return new Response(body || '', { status, headers: outHeaders });
     } catch (err) {
-      return json(500, { error: err.message });
+      const message = (err && err.message) || '';
+      if (SESSION_ERRORS.has(message)) return json(401, { error: message });
+      // Log va para o tail do Worker, que e privado; a resposta nao leva o
+      // detalhe. Antes devolvia err.message direto para o cliente.
+      console.error('worker: erro nao tratado em ' + url.pathname + ': ' + message);
+      return json(500, { error: 'erro interno' });
     }
   },
 };
