@@ -1,9 +1,9 @@
 // Estabelecimentos de terceiros ao redor de uma coordenada, para o mapa de
 // /cliente. A logica de consulta vive em ./_mapPlaces.js.
 //
-// Publico por desenho: dados abertos do OpenStreetMap, sem dado de cliente e
-// sem segredo. O cache-control e publico porque a resposta depende so da URL
-// (lat/lng/raio), que ja faz parte da chave de cache.
+// Publico por desenho: pontos de interesse abertos, sem dado de cliente e sem
+// segredo — a chave da Geoapify nunca sai daqui. A Geoapify nao impoe limite de
+// cache, entao o cache publico de 10 min e seguro.
 import { resolverParametros, buscarLugares } from './_mapPlaces.js';
 
 function responder(body, status, cacheControl) {
@@ -31,9 +31,9 @@ export async function onRequestGet(context) {
     lugares = await buscarLugares(params);
   } catch (err) {
     // O mapa ja mostra os estabelecimentos da plataforma; a camada de terceiros
-    // e complemento. O Overpass fora do ar devolve lista vazia, nao 500, e o
-    // motivo fica no log do servidor.
-    console.error('map-places: overpass indisponivel: ' + ((err && err.message) || err));
+    // e complemento. A Geoapify fora do ar — ou a chave ainda nao cadastrada —
+    // devolve lista vazia, nao 500, e o motivo fica no log do servidor.
+    console.error('map-places: consulta de terceiros falhou: ' + ((err && err.message) || err));
     return responder({ lugares: [], aviso: 'estabelecimentos de terceiros indisponiveis' }, 200, 'no-store');
   }
 

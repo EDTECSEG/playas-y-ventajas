@@ -396,10 +396,11 @@ export default function ClientePage() {
         }
       } catch { /* radar indisponivel nao derruba o mapa */ }
 
-      // Outros comércios da regiao, cadastrados ou nao no nosso sistema (OpenStreetMap, sem custo).
-      // Vai pelo nosso endpoint e nao direto do Overpass: o Overpass nao devolve
-      // Access-Control-Allow-Origin, entao a chamada direta do browser era
-      // bloqueada por CORS e esta camada nunca aparecia no mapa.
+      // Outros comércios da regiao, cadastrados ou nao no nosso sistema.
+      // Vai pelo nosso endpoint e nao direto do OpenStreetMap: na versao anterior
+      // a pagina chamava o Overpass do navegador, que nao devolve
+      // Access-Control-Allow-Origin — a resposta era recusada por CORS, o catch
+      // engolia o erro e esta camada nunca aparecia.
       try {
         const placesRes = await fetchComTimeout(
           `/.netlify/functions/map-places?lat=${encodeURIComponent(latitude)}&lng=${encodeURIComponent(longitude)}`
