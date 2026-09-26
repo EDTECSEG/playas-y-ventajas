@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useLanguage } from '../../lib/LanguageContext';
 import Header from '../components/Header';
+import ModuleSplash from '../components/ModuleSplash';
 import { theme } from '../../lib/theme';
 
 const wrap = { maxWidth: 780, margin: '0 auto', padding: '20px 20px 80px', color: theme.text };
@@ -47,12 +48,14 @@ async function uploadImage(file, folder, sessionToken) {
 
 export default function AdminPage() {
   const { t } = useLanguage();
+  const [splashDone, setSplashDone] = useState(false);
   const [session, setSession] = useState(null);
   const [loginForm, setLoginForm] = useState({ tenantSlug: 'playas-y-ventajas', internalCode: '', pin: '' });
   const [businesses, setBusinesses] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [customerSearch, setCustomerSearch] = useState('');
   const [editingBusiness, setEditingBusiness] = useState(null);
+  const [featuredRanks, setFeaturedRanks] = useState({});
 
   async function saveBusinessEdit() {
     const res = await fetch('/.netlify/functions/admin', {
@@ -103,6 +106,13 @@ export default function AdminPage() {
     const data = await res.json();
     if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
     setBusinesses(data);
+    const fRes = await fetch(`/.netlify/functions/admin?mode=featured`, { headers: { Authorization: `Bearer ${sess.sessionToken}` } });
+    const fData = await fRes.json();
+    if (fRes.ok && Array.isArray(fData)) {
+      const map = {};
+      fData.forEach((r) => { map[r.businessId] = r.featuredRank ?? 0; });
+      setFeaturedRanks(map);
+    }
   }
 
   async function loadBilling(s) {
@@ -160,6 +170,19 @@ export default function AdminPage() {
     loadBusinesses();
   }
 
+  async function setFeatured(b, rank) {
+    const n = Math.max(0, parseInt(rank, 10) || 0);
+    const res = await fetch('/.netlify/functions/admin', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
+      body: JSON.stringify({ action: 'set_featured', businessId: b.id, featuredRank: n }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
+    setFeaturedRanks((prev) => ({ ...prev, [b.id]: n }));
+    setMsg(n > 0 ? `⭐ ${b.name} destacado (posição ${n}).` : `${b.name} sem destaque.`);
+  }
+
   async function resetPassword(b) {
     const res = await fetch('/.netlify/functions/admin', {
       method: 'POST',
@@ -196,6 +219,7 @@ export default function AdminPage() {
   if (!session) {
     return (
       <main style={{ background: theme.bg, minHeight: '100vh' }}>
+        <ModuleSplash visible={!splashDone} onDone={() => setSplashDone(true)} />
         <Header title={t.adminPanel} />
         <div style={wrap}>
         <div style={card}>
@@ -261,7 +285,16 @@ export default function AdminPage() {
             <span style={{ fontSize: 12 }}>Login: {b.ownerInternalCode} · CNPJ: {b.cnpj || '—'} · {b.website || '—'}</span>
             <br />
             <span style={{ fontSize: 12 }}>{b.billingPlan} · {b.billingStatus}</span>
+            {(featuredRanks[b.id] > 0) && <span style={{ fontSize: 12, marginLeft: 8, fontWeight: 800, color: theme.green }}>⭐ Destaque pos. {featuredRanks[b.id]}</span>}
             <div style={{ marginTop: 6 }}>
+              <input
+                style={{ ...input, width: 70 }}
+                type="number" min={0}
+                placeholder="Rank"
+                value={featuredRanks[b.id] ?? 0}
+                onChange={(e) => setFeaturedRanks((prev) => ({ ...prev, [b.id]: e.target.value }))}
+              />
+              <button style={smallBtn} onClick={() => setFeatured(b, featuredRanks[b.id])}>⭐ {t.featured}</button>
               <button style={smallBtn} onClick={() => toggleActive(b)}>{b.isActive ? t.deactivate : t.active}</button>
               <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'ACTIVE', b.monthlyFeeCents)}>{t.activateBilling}</button>
               <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'SUSPENDED', b.monthlyFeeCents)}>{t.suspend}</button>

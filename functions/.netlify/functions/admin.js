@@ -14,6 +14,11 @@ export async function onRequestGet(context) {
       if (error) return json({ error: error.message }, 400);
       return json(data);
     }
+    if (mode === 'featured') {
+      const { data, error } = await supabase.rpc('admin_featured_ranks', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
+      if (error) return json({ error: error.message }, 400);
+      return json(data);
+    }
     if (mode === 'customers') {
       const search = url.searchParams.get('search');
       const { data, error } = await supabase.rpc('admin_list_customers', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_search: search || null });
@@ -50,6 +55,14 @@ export async function onRequestPost(context) {
     if (body.action === 'toggle_business') {
       const { error } = await supabase.rpc('admin_toggle_business', {
         p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_business_id: body.businessId, p_is_active: body.isActive,
+      });
+      if (error) return json({ error: (error.message || '').split(':')[0].trim() }, 400);
+      return json({ ok: true });
+    }
+    if (body.action === 'set_featured') {
+      const { error } = await supabase.rpc('admin_set_featured', {
+        p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_business_id: body.businessId,
+        p_featured_rank: body.featuredRank,
       });
       if (error) return json({ error: (error.message || '').split(':')[0].trim() }, 400);
       return json({ ok: true });

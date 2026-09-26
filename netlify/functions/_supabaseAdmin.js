@@ -47,4 +47,36 @@ function verifyCustomerToken(customerId, token) {
   return timingSafeEqual(a, b);
 }
 
-module.exports = { getSupabaseAdminClient, resolveSession, extractSessionToken, buildCustomerToken, verifyCustomerToken };
+// Erros vindos de `raise exception 'CODIGO: detalhe'` no Postgres chegam como
+// message. O codigo e a parte antes do primeiro ':' e e o unico texto seguro
+// de repassar ao cliente — o resto pode carregar detalhe interno.
+function rpcErrorCode(error) {
+  return String((error && error.message) || '').split(':')[0].trim();
+}
+
+// HTTP status por codigo de regra de negocio. Sem isto, tudo vira 400 e o
+// cliente nao distingue "digitei errado" de "espera 1 hora" de "sem permissao".
+const RPC_ERROR_STATUS = {
+  REGISTRATION_RATE_LIMITED: 429,
+  PHONE_ALREADY_REGISTERED: 409,
+  EMAIL_ALREADY_REGISTERED: 409,
+  INVITE_BUSINESS_MISMATCH: 409,
+  INVITE_EXHAUSTED: 409,
+  PIN_ALREADY_SET: 409,
+  TOKEN_ALREADY_USED: 409,
+  NOT_APPROVED: 403,
+  FORBIDDEN: 403,
+  AUTH_REQUIRED: 401,
+  TOKEN_INVALID: 401,
+  SESSION_EXPIRED: 401,
+  DRIVER_NOT_FOUND: 404,
+  BUSINESS_NOT_FOUND: 404,
+  INVITE_INVALID: 404,
+  DOCUMENT_NOT_FOUND: 404,
+};
+
+function rpcErrorStatus(error) {
+  return RPC_ERROR_STATUS[rpcErrorCode(error)] || 400;
+}
+
+module.exports = { getSupabaseAdminClient, resolveSession, extractSessionToken, buildCustomerToken, verifyCustomerToken, rpcErrorCode, rpcErrorStatus };

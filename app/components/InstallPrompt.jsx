@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { useLanguage } from '../../lib/LanguageContext';
 
 export default function InstallPrompt() {
   const { t } = useLanguage();
+  const pathname = usePathname();
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
   const [showIosHelp, setShowIosHelp] = useState(false);
@@ -37,10 +39,14 @@ export default function InstallPrompt() {
     setShowIosHelp(true); // fallback generico se o navegador nao suportar o prompt automatico
   }
 
+  const moduleLabel = pathname?.startsWith('/empresa') ? t.installBusiness
+    : pathname?.startsWith('/admin') ? t.installAdmin
+    : t.installClient;
+
   return (
     <div style={{ background: '#F2C14E', color: '#0B6E4F', padding: '8px 16px', textAlign: 'center', fontSize: 13, fontWeight: 600 }}>
       📲 <button onClick={handleClick} style={{ background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', color: '#0B6E4F', fontWeight: 700, fontSize: 13 }}>
-        {t.install}
+        {moduleLabel}
       </button>
       {showIosHelp && (
         <div style={{ marginTop: 6, fontWeight: 400 }}>

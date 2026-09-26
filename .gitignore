@@ -4,3 +4,25 @@ out/
 /.netlify/
 .env
 .env.local
+.env.*
+!.env.example
+
+# Segredos: .dev.vars carrega SUPABASE_SERVICE_ROLE_KEY e RESEND_API_KEY.
+# Sem esta regra, um `git add .` commitaria a service role do banco.
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# .wrangler/ e .netlify/ contem bundles com a anon key embutida e sourcemaps.
+.wrangler/
+
+# Scripts temporarios de QA (contem ids de sessao em disco).
+_tmp-*
+
+# Lixo de staging/build. Nao e codigo e nao deve ser versionado:
+# .staging-bk17/ = backup de uma leva de staging anterior
+# _worker.bundle = bundle gerado do _worker.js (artefato de build)
+# tmp-*.log      = log de dev/build local
+.staging-bk*/
+_worker.bundle
+tmp-*.log

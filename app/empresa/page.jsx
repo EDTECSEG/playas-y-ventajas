@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { useLanguage } from '../../lib/LanguageContext';
 import Header from '../components/Header';
+import ModuleSplash from '../components/ModuleSplash';
 import { theme } from '../../lib/theme';
 
 function loadQrScanner() {
@@ -42,6 +43,7 @@ const smallBtn = { ...btn, padding: '5px 12px', fontSize: 12 };
 
 export default function EmpresaPage() {
   const { t } = useLanguage();
+  const [splashDone, setSplashDone] = useState(false);
   const [session, setSession] = useState(null);
   const [form, setForm] = useState({ tenantSlug: 'playas-y-ventajas', internalCode: '', pin: '' });
   const [dash, setDash] = useState(null);
@@ -79,6 +81,82 @@ export default function EmpresaPage() {
     setMsg(`Empresa cadastrada! Use o código "${data.internalCode}" e sua senha para entrar.`);
     setForm({ ...form, internalCode: data.internalCode });
     setAuthMode('login');
+  }
+
+  const [emailStep, setEmailStep] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [emailLogin, setEmailLogin] = useState({ email: '', emailOtp: '' });
+  const [regMode, setRegMode] = useState('pin');
+  const [regOtpSent, setRegOtpSent] = useState(false);
+  const [regOtp, setRegOtp] = useState('');
+
+  async function sendEmailCode() {
+    setMsg('');
+    if (!emailLogin.email) { setMsg('Informe seu e-mail.'); return; }
+    const res = await fetch('/.netlify/functions/send-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenantSlug: form.tenantSlug || 'playas-y-ventajas', email: emailLogin.email }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setMsg(data.error ? `Erro: ${data.error}` : 'Não foi possível enviar o código.'); return; }
+    setOtpSent(true);
+    setMsg('Código enviado! Confira seu e-mail (inclusive o lixo eletrônico).');
+  }
+
+  async function enterWithEmail() {
+    setMsg('');
+    if (!emailLogin.email) { setMsg('Informe seu e-mail.'); return; }
+    if (!emailLogin.emailOtp) { setMsg('Informe o código de 6 dígitos recebido por e-mail.'); return; }
+    const res = await fetch('/.netlify/functions/login-by-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenantSlug: form.tenantSlug || 'playas-y-ventajas', email: emailLogin.email, emailOtp: emailLogin.emailOtp }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setMsg(data.error ? `Erro: ${data.error}` : 'Código inválido ou expirado.'); return; }
+    setSession(data);
+    setMsg('Login por e-mail realizado com sucesso!');
+    loadDashboard(data);
+    loadStats(data);
+  }
+
+  async function sendRegisterEmailCode() {
+    setMsg('');
+    if (!regForm.email) { setMsg('Informe seu e-mail.'); return; }
+    const res = await fetch('/.netlify/functions/send-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: regForm.email, name: regForm.name }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setMsg(data.error ? `Erro: ${data.error}` : 'Não foi possível enviar o código.'); return; }
+    setRegOtpSent(true);
+    setMsg('Código enviado! Confira seu e-mail (inclusive o lixo eletrônico).');
+  }
+
+  async function registerBusinessByEmail() {
+    if (regForm.name.length < 2) { setMsg('Informe o nome da empresa.'); return; }
+    if (regForm.internalCode.length < 2) { setMsg('Informe um código de login.'); return; }
+    if (regForm.pin.length < 6) { setMsg('A senha precisa ter no mínimo 6 caracteres.'); return; }
+    if (regForm.pin !== regForm.pin2) { setMsg('As senhas não conferem.'); return; }
+    if (!regForm.email) { setMsg('Informe seu e-mail.'); return; }
+    if (!regOtp) { setMsg('Informe o código de 6 dígitos recebido por e-mail.'); return; }
+    const res = await fetch('/.netlify/functions/register-business-by-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenantSlug: regForm.tenantSlug, ...regForm, emailOtp: regOtp }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setMsg(data.error === 'CODE_TAKEN' ? 'Este código de login já está em uso. Escolha outro.' : `Erro: ${data.error}`);
+      return;
+    }
+    setMsg(`Empresa cadastrada! Use o código "${data.internalCode}" e sua senha para entrar.`);
+    setForm({ ...form, internalCode: data.internalCode });
+    setAuthMode('login');
+    setRegOtpSent(false);
+    setRegOtp('');
   }
 
   function useRegisterLocation() {
@@ -336,6 +414,7 @@ export default function EmpresaPage() {
 
   return (
     <main style={{ background: theme.bg, minHeight: '100vh' }}>
+      <ModuleSplash visible={!splashDone} onDone={() => setSplashDone(true)} />
       <Header title={t.businessPanel} right={session && (
         <button style={{ ...smallBtn, background: '#0B6E4F', color: '#FFFFFF', border: '1px solid rgba(255,255,255,0.6)' }} onClick={() => setSession(null)}>{t.logout}</button>
       )} />
@@ -349,16 +428,57 @@ export default function EmpresaPage() {
           </div>
 
           {authMode === 'login' ? (
+            <>
             <div style={card}>
               <h3>{t.login}</h3>
               <input style={input} placeholder={t.companyCode} value={form.internalCode} onChange={(e) => setForm({ ...form, internalCode: e.target.value })} />
               <input style={input} placeholder={t.password} value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} />
               <button style={btn} onClick={login}>{t.enter}</button>
             </div>
+            {!emailStep ? (
+              <button style={{ ...btn, background: theme.border, color: theme.text }} onClick={() => { setEmailStep('ask'); setMsg(''); }}>{t.enterWithEmail ?? 'Entrar com e-mail'}</button>
+            ) : (
+              <div style={card}>
+                <h3>{t.enterWithEmail ?? 'Entrar com e-mail'}</h3>
+                <p style={{ fontSize: 12 }}>{t.emailOtpHint ?? 'Enviaremos um código de 6 dígitos para o seu e-mail cadastrado.'}</p>
+                <input style={input} type="email" placeholder={t.emailPlaceholder ?? 'seu@email.com'} value={emailLogin.email} onChange={(e) => setEmailLogin({ ...emailLogin, email: e.target.value })} />
+                {!otpSent ? (
+                  <>
+                    <button style={btn} onClick={sendEmailCode}>{t.sendEmailCodeBtn ?? 'Enviar código'}</button>
+                    <button style={{ ...btn, background: theme.border, color: theme.text }} onClick={() => setEmailStep(null)}>{t.cancel ?? 'Cancelar'}</button>
+                  </>
+                ) : (
+                  <>
+                    <input style={input} placeholder={`${t.emailOtpPlaceholder ?? 'Código de 6 dígitos'}`} value={emailLogin.emailOtp} onChange={(e) => setEmailLogin({ ...emailLogin, emailOtp: e.target.value })} />
+                    <button style={btn} onClick={enterWithEmail}>{t.enterWithEmailBtn ?? 'Entrar'}</button>
+                    <button style={{ ...btn, background: theme.border, color: theme.text }} onClick={() => { setOtpSent(false); setEmailStep('ask'); }}>{t.resendCode ?? 'Reenviar código'}</button>
+                    <button style={{ ...btn, background: theme.border, color: theme.text }} onClick={() => { setOtpSent(false); setEmailStep(null); }}>{t.cancel ?? 'Cancelar'}</button>
+                  </>
+                )}
+              </div>
+            )}
+            </>
           ) : (
             <div style={card}>
               <h3>{t.authRegisterTitle}</h3>
               <p style={{ fontSize: 13 }}>{t.authRegisterSub}</p>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                <button style={regMode === 'pin' ? smallBtn : { ...smallBtn, background: theme.border, color: theme.text }} onClick={() => { setRegMode('pin'); setMsg(''); }}>{t.registerWithCode ?? 'Código + senha'}</button>
+                <button style={regMode === 'email' ? smallBtn : { ...smallBtn, background: theme.border, color: theme.text }} onClick={() => { setRegMode('email'); setMsg(''); }}>{t.registerWithEmail ?? 'E-mail'}</button>
+              </div>
+              {regMode === 'email' && (
+                <div style={{ padding: 10, background: theme.bg, borderRadius: 8, marginBottom: 10 }}>
+                  <p style={{ fontSize: 12, marginTop: 0 }}>{t.emailRegHint ?? 'Enviaremos um código de 6 dígitos para o e-mail informado. Ele valida a propriedade do e-mail.'}</p>
+                  {!regOtpSent ? (
+                    <button style={smallBtn} onClick={sendRegisterEmailCode}>{t.sendEmailCodeBtn ?? 'Enviar código'}</button>
+                  ) : (
+                    <>
+                      <input style={input} placeholder={t.emailOtpPlaceholder ?? 'Código de 6 dígitos'} value={regOtp} onChange={(e) => setRegOtp(e.target.value)} />
+                      <button style={smallBtn} onClick={() => { setRegOtpSent(false); setRegOtp(''); }}>{t.resendCode ?? 'Reenviar código'}</button>
+                    </>
+                  )}
+                </div>
+              )}
               <input style={input} placeholder={t.businessName} value={regForm.name} onChange={(e) => setRegForm({ ...regForm, name: e.target.value })} />
               <select style={input} value={regForm.category} onChange={(e) => setRegForm({ ...regForm, category: e.target.value })}>
                 <option value="passeio">Passeio</option><option value="hotel">Hotel</option><option value="pousada">Pousada</option>
@@ -384,7 +504,7 @@ export default function EmpresaPage() {
               <input style={input} placeholder={t.pinMin} type="password" value={regForm.pin} onChange={(e) => setRegForm({ ...regForm, pin: e.target.value })} />
               <input style={input} placeholder={t.confirmPin} type="password" value={regForm.pin2} onChange={(e) => setRegForm({ ...regForm, pin2: e.target.value })} />
               <br />
-              <button style={btn} onClick={registerBusiness}>{t.authRegisterButton}</button>
+              <button style={btn} onClick={regMode === 'email' ? registerBusinessByEmail : registerBusiness}>{t.authRegisterButton}</button>
             </div>
           )}
         </>

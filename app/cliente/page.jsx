@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useRef, useState } from 'react';
 import { useLanguage } from '../../lib/LanguageContext';
@@ -44,8 +44,23 @@ export default function ClientePage() {
   const [name, setName] = useState('');
   const [instagram, setInstagram] = useState('');
   const [email, setEmail] = useState('');
+  const [emailCode, setEmailCode] = useState('');
+  const [emailCodeSent, setEmailCodeSent] = useState(false);
+  const requestEmailCode = async () => {
+    setMsg(''); setMsg('Enviaremos um codigo de 6 digitos para o seu email.');
+    try {
+      const res = await fetch('/.netlify/functions/send-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+      const data = await res.json();
+      if (res.ok) { setEmailCodeSent(true); setMsg('Codigo enviado! Confira seu email (inclusive o lixo eletronico).'); }
+      else { setMsg('Erro ao enviar codigo: ' + (data.error || 'tente novamente')); }
+    } catch (err) { setMsg('Falha ao enviar codigo: ' + err.message); }
+  };
+  const [emailVerified, setEmailVerified] = useState(false);
   const [customerId, setCustomerId] = useState(null);
   const [offers, setOffers] = useState([]);
+  const [cities, setCities] = useState([]);
+  const [filter, setFilter] = useState({ city: '', category: '', radiusKm: null, byDistance: false });
+  const [filterMsg, setFilterMsg] = useState('');
   const [myCoupons, setMyCoupons] = useState([]);
   const [couponFilter, setCouponFilter] = useState('available');
   const [justClaimed, setJustClaimed] = useState(null);
@@ -66,11 +81,38 @@ export default function ClientePage() {
       loadMyCoupons(s.customerId, s.customerToken);
     }
     loadOffers();
+    loadCityAndCategoryOptions();
   }, []);
 
   async function loadOffers() {
-    const res = await fetch(`/.netlify/functions/offers?tenantId=${TENANT_ID}`);
+    const params = new URLSearchParams({ tenantId: TENANT_ID });
+    if (filter.city) params.set('city', filter.city);
+    if (filter.category) params.set('category', filter.category);
+    if (filter.byDistance && filter.lat != null && filter.lng != null) {
+      params.set('lat', filter.lat);
+      params.set('lng', filter.lng);
+      params.set('radiusKm', filter.radiusKm || 50);
+    }
+    const res = await fetch(`/.netlify/functions/offers?${params.toString()}`);
     setOffers(await res.json());
+  }
+
+  async function loadCityAndCategoryOptions() {
+    if (cities.length > 0) {
+      setFilter((f) => ({ ...f, categories: Array.from(new Set(offers.map((o) => o.category).filter(Boolean))) }));
+      return;
+    }
+    try {
+      const res = await fetch(`/.netlify/functions/offers?tenantId=${TENANT_ID}&mode=cities`);
+      if (res.ok) {
+        const data = await res.json();
+        const opts = Array.isArray(data) ? data : (Array.isArray(data.cities) ? data.cities : []);
+        setCities(opts);
+        if (opts.length === 1) {
+          setFilter((f) => ({ ...f, city: opts[0], categories: Array.from(new Set(offers.map((o) => o.category).filter(Boolean))) }));
+        }
+      }
+    } catch { /* chips opcionais: ofertas continuam carregando mesmo se isso falhar */ }
   }
 
   async function loadMyCoupons(cid, token) {
@@ -129,8 +171,14 @@ export default function ClientePage() {
     localStorage.setItem('pyv_coupon_logos', JSON.stringify(logos));
     setCustomerId(data.customerId);
     setJustClaimed({ ...data, businessName: offer.businessName, title: offer.title, benefitValue: offer.benefitValue, logoUrl: offer.logoUrl || null });
-    setMsg('Cupom resgatado! Guarde o QR abaixo — mostre no estabelecimento.');
     loadMyCoupons(data.customerId);
+
+    // Mensagem honesta: o resgate ja esta garantido; o WhatsApp e o canal.
+    const bonus = data.referral && data.referral.converted;
+    let msg = 'Cupom resgatado! Guarde o QR abaixo — mostre no estabelecimento.';
+    if (data.whatsappUrl) msg += ' Toque em WhatsApp para mandar o código.';
+    if (bonus) msg += ' Você ganhou um bônus de indicação!';
+    setMsg(msg);
   }
 
   useEffect(() => {
@@ -384,11 +432,66 @@ export default function ClientePage() {
           }}>
             {justClaimed.publicId}
           </p>
+          {justClaimed.shortCode && (
+            <p style={{ fontSize: 13, color: theme.textMuted, margin: '8px 0 0' }}>
+              Código curto: <strong style={{ letterSpacing: 2 }}>{justClaimed.shortCode}</strong>
+            </p>
+          )}
+
+          {/* WhatsApp: link wa.me (gratuito, sem API). O usuario so toca em enviar. */}
+          {justClaimed.whatsappUrl && (
+            <a
+              href={justClaimed.whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                marginTop: 12, padding: '11px 14px', borderRadius: 10, textDecoration: 'none',
+                background: '#128C4A', color: '#fff', fontWeight: 700, fontSize: 14,
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.7.2-.2.3-.7 1-.9 1.1-.2.2-.3.2-.6.1-1.7-.9-2.8-1.6-3.9-3.5-.3-.5.3-.5.8-1.5.1-.2 0-.4 0-.5s-.7-1.6-.9-2.2c-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5 4.4 1.9.8 2.6.9 3.5.7.6-.1 1.7-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.2-.3-.3-.6-.4zM12 2C6.5 2 2 6.5 2 12c0 1.8.5 3.4 1.3 4.9L2 22l5.3-1.3c1.4.8 3 1.2 4.7 1.2 5.5 0 10-4.5 10-10S17.5 2 12 2zm0 18.2c-1.5 0-3-.4-4.3-1.2l-.3-.2-3.1.8.8-3-.2-.3c-.8-1.3-1.2-2.8-1.2-4.3 0-4.5 3.7-8.2 8.3-8.2s8.2 3.7 8.2 8.2-3.6 8.2-8.2 8.2z" />
+              </svg>
+              Enviar cupom pelo WhatsApp
+            </a>
+          )}
+
+          {justClaimed.referral && justClaimed.referral.converted && (
+            <p style={{ fontSize: 12, color: theme.greenDark, margin: '10px 0 0' }}>
+              Você foi indicado por um parceiro — seu bônus de boas-vindas já está creditado.
+            </p>
+          )}
         </div>
       )}
 
       <div style={card}>
         <h3 style={{ marginTop: 0 }}>{customerId && name ? `${t.availableOffers} · ${name}` : t.availableOffers}</h3>
+        {cities.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '0 0 12px' }}>
+            <button
+              style={{
+                ...smallBtn, borderRadius: 999, padding: '5px 12px', cursor: 'pointer',
+                background: filter.city === '' ? theme.gold : theme.bg,
+                color: filter.city === '' ? theme.greenDark : theme.text,
+                border: `1px solid ${filter.city === '' ? theme.gold : theme.border}`,
+              }}
+              onClick={() => { setFilter((f) => ({ ...f, city: '' })); loadOffers(); }}
+            >{t.allCities}</button>
+            {cities.map((c) => (
+              <button
+                key={c}
+                style={{
+                  ...smallBtn, borderRadius: 999, padding: '5px 12px', cursor: 'pointer',
+                  background: filter.city === c ? theme.gold : theme.bg,
+                  color: filter.city === c ? theme.greenDark : theme.text,
+                  border: `1px solid ${filter.city === c ? theme.gold : theme.border}`,
+                }}
+                onClick={() => { setFilter((f) => ({ ...f, city: c })); loadOffers(); }}
+              >{c}</button>
+            ))}
+          </div>
+        )}
         {offers.length === 0 ? <p>{t.noOffers}</p> : offers.map((o) => (
           <div key={o.templateId} className="offer-row" style={{
             display: 'flex', alignItems: 'center', gap: 14, border: `1px solid ${theme.border}`,
@@ -478,3 +581,4 @@ export default function ClientePage() {
     </main>
   );
 }
+

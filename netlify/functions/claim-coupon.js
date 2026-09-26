@@ -1,4 +1,36 @@
 const { getSupabaseAdminClient, buildCustomerToken } = require('./_supabaseAdmin');
+const { buildCouponMessage, buildWaLink } = require('./_wa');
+
+// Canon CJS. Espelho ESM: functions/.netlify/functions/claim-coupon.js
+//
+// DECISAO DO DONO (setembro/2026): a comunicacao com o cliente e por WHATSAPP,
+// nao por email. Motivo: o Resend esta em modo de teste — o remetente
+// onboarding@resend.dev so entrega para o proprio titular da conta, entao
+// nenhum cliente real receberia nada. O wa.me nao depende de dominio, de
+// plano pago nem de aprovacao da Meta.
+//
+// ORDEM DELIBERADA: a claim_coupon (dinheiro: estoque, limite, hash) roda
+// PRIMEIRO e e intocada. WhatsApp e indicacao sao extras best-effort: se
+// falharem, o cliente ja tem o cupom e a resposta e 200.
+//
+// NOTA HISTORICA: a versao anterior montava um email com data.title /
+// data.businessName, mas a RPC claim_coupon so devolve (couponId, publicId,
+// rawToken, shortCode, customerId) — esses campos eram SEMPRE undefined, ou
+// seja, o email sairia em branco. O contexto agora vem do banco.
+async function loadOfferContext(supabase, templateId) {
+  const { data, error } = await supabase
+    .from('coupon_templates')
+    .select('id, title, business_id, businesses(name, phone)')
+    .eq('id', templateId)
+    .maybeSingle();
+  if (error || !data) return null;
+  const biz = Array.isArray(data.businesses) ? data.businesses[0] : data.businesses;
+  return {
+    title: data.title || 'Seu cupom',
+    businessName: (biz && biz.name) || '',
+    businessPhone: (biz && biz.phone) || null,
+  };
+}
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return { statusCode: 405, body: '{}' };
@@ -6,24 +38,45 @@ exports.handler = async (event) => {
     const { tenantId, templateId, phone, name, instagram, email } = JSON.parse(event.body || '{}');
     if (!tenantId || !templateId || !phone) return { statusCode: 400, body: JSON.stringify({ error: 'tenantId, templateId, phone obrigatórios' }) };
     const supabase = getSupabaseAdminClient();
+
+    // ---------- CAMINHO CRITICO (dinheiro). Nao tocar. ----------
     const { data, error } = await supabase.rpc('claim_coupon', {
       p_tenant_id: tenantId, p_template_id: templateId, p_customer_phone: phone, p_customer_name: name || '',
       p_customer_instagram: instagram || null, p_customer_email: email || null,
     });
     if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
-    if (email && data?.publicId) {
-      const { sendEmail } = require('./_resend');
-      const html = `
-        <div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px;border:1px solid #E5E5E5;border-radius:12px">
-          <img src="${data.logoUrl || ''}" alt="${data.businessName || ''}" style="height:40px;border-radius:8px;margin-bottom:10px" />
-          <h2 style="margin:0 0 6px;color:#0A6E4F">🎟️ ${data.title || 'Seu cupom'}</h2>
-          <p style="margin:0 0 16px;color:#555;font-size:14px">${data.businessName || ''}${data.benefitValue != null ? ` · ${Number(data.benefitValue)}% OFF` : ''}</p>
-          <div style="background:#FDF3D7;border:1px dashed #E8C46A;border-radius:8;padding:14px;text-align:center;font-family:monospace;font-size:20px;font-weight:800;letter-spacing:3px;color:#0B6E4F">${data.publicId}</div>
-          <p style="margin:16px 0 0;font-size:12px;color:#999">Mostre este código no estabelecimento para validar seu cupom.</p>
-        </div>`;
-      await sendEmail({ to: email, subject: `🎟️ ${data.title || 'Seu cupom'}`, html });
+    // ---------- FIM DO CAMINHO CRITICO ----------
+
+    const publicId = data.publicId;
+    const customerId = data.customerId;
+    const extras = { whatsappUrl: null, referral: null, notes: [] };
+
+    // Contexto vem do banco, nao do navegador: senao o cliente poderia
+    // escrever qualquer coisa na mensagem em nome do estabelecimento.
+    let ctx = null;
+    try { ctx = await loadOfferContext(supabase, templateId); }
+    catch (e) { extras.notes.push('contexto indisponivel'); }
+
+    try {
+      const { data: ref, error: refErr } = await supabase.rpc('try_referral_convert', {
+        p_tenant_id: tenantId, p_customer_id: customerId,
+      });
+      if (!refErr) extras.referral = { converted: ref === true, welcomeCouponId: null };
+    } catch (e) { /* segue: resgate ja aconteceu */ }
+
+    if (ctx) {
+      try {
+        const message = buildCouponMessage({
+          publicId, businessName: ctx.businessName, title: ctx.title, shortCode: data.shortCode,
+        });
+        extras.whatsappUrl = buildWaLink({ phone: ctx.businessPhone, message, fallbackMessage: message });
+      } catch (e) { /* opcional */ }
     }
-    return { statusCode: 200, body: JSON.stringify({ ...data, customerToken: buildCustomerToken(data.customerId) }) };
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ ...data, customerToken: buildCustomerToken(customerId), ...extras }),
+    };
   } catch (err) {
     return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }
