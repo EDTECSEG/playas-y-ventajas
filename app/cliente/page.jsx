@@ -58,6 +58,12 @@ export default function ClientePage() {
   const [emailVerified, setEmailVerified] = useState(false);
   const [customerId, setCustomerId] = useState(null);
   const [offers, setOffers] = useState([]);
+  // Separado de msg de proposito: msg e feedback de acao (cupom resgatado,
+  // cadastro feito) e e sobrescrita o tempo todo. Aqui o que importa e nao
+  // mentir: "nao ha ofertas" e "nao consegui buscar as ofertas" sao coisas
+  // diferentes, e mostrar a primeira quando o servidor esta quebrado faz o
+  // consumidor achar que a loja sumiu.
+  const [offersErro, setOffersErro] = useState('');
   const [cities, setCities] = useState([]);
   const [filter, setFilter] = useState({ city: '', category: '', radiusKm: null, byDistance: false });
   const [filterMsg, setFilterMsg] = useState('');
@@ -93,8 +99,30 @@ export default function ClientePage() {
       params.set('lng', filter.lng);
       params.set('radiusKm', filter.radiusKm || 50);
     }
-    const res = await fetch(`/.netlify/functions/offers?${params.toString()}`);
-    setOffers(await res.json());
+    // O endpoint devolve array no caminho feliz, mas em erro devolve
+    // {"error": ...} com 500. setOffers com esse objeto chegava ao render,
+    // onde offers.length e undefined e offers.map estoura: a pagina inteira
+    // caia em "Application error" em vez de mostrar a lista. Erro de rede e
+    // resposta fora do esperado caem no mesmo caminho.
+    try {
+      const res = await fetch(`/.netlify/functions/offers?${params.toString()}`);
+      if (!res.ok) {
+        setOffers([]);
+        setOffersErro('Nao foi possivel carregar as ofertas. Tente de novo em instantes.');
+        return;
+      }
+      const data = await res.json();
+      if (!Array.isArray(data)) {
+        setOffers([]);
+        setOffersErro('Nao foi possivel carregar as ofertas. Tente de novo em instantes.');
+        return;
+      }
+      setOffers(data);
+      setOffersErro('');
+    } catch (err) {
+      setOffers([]);
+      setOffersErro('Nao foi possivel carregar as ofertas. Verifique sua conexao.');
+    }
   }
 
   async function loadCityAndCategoryOptions() {
@@ -492,7 +520,9 @@ export default function ClientePage() {
             ))}
           </div>
         )}
-        {offers.length === 0 ? <p>{t.noOffers}</p> : offers.map((o) => (
+        {offersErro ? (
+          <p style={{ color: '#B42318', margin: 0 }}>{offersErro}</p>
+        ) : offers.length === 0 ? <p>{t.noOffers}</p> : offers.map((o) => (
           <div key={o.templateId} className="offer-row" style={{
             display: 'flex', alignItems: 'center', gap: 14, border: `1px solid ${theme.border}`,
             borderRadius: 12, padding: 12, marginBottom: 10, background: theme.bg,
