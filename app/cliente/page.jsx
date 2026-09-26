@@ -13,6 +13,18 @@ const smallBtn = { ...btn, padding: '5px 12px', fontSize: 12 };
 
 const TENANT_ID = '0dc57eeb-46c8-47ac-aad4-640d9d59e7b9';
 
+// Uma requisicao travada nao rejeita: o fetch fica pendurado para sempre e a
+// tela mostrava "Nenhuma oferta" sem explicacao, como se o banco estivesse
+// vazio. Cortar no tempo converte o travamento no mesmo caminho de erro de
+// rede, que a tela sabe exibir.
+const OFERTAS_TIMEOUT_MS = 15000;
+
+function fetchComTimeout(url, options) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), OFERTAS_TIMEOUT_MS);
+  return fetch(url, { ...options, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
+
 function loadQrCode() {
   return new Promise((resolve, reject) => {
     if (window.QRCode) return resolve(window.QRCode);
@@ -84,7 +96,7 @@ export default function ClientePage() {
     if (saved) {
       const s = JSON.parse(saved);
       setPhone(s.phone); setName(s.name); setInstagram(s.instagram || ''); setEmail(s.email || ''); setCustomerId(s.customerId);
-      loadMyCoupons(s.customerId, s.customerToken);
+      loadMyCoupons(s.customerId, s.customerToken).catch(() => { /* cupons e opcional: nao derruba a tela */ });
     }
     loadOffers();
     loadCityAndCategoryOptions();
@@ -105,7 +117,7 @@ export default function ClientePage() {
     // caia em "Application error" em vez de mostrar a lista. Erro de rede e
     // resposta fora do esperado caem no mesmo caminho.
     try {
-      const res = await fetch(`/.netlify/functions/offers?${params.toString()}`);
+      const res = await fetchComTimeout(`/.netlify/functions/offers?${params.toString()}`);
       if (!res.ok) {
         setOffers([]);
         setOffersErro('Nao foi possivel carregar as ofertas. Tente de novo em instantes.');

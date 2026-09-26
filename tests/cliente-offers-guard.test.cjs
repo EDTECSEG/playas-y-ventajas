@@ -72,3 +72,36 @@ test('loadOffers trata erro de rede sem rejeitar', () => {
   assert.ok(corpo.includes('try {'), 'loadOffers precisa de try/catch para erro de rede');
   assert.ok(corpo.includes('catch'), 'loadOffers precisa tratar o erro de rede');
 });
+
+test('loadOffers aborta requisicao pendurada em vez de esperar para sempre', () => {
+  // Requisicao que nao responde nao rejeita: sem timeout o fetch fica
+  // pendurado indefinidamente e a tela mostra "Nenhuma oferta", fazendo o
+  // usuario achar que a loja esta vazia. Foi assim que o travamento do
+  // endpoint passou despercebido.
+  assert.ok(
+    /function fetchComTimeout\(/.test(src) && /ctrl\.abort\(\)/.test(src),
+    'fetchComTimeout precisa abortar via AbortController',
+  );
+  assert.ok(
+    /async function loadOffers\(\)[\s\S]*?await fetchComTimeout\(/.test(src),
+    'loadOffers precisa passar pelo fetch com timeout, nao pelo fetch cru',
+  );
+  assert.ok(
+    /const res = await fetch\(`\/\.netlify\/functions\/offers\?\$\{params\.toString\(\)\}`\)/.test(src) === false,
+    'voltou o fetch sem timeout em loadOffers',
+  );
+  assert.ok(
+    /clearTimeout\(timer\)/.test(src),
+    'o timer do timeout precisa ser limpo, senao vaza a cada requisicao',
+  );
+});
+
+test('loadMyCoupons e chamada com catch, sem unhandled rejection', () => {
+  // loadMyCoupons faz fetch sem try/catch e era disparada sem await: uma falha
+  // virava unhandled rejection e nao afetava a tela, mas poluia o console e
+  // escondia falha real de cupons.
+  assert.ok(
+    /loadMyCoupons\([^)]*\)\.catch\(/.test(src),
+    'a chamada de loadMyCoupons precisa de .catch()',
+  );
+});

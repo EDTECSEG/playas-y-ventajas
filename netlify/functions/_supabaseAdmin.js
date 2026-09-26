@@ -1,13 +1,23 @@
 const { createClient } = require('@supabase/supabase-js');
 const { createHmac, timingSafeEqual } = require('crypto');
 
+// O runtime mantem o isolate vivo entre requisicoes. Recriar o cliente a cada
+// chamada refazia resolucao de DNS/TLS e desperdicava o calor do modulo; sob
+// concorrencia isso foi um dos fatores das travas. O bundle e um unico arquivo
+// (scripts/bundle-worker.mjs), entao o escopo de modulo e compartilhado por
+// todos os handlers: guardar aqui reaproveita a instancia sem vazar estado
+// entre requisicoes.
+let cachedClient = null;
+
 function getSupabaseAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) {
     throw new Error('Env vars ausentes: NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY');
   }
-  return createClient(url, serviceKey);
+  if (cachedClient) return cachedClient;
+  cachedClient = createClient(url, serviceKey);
+  return cachedClient;
 }
 
 // Resolve o ator REAL a partir do token de sessao - nunca confiar em userId/tenantId
