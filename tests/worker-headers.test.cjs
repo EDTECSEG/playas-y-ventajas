@@ -23,11 +23,15 @@ function get(worker, pathname, env) {
   return worker.fetch(new Request('https://exemplo.pages.dev' + pathname), env || {});
 }
 
-test('toda resposta leva cache-control no-store', { skip: !fs.existsSync(BUNDLE) && 'bundle ainda nao construido (rode npm run build)' }, async () => {
+test('toda resposta JSON do adaptador leva cache-control no-store', { skip: !fs.existsSync(BUNDLE) && 'bundle ainda nao construido (rode npm run build)' }, async () => {
   const mod = await loadBundle();
   const worker = mod.default;
 
-  for (const rota of ['/login', '/.netlify/functions/nao-existe-xyz', '/.netlify/functions/__envdiag']) {
+  // So as respostas que o Worker monta. Paginas e assets sao delegados para o
+  // env.ASSETS e trazem o cache proprio do Pages, que e o certo: no-store em
+  // HTML estatico nao faz sentido. Este teste ja afirmava no-store para /login
+  // e so passava porque /login caia no 404 de rota desconhecida.
+  for (const rota of ['/.netlify/functions/nao-existe-xyz', '/.netlify/functions/__envdiag']) {
     const res = await get(worker, rota);
     assert.strictEqual(
       res.headers.get('cache-control'),

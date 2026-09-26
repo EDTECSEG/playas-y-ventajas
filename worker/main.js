@@ -202,7 +202,33 @@ export default {
       const path = url.pathname;
       // Sem underscore: e o que mantem os helpers inalcancaveis.
       const m = path.match(/^\/\.netlify\/functions\/([a-z0-9-]+)\/?$/);
-      if (!m) return json(404, { error: 'rota desconhecida: ' + path });
+      if (!m) {
+        // Caminho com traversal nunca e um asset legitimo. A URL ja resolve
+        // ".." no nivel do parsing, mas "%2e%2e%2f" sobrevive como texto e
+        // chegaria ao delegate. Barrar aqui e barato e nao deixa a seguranca
+        // depender da normalizacao do Pages. Uma decodificacao so, sem
+        // remontar a URL.
+        let checado = path;
+        try {
+          checado = decodeURIComponent(path);
+        } catch (e) {
+          return json(400, { error: 'caminho invalido' });
+        }
+        if (checado.split('/').includes('..')) {
+          return json(400, { error: 'caminho invalido' });
+        }
+
+        // Nada de /.netlify/functions/ aqui, entao este pedido e de arquivo
+        // estatico. Como o postbuild coloca _worker.js dentro de out/, o
+        // projeto roda no modo avancado do Pages, e nesse modo o Worker
+        // intercepta TODA requisicao: sem este delegate, nenhum index.html,
+        // /empresa ou /motorista nunca chega a ser servido e tudo responde
+        // "rota desconhecida".
+        if (env.ASSETS && typeof env.ASSETS.fetch === 'function') {
+          return env.ASSETS.fetch(request);
+        }
+        return json(404, { error: 'rota desconhecida: ' + path });
+      }
 
       const name = m[1];
       const mod = Object.prototype.hasOwnProperty.call(ROUTES, name) ? ROUTES[name] : null;
