@@ -62,10 +62,13 @@ import driverLogin from '../netlify/functions/driver-login.js';
 import driverLogout from '../netlify/functions/driver-logout.js';
 import businessDriverInvite from '../netlify/functions/business-driver-invite.js';
 import driverReviewDocument from '../netlify/functions/driver-review-document.js';
+import driverAddDocument from '../netlify/functions/driver-add-document.js';
 
-// driver-add-document NAO esta aqui de proposito: o doc_url ainda nao e
-// amarrado ao resultado do upload, entao aceitaria URL arbitraria. Entra
-// junto com o binding do doc_url.
+// driver-add-document entrou na whitelist: o doc_url deixou de vir do cliente.
+// O endpoint faz o upload para o Storage, monta o path no servidor e passa
+// para a RPC a URL que ele mesmo gravou, entao nao existe mais o caso de
+// apontar para um PDF de terceiros. Antes disso ele nao era publicado, e
+// manter aqui dependeria de um feed de documentos que nunca existiu.
 
 const ROUTES = {
   // Endpoints de negocio.
@@ -89,6 +92,7 @@ const ROUTES = {
   'driver-logout': driverLogout,
   'business-driver-invite': businessDriverInvite,
   'driver-review-document': driverReviewDocument,
+  'driver-add-document': driverAddDocument,
 };
 
 const CORS_HEADERS = {

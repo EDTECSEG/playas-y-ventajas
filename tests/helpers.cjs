@@ -32,7 +32,7 @@ function installSupabaseMock(fakeClient) {
 
 // Fake client com RPC/storage configuraveis por teste.
 function makeFakeSupabase({ rpc, upload } = {}) {
-  const calls = { rpc: [], uploads: [] };
+  const calls = { rpc: [], uploads: [], removals: [] };
   return {
     calls,
     rpc: async (name, args) => {
@@ -48,6 +48,12 @@ function makeFakeSupabase({ rpc, upload } = {}) {
           return { data: null, error: null };
         },
         getPublicUrl: (filePath) => ({ data: { publicUrl: `https://cdn.example.test/${filePath}` } }),
+        // Chamado quando o handler apaga um arquivo que sobrou, para nao
+        // deixar orfao no bucket quando a RPC recusa.
+        remove: async (paths) => {
+          calls.removals.push(paths);
+          return { data: null, error: null };
+        },
       }),
     },
   };
@@ -88,6 +94,9 @@ function customerTokenFor(customerId) {
 // Bytes validos de PNG (magic bytes + padding).
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0, 1, 2, 3, 4]);
 
+// Bytes validos de PDF (magic %PDF- + corpo).
+const PDF_BYTES = Buffer.concat([Buffer.from('%PDF-1.7', 'latin1'), Buffer.from('\n%%EOF')]);
+
 module.exports = {
   ROOT,
   VALID_ACTORS,
@@ -99,4 +108,5 @@ module.exports = {
   parseBody,
   customerTokenFor,
   PNG_BYTES,
+  PDF_BYTES,
 };
