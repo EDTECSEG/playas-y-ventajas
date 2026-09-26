@@ -4,66 +4,37 @@
 //
 // Os textos ficam em portugues literal, e nao em t.*, porque lib/i18n.js nao tem
 // chave de motorista e o arquivo esta em alteracao por outro trabalho. Quando
-// esse arquivo voltar a ser editavel, estas strings migram para la. Os codigos
-// de erro usam um mapa local, como app/empresa/page.jsx faz com 'friendly'.
+// esse arquivo voltar a ser editavel, estas strings migram para la.
+//
+// A parte que decide credencial e resposta esta em ./logic, que e puro e
+// testado sem DOM. Este arquivo cuida de estado, fetch e render.
 
 import { useEffect, useRef, useState } from 'react';
 import Header from '../components/Header';
 import ModuleSplash from '../components/ModuleSplash';
 import { theme } from '../../lib/theme';
+import {
+  TENANT_ID,
+  MAX_BYTES,
+  DOC_TYPES,
+  friendlyMessage,
+  interpretLogin,
+  checkPin,
+  pinConsumed,
+  buildDocumentRequest,
+  situationFor,
+  sessionFromStorage,
+  pendingFromStorage,
+} from './logic';
 
-// Mesma convencao de app/cliente/page.jsx: o tenant e um unico, fixo no cliente.
-const TENANT_ID = '0dc57eeb-46c8-47ac-aad4-640d9d59e7b9';
-
-// Mesmo teto do servidor, para avisar antes de enviar 8 MB de base64.
-const MAX_BYTES = 6 * 1024 * 1024;
-
-const DOC_TYPES = [
-  { value: 'cnh', label: 'CNH (carteira de motorista)' },
-  { value: 'rg', label: 'RG (identidade)' },
-  { value: 'crv', label: 'CRV (registro de veiculo)' },
-];
-
+// Rotulo e cor da situacao sao apresentacao, e ficam aqui com o theme. A
+// logica de credencial, PIN e resposta vive em ./logic.
 const STATUS_LABEL = {
   pending: { text: 'Aguardando aprovacao da empresa', color: theme.goldDark, bg: '#FEF6E0' },
   approved: { text: 'Habilitado a dirigir', color: theme.green, bg: theme.greenLight },
   rejected: { text: 'Recusado - envie o documento de novo', color: '#B42318', bg: '#FEF3F2' },
   suspended: { text: 'Conta suspensa', color: '#B42318', bg: '#FEF3F2' },
 };
-
-const friendly = {
-  TENANT_REQUIRED: 'Nao foi possivel identificar a empresa. Recarregue a pagina.',
-  NAME_REQUIRED: 'Informe seu nome.',
-  PHONE_INVALID: 'Informe um telefone valido.',
-  EMAIL_INVALID: 'Informe um email valido.',
-  PIN_INVALID: 'Informe um PIN valido.',
-  PIN_MISMATCH: 'Os PINs nao batem.',
-  DRIVER_ID_REQUIRED: 'Cadastro nao encontrado. Faca o cadastro de novo.',
-  DOC_TYPE_INVALID: 'Escolha o tipo de documento.',
-  FILE_REQUIRED: 'Escolha um arquivo.',
-  DOC_URL_NOT_ACCEPTED: 'Este modulo envia o arquivo, nao um link. Escolha o arquivo.',
-  AUTH_REQUIRED: 'Faca login para enviar o documento.',
-  MULTIPLE_CREDENTIALS: 'Sessao e token de cadastro nao podem ser enviados juntos.',
-  INVALID_JSON: 'Nao foi possivel ler o pedido. Tente de novo.',
-  METHOD_NOT_ALLOWED: 'Operacao nao permitida.',
-  SESSION_REQUIRED: 'Faca login para continuar.',
-  SESSION_EXPIRED: 'Sua sessao expirou. Entre de novo.',
-  NOT_APPROVED: 'Seu cadastro ainda nao foi aprovado pela empresa.',
-  ACCOUNT_SUSPENDED: 'Sua conta esta suspensa. Fale com a empresa.',
-  DOCUMENT_NOT_FOUND: 'Documento nao encontrado.',
-  RATE_LIMITED: 'Muitas tentativas. Aguarde alguns minutos.',
-  'arquivo excede o limite de 6 MB': 'O arquivo passa de 6 MB.',
-  'tipo de documento nao permitido (use PDF, JPEG ou PNG)': 'Use PDF, JPEG ou PNG.',
-  'conteudo nao corresponde ao tipo informado': 'O conteudo do arquivo nao bate com o tipo escolhido.',
-  'falha ao armazenar o documento': 'Nao foi possivel salvar o arquivo. Tente de novo.',
-  'erro interno': 'Erro no servidor. Tente de novo.',
-};
-
-function say(code) {
-  if (!code) return '';
-  if (friendly[code]) return friendly[code];
-  return String(code);
-}
 
 const wrap = { maxWidth: 720, margin: '0 auto', padding: '20px 20px 80px', color: theme.text };
 const card = { background: theme.card, color: theme.text, borderRadius: 14, padding: 20, marginBottom: 16, border: `1px solid ${theme.border}`, boxShadow: '0 2px 8px rgba(11,110,79,0.06)' };
@@ -73,18 +44,20 @@ const smallBtn = { ...btn, padding: '5px 12px', fontSize: 12 };
 const ghostBtn = { ...smallBtn, background: theme.green, color: '#FFFFFF' };
 const label = { display: 'block', fontSize: 13, color: theme.textMuted, marginBottom: 4 };
 
-async function call(name, { body, token } = {}) {
+async function call(name, { body, token, method } = {}) {
   const headers = {};
+  // method explicito quando o endpoint so aceita POST, como driver-logout.
+  const verb = method || (body ? 'POST' : 'GET');
   if (body) headers['content-type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(`/.netlify/functions/${name}`, {
-    method: body ? 'POST' : 'GET',
+    method: verb,
     headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   let data = {};
   try { data = await res.json(); } catch (e) { data = {}; }
-  if (!res.ok) throw new Error(say(data.error) || `HTTP ${res.status}`);
+  if (!res.ok) throw new Error(friendlyMessage(data.error) || `HTTP ${res.status}`);
   return data;
 }
 
@@ -113,18 +86,14 @@ export default function MotoristaPage() {
   const [docEnviado, setDocEnviado] = useState(null);
   const fileRef = useRef(null);
 
-  // Sessao e cadastro pela metade sao reidratados do navegador: sem isso,
-  // um recarregamento no meio da habilitacao perderia o uploadToken, que
-  // so aparece uma vez.
+  // Sessao e cadastro pela metade sao reidratados do navegador. O guarda de
+  // cada um esta em ./logic: o cadastro pela metade e conferido por
+  // uploadToken, e nao por pinToken, que ja foi consumido quando o PIN foi
+  // definido. Errar isso aqui esconde o bloco de documentos depois de um
+  // recarregamento e deixa o motorista sem caminho para se habilitar.
   useEffect(() => {
-    try {
-      const s = JSON.parse(localStorage.getItem('pyv_driver') || 'null');
-      if (s && s.sessionToken) setSession(s);
-      const p = JSON.parse(localStorage.getItem('pyv_driver_pending') || 'null');
-      if (p && p.pinToken) setPending(p);
-    } catch (e) {
-      // localStorage corrompido nao pode impedir a tela de abrir.
-    }
+    setSession(sessionFromStorage(localStorage.getItem('pyv_driver')));
+    setPending(pendingFromStorage(localStorage.getItem('pyv_driver_pending')));
   }, []);
 
   function limparTudo() {
@@ -145,7 +114,7 @@ export default function MotoristaPage() {
       await fn();
       if (ok) setMsg(ok);
     } catch (e) {
-      setErro(say(e.message));
+      setErro(friendlyMessage(e.message));
     } finally {
       setOcupado(false);
     }
@@ -156,12 +125,14 @@ export default function MotoristaPage() {
       body: { tenantId: TENANT_ID, phone: login.phone.trim(), pin: login.pin },
     });
     // A RPC devolve {error: 'NOT_APPROVED'} com HTTP 200 quando o cadastro
-    // existe mas nao esta aprovado. So o sessionToken e sucesso de verdade.
-    if (!data.sessionToken) throw new Error(data.error || 'nao foi possivel entrar');
-    localStorage.setItem('pyv_driver', JSON.stringify(data));
-    setSession(data);
+    // existe mas nao esta aprovado. So o sessionToken e sucesso de verdade, e
+    // e o que interpretLogin checa.
+    const r = interpretLogin(data);
+    if (!r.ok) throw new Error(r.error);
+    localStorage.setItem('pyv_driver', JSON.stringify(r.session));
+    setSession(r.session);
     setLogin({ phone: '', pin: '' });
-    if (data.status !== 'approved') setPending(null);
+    if (r.session.status !== 'approved') setPending(null);
   });
 
   const cadastrar = () => run(async () => {
@@ -189,55 +160,52 @@ export default function MotoristaPage() {
   }, 'Cadastro criado. Defina seu PIN para continuar.');
 
   const definirPin = () => run(async () => {
-    if (pinForm.pin !== pinForm.pin2) throw new Error(friendly.PIN_MISMATCH);
-    if (String(pinForm.pin).length < 4) throw new Error('O PIN precisa ter pelo menos 4 digitos.');
+    checkPin(pinForm.pin, pinForm.pin2);
     await call('driver-set-pin', {
       body: { tenantId: TENANT_ID, phone: pending.phone, pin: pinForm.pin, pinToken: pending.pinToken },
     });
     setPinForm({ pin: '', pin2: '' });
-    // O PIN Defined consome o pinToken; uploadToken continua valido para os
+    // O PIN definido consome o pinToken; uploadToken continua valido para os
     // documentos, porque ainda nao ha sessao.
-    const p = { ...pending };
-    delete p.pinToken;
+    const p = pinConsumed(pending);
     localStorage.setItem('pyv_driver_pending', JSON.stringify(p));
     setPending(p);
   }, 'PIN definido. Agora envie seus documentos e entre com telefone e PIN.');
 
   const enviarDoc = () => run(async () => {
     const file = fileRef.current && fileRef.current.files && fileRef.current.files[0];
-    if (!file) throw new Error(friendly.FILE_REQUIRED);
-    if (file.size > MAX_BYTES) throw new Error(friendly['arquivo excede o limite de 6 MB']);
+    if (!file) throw new Error(friendlyMessage('FILE_REQUIRED'));
+    if (file.size > MAX_BYTES) throw new Error('O arquivo passa de 6 MB.');
     const fileBase64 = await readAsBase64(file);
 
-    // Com sessao vai no header; sem sessao (montando o cadastro) usa o
-    // uploadToken. O endpoint recusa os dois juntos, entao nunca mandamos os dois.
-    const body = {
-      tenantId: TENANT_ID,
-      driverId: (session && session.driverId) || pending.driverId,
+    // buildDocumentRequest decide a credencial: com sessao vai no header, sem
+    // sessao usa uploadToken no corpo, e nunca os dois, que o endpoint recusa.
+    const { body, headerToken } = buildDocumentRequest({
+      session,
+      pending,
       docType: doc.docType,
-      contentType: file.type,
       fileBase64,
-      docNumber: doc.docNumber.trim() || null,
-      docExpiresAt: doc.docExpiresAt || null,
-    };
-    if (!session) body.uploadToken = pending.uploadToken;
-
-    const data = await call('driver-add-document', {
-      body,
-      token: session ? session.sessionToken : undefined,
+      contentType: file.type,
+      docNumber: doc.docNumber,
+      docExpiresAt: doc.docExpiresAt,
     });
+
+    const data = await call('driver-add-document', { body, token: headerToken });
     setDocEnviado(data);
     if (fileRef.current) fileRef.current.value = '';
   }, 'Documento enviado. A empresa vai revisar.');
 
   const sair = () => run(async () => {
     if (session && session.sessionToken) {
-      try { await call('driver-logout', { token: session.sessionToken }); } catch (e) { /* localmente ja saiu */ }
+      // driver-logout so aceita POST. Sem method explicito o call cairia em GET
+      // e o servidor responderia 405, deixando a sessao viva no servidor
+      // enquanto a tela ja mostrava o login.
+      try { await call('driver-logout', { method: 'POST', body: {}, token: session.sessionToken }); } catch (e) { /* localmente ja saiu */ }
     }
     limparTudo();
   });
 
-  const situacao = session ? session.status : pending ? pending.status : null;
+  const situacao = situationFor({ session, pending });
   const info = situacao ? STATUS_LABEL[situacao] : null;
 
   return (
