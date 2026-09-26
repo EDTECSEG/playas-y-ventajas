@@ -83,14 +83,26 @@ function montarUrlGeoapify({ lat, lng, raioM, limite }, apiKey) {
   return `${GEOAPIFY_URL}?${q.toString()}`;
 }
 
-// A Geoapify devolve a hierarquia do mais geral ao mais especifico
-// (['catering','catering.restaurant.brazilian']). O rotulo vem do mais
-// especifico, sem o prefixo de topo: "restaurant", "hotel", "cafe".
+// Prefixos que descrevem O QUE o lugar e. Os demais da cadeia (building,
+// internet_access, ...) descrevem a estrutura, e nao o tipo de lugar.
+const PREFIXOS_DE_TIPO = new Set(['accommodation', 'catering', 'tourism']);
+
+// Medido numa resposta real: categories NAO vem em ordem do geral para o
+// especifico, e sim misturando a hierarquia do lugar com a do OSM. Exemplo
+// literal de um hotel: ["accommodation","accommodation.hotel","building",
+// "building.accommodation"]. Pegar o ultimo item — o que seems obvio — devolve
+// "accommodation" e perde o facto de ser hotel; em outro lugar a cadeia terminava
+// em "internet_access" e o mapa rotulava o hotel de "internet access".
+//
+// Por isso: filtra pelos prefixos de tipo e so entao escolhe o mais especifico
+// dentro deles, que e o mais informativo ("hotel", "restaurant").
 function rotularCategoria(categories) {
-  if (!Array.isArray(categories) || categories.length === 0) return '';
-  const partes = String(categories[categories.length - 1]).split('.');
-  const rotulo = partes.length > 1 ? partes[1] : partes[0];
-  return rotulo.replace(/_/g, ' ').slice(0, 40);
+  if (!Array.isArray(categories)) return '';
+  const doTipo = categories.filter((c) => PREFIXOS_DE_TIPO.has(String(c).split('.')[0]));
+  if (doTipo.length === 0) return '';
+  const especifico = doTipo.reduce((a, b) => (String(b).length > String(a).length ? b : a));
+  const partes = String(especifico).split('.');
+  return (partes.length > 1 ? partes[1] : partes[0]).replace(/_/g, ' ').slice(0, 40);
 }
 
 // O que chega no navegador e so o que o mapa desenha. Endereco completo, telefone

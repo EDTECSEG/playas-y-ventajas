@@ -127,11 +127,32 @@ test('a coordenada de um mapa nao injeta parametro na URL', () => {
   assert.match(filtro, /^circle:-?\d+(\.\d+)?,-?\d+(\.\d+)?,\d+$/);
 });
 
-test('o rotulo vem da categoria mais especifica, sem o prefixo de topo', () => {
-  assert.strictEqual(cjs.rotularCategoria(['catering', 'catering.restaurant.brazilian']), 'restaurant');
-  assert.strictEqual(cjs.rotularCategoria(['accommodation', 'accommodation.hotel']), 'hotel');
+test('o rotulo vem do tipo de lugar, nao do ultimo item da cadeia', () => {
+  // Estas cadeias sao literais de uma resposta real da Geoapify. O ultimo item
+  // NAO e o tipo: a cadeia mistura a hierarquia do lugar com a do OSM, e
+  // "building.accommodation" faria um hotel aparecer como "accommodation".
+  assert.strictEqual(
+    cjs.rotularCategoria(['accommodation', 'accommodation.hotel', 'building', 'building.accommodation']),
+    'hotel',
+  );
+  assert.strictEqual(
+    cjs.rotularCategoria(['accommodation', 'accommodation.apartment', 'building', 'building.accommodation']),
+    'apartment',
+  );
+  // "internet_access" no fim da cadeia: o lugar e um hotel, nao um hotspot.
+  assert.strictEqual(
+    cjs.rotularCategoria(['accommodation', 'accommodation.hotel', 'internet_access']),
+    'hotel',
+  );
+  assert.strictEqual(
+    cjs.rotularCategoria(['building', 'building.catering', 'catering', 'catering.restaurant']),
+    'restaurant',
+  );
+  assert.strictEqual(cjs.rotularCategoria(['accommodation', 'accommodation.guest_house']), 'guest house');
+  assert.strictEqual(cjs.rotularCategoria(['tourism', 'tourism.attraction']), 'attraction');
   assert.strictEqual(cjs.rotularCategoria(['catering', 'catering.cafe.coffee_shop']), 'cafe');
-  assert.strictEqual(cjs.rotularCategoria(['tourism']), 'tourism');
+  // Sem nenhum prefixo de tipo: nada de inventar rotulo a partir de "building".
+  assert.strictEqual(cjs.rotularCategoria(['building', 'building.accommodation']), '');
   for (const ruim of [null, undefined, [], 'catering', {}, 42]) {
     assert.strictEqual(cjs.rotularCategoria(ruim), '', `entrada ${JSON.stringify(ruim)} deveria virar ''`);
   }
