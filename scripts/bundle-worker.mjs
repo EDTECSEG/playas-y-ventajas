@@ -39,7 +39,8 @@ await build({
   legalComments: 'none',
   // Built-ins resolvidos pelo runtime via nodejs_compat, nao bundled.
   external: ['node:*', 'crypto', 'fs', 'path', 'buffer', 'stream', 'util', 'os', 'url'],
-  define: { 'process.env': 'globalThis.__PYV_ENV' },
+  // process.env NAO e substituido aqui de proposito: com nodejs_compat o
+  // runtime o popula com as env vars e secrets do Pages. Ver worker/main.js.
   plugins: [{
     // require('crypto') nos handlers CJS -> shim que reexporta node:crypto por
     // import estatico. Sem isto o esbuild gera o stub de require dinamico, que

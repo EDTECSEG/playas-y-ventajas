@@ -31,8 +31,18 @@
 // _verify-email.js), que nao existem no Workers. Nao e um ajuste de
 // allowlist, e uma impossibilidade de plataforma.
 // ----------------------------------------------------------------------------
-// ENV VARS que devem existir no Pages (Settings -> Variables):
-//   RESEND_API_KEY, RESEND_FROM, NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+// ENV: com nodejs_compat, o runtime popula process.env sozinho
+// (nodejs_compat_populate_process_env, padrao para compatibility_date >=
+// 2025-04-01) com as env vars e secrets configurados no Pages. Os handlers
+// leem process.env.* direto, sem adaptor.
+//
+// Nao substituir process.env por outro objeto aqui: a versao anterior usava
+// define process.env -> globalThis.__PYV_ENV, populado a partir do 2o
+// argumento do fetch. Em Pages esse argumento nao traz as env vars do projeto,
+// entao admin e empresa respondiam 500 "Env vars ausentes" mesmo com as
+// variaveis configuradas no painel.
+// VARS esperadas: RESEND_API_KEY, RESEND_FROM, NEXT_PUBLIC_SUPABASE_URL,
+// SUPABASE_SERVICE_ROLE_KEY
 // (build script rewrites process.env para globalThis.__PYV_ENV, preenchido
 //  a partir de env em cada request.)
 
@@ -97,15 +107,6 @@ function json(status, obj) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-
-    // Os handlers leem process.env.*. O build troca process.env por
-    // globalThis.__PYV_ENV (ver scripts/bundle-worker.mjs), entao popular
-    // este objeto com as env vars do Pages e o equivalente correto sem
-    // depender da semântica de escrita de process.env no Workers.
-    const target = (globalThis.__PYV_ENV = globalThis.__PYV_ENV || {});
-    if (env && typeof env === 'object') {
-      for (const [k, v] of Object.entries(env)) target[k] = String(v);
-    }
 
     try {
       const path = url.pathname;
