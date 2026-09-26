@@ -43,8 +43,6 @@
 // variaveis configuradas no painel.
 // VARS esperadas: RESEND_API_KEY, RESEND_FROM, NEXT_PUBLIC_SUPABASE_URL,
 // SUPABASE_SERVICE_ROLE_KEY
-// (build script rewrites process.env para globalThis.__PYV_ENV, preenchido
-//  a partir de env em cada request.)
 
 import admin from '../netlify/functions/admin.js';
 import claimCoupon from '../netlify/functions/claim-coupon.js';
@@ -97,6 +95,76 @@ const CORS_HEADERS = {
   'access-control-allow-origin': '*',
 };
 
+// ----------------------------------------------------------------------------
+// DIAGNOSTICO TEMPORARIO de env vars. REMOVER assim que a causa do
+// admin/empresa 500 "Env vars ausentes" estiver corrigida.
+// ----------------------------------------------------------------------------
+// Responde em /.netlify/functions/__envdiag mostrando por onde as env vars
+// chegam (process.env ou os bindings do 2o argumento do fetch) e se cada
+// uma esta preenchida. NUNCA devolve valor: apenas nome da variavel, se
+// existe, se esta vazia e um booleano de formato. Nao ha como reconstruir
+// um segredo a partir disso, mas mesmo assim o endpoint e temporario.
+//
+// Esta rota e tratada ANTES da regex [a-z0-9-]+ de proposito: o nome contem
+// underscore, que a regex nao casa. E o mesmo mecanismo que mantem os
+// helpers inalcancaveis, entao sem esse caso explicito ela seria 404.
+const ENV_DIAG_VARS = [
+  'NEXT_PUBLIC_SUPABASE_URL',
+  'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'RESEND_API_KEY',
+  'RESEND_FROM',
+];
+
+const SUPAHOST_RE = /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/;
+
+function envDiagReport(env) {
+  const pe = typeof globalThis.process !== 'undefined' && globalThis.process.env
+    ? globalThis.process.env
+    : null;
+  const bindings = env && typeof env === 'object' ? env : null;
+
+  const describe = (bag) => {
+    const out = {};
+    for (const k of ENV_DIAG_VARS) {
+      const v = bag ? bag[k] : undefined;
+      out[k] = {
+        presente: v !== undefined && v !== null,
+        preenchida: typeof v === 'string' && v.length > 0,
+      };
+    }
+    return out;
+  };
+
+  const urlLooksRight = (bag) => {
+    const v = bag ? bag.NEXT_PUBLIC_SUPABASE_URL : undefined;
+    return typeof v === 'string' && SUPAHOST_RE.test(v);
+  };
+
+  return {
+    aviso: 'endpoint temporario de diagnostico, remover apos o uso',
+    runtime: {
+      typeofProcessGlobal: typeof globalThis.process,
+      processTemEnv: !!(globalThis.process && globalThis.process.env),
+      legadoPyvEnvPresente: '__PYV_ENV' in globalThis,
+    },
+    processEnv: {
+      tipo: typeof pe,
+      totalChaves: pe ? Object.keys(pe).length : 0,
+      nomes: pe ? Object.keys(pe).sort() : [],
+      vars: describe(pe),
+      urlSupabaseHostValido: urlLooksRight(pe),
+    },
+    bindingsFetch: {
+      tipo: typeof env,
+      totalChaves: bindings ? Object.keys(bindings).length : 0,
+      nomes: bindings ? Object.keys(bindings).sort() : [],
+      vars: describe(bindings),
+      urlSupabaseHostValido: urlLooksRight(bindings),
+    },
+  };
+}
+
 function json(status, obj) {
   return new Response(JSON.stringify(obj), {
     status,
@@ -107,6 +175,10 @@ function json(status, obj) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    if (url.pathname === '/.netlify/functions/__envdiag') {
+      return json(200, envDiagReport(env));
+    }
 
     try {
       const path = url.pathname;
