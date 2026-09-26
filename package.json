@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "node scripts/bundle-worker.mjs",
     "start": "next start",
     "test": "node --test \"tests/*.test.cjs\"",
     "test:live": "node --test tests/live.smoke.test.cjs"
@@ -16,6 +17,7 @@
     "react-dom": "18.3.1"
   },
   "devDependencies": {
+    "esbuild": "^0.17.19",
     "wrangler": "^3.114.14"
   }
 }
