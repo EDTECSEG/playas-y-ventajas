@@ -25,7 +25,12 @@ function buildOtpCode(email, bucket) {
   return String(n % 1000000).padStart(6, '0');
 }
 
-async function sendOtp({ email, name }) {
+// O `env` e o primeiro parametro para bater com o espelho ESM
+// (`sendOtp(env, { email, name })`). Sem ele, o `sendEmail` daqui recebia o
+// payload no lugar do env e o segundo argumento chegava `undefined`, o que
+// estourava em `Cannot destructure property 'to' of 'undefined'` — ou seja,
+// NENHUM email de OTP saia, em producao, e o erro so aparecia no log.
+async function sendOtp(env, { email, name }) {
   const norm = String(email || '').trim().toLowerCase();
   if (!norm || norm.length > 254) return { ok: false, reason: 'Email inválido' };
   const nowSec = Math.floor(Date.now() / 1000);
@@ -38,7 +43,7 @@ async function sendOtp({ email, name }) {
       <p style="margin:16px 0 0;font-size:12px;color:#999">O código expira em 5&nbsp;minutos. Se não foi você, pode ignorar — alguém pode ter digitado teu email por engano.</p>
       <p style="margin:10px 0 0;font-size:11px;color:#BBB">Suporte: ${SUPPORT_EMAIL}</p>
     </div>`;
-  const result = await sendEmail({ to: norm, subject: 'Código de confirmação PYV', html });
+  const result = await sendEmail(env, { to: norm, subject: 'Código de confirmação PYV', html });
   if (!result.ok) return { ok: false, reason: result.reason };
   return { ok: true };
 }
