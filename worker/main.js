@@ -49,6 +49,7 @@ import claimCoupon from '../netlify/functions/claim-coupon.js';
 import empresa from '../netlify/functions/empresa.js';
 import identify from '../netlify/functions/identify.js';
 import login from '../netlify/functions/login.js';
+import mapPlaces from '../netlify/functions/map-places.js';
 import offers from '../netlify/functions/offers.js';
 import radar from '../netlify/functions/radar.js';
 import sendOtp from '../netlify/functions/send-otp.js';
@@ -77,6 +78,9 @@ const ROUTES = {
   empresa,
   identify,
   login,
+  // Complemento do mapa com dados abertos do OSM, buscado no servidor porque o
+  // Overpass bloqueia o browser por CORS. Nao traz dado de cliente.
+  'map-places': mapPlaces,
   offers,
   radar,
   'send-otp': sendOtp,

@@ -396,18 +396,19 @@ export default function ClientePage() {
         }
       } catch { /* radar indisponivel nao derruba o mapa */ }
 
-      // Outros comércios da regiao, cadastrados ou nao no nosso sistema (OpenStreetMap, sem custo)
+      // Outros comércios da regiao, cadastrados ou nao no nosso sistema (OpenStreetMap, sem custo).
+      // Vai pelo nosso endpoint e nao direto do Overpass: o Overpass nao devolve
+      // Access-Control-Allow-Origin, entao a chamada direta do browser era
+      // bloqueada por CORS e esta camada nunca aparecia no mapa.
       try {
-        const query = `[out:json][timeout:20];(node["tourism"](around:6000,${latitude},${longitude});way["tourism"](around:6000,${latitude},${longitude});node["amenity"~"restaurant|cafe|bar"](around:6000,${latitude},${longitude}););out center 80;`;
-        const osmRes = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: query });
-        const osmData = await osmRes.json();
-        (osmData.elements || []).forEach((el) => {
-          const lat = el.lat ?? el.center?.lat;
-          const lon = el.lon ?? el.center?.lon;
-          if (!lat || !lon) return;
-          L.circleMarker([lat, lon], { radius: 5, color: '#94a3b8', fillColor: '#cbd5e1', fillOpacity: 0.9 })
+        const placesRes = await fetchComTimeout(
+          `/.netlify/functions/map-places?lat=${encodeURIComponent(latitude)}&lng=${encodeURIComponent(longitude)}`
+        );
+        const placesData = await placesRes.json();
+        (placesData.lugares || []).forEach((p) => {
+          L.circleMarker([p.lat, p.lng], { radius: 5, color: '#94a3b8', fillColor: '#cbd5e1', fillOpacity: 0.9 })
             .addTo(mapInstanceRef.current)
-            .bindPopup(`${el.tags?.name || 'Estabelecimento da região'}${el.tags?.tourism ? ` (${el.tags.tourism})` : ''}`);
+            .bindPopup(`${p.nome}${p.categoria ? ` (${p.categoria})` : ''}`);
         });
       } catch { /* mapa de parceiros continua funcionando mesmo se isso falhar */ }
 

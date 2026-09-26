@@ -1,5 +1,5 @@
 // Gera out/_worker.js: um unico arquivo autocontido com o adaptador
-// (worker/main.js) e os 18 handlers CJS de netlify/functions/ inlineados.
+// (worker/main.js) e os 20 handlers CJS de netlify/functions/ inlineados.
 //
 // Por que isso existe: o runtime dos Workers nao tem sistema de arquivos, o
 // worker nao consegue require() os handlers em runtime. Static imports + bundle

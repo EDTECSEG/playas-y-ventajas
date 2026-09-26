@@ -23,6 +23,7 @@ const IGNORE = ['package.json'];
 const HELPERS = new Set([
   '_supabaseAdmin.js', // canonico; par no ESM e _shared.js
   '_shared.js',
+  '_mapPlaces.js', // logica Overpass, compartilhada pelos dois handlers de mapa
   '_otp.js',
   '_resend.js',
   '_wa.js',
