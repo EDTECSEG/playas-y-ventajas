@@ -11,6 +11,20 @@ import { getSupabaseAdminClient, rpcErrorCode, rpcErrorStatus, json } from './_s
 // endpoints de motorista. Tratar como segredo: nao logar, nao persistir em
 // storage compartilhado, nao mandar por query string em link.
 
+// A RPC `driver_login` NAO levanta erro: devolve jsonb_build_object('error', ...)
+// como dado de sucesso. Entao `error` chega null e o handler respondia HTTP 200
+// com {error:'INVALID_CREDENTIALS'} — login errado com status de sucesso. O
+// cliente contornava (interpretLogin), mas qualquer outro consumidor trataria
+// falha como sucesso e o monitoramento nao veria a tentativa falha.
+const LOGIN_ERROR_STATUS = {
+  INVALID_CREDENTIALS: 401,
+  ACCOUNT_LOCKED: 429,
+  PENDING_APPROVAL: 403,
+  REGISTRATION_REJECTED: 403,
+  ACCOUNT_SUSPENDED: 403,
+  NOT_APPROVED: 403,
+};
+
 export async function onRequestPost(context) {
   const { request, env } = context;
 
@@ -37,6 +51,15 @@ export async function onRequestPost(context) {
     });
 
     if (error) return json({ error: rpcErrorCode(error) }, rpcErrorStatus(error));
+
+    // Recusa vem no corpo dos dados, nao como erro. 200 aqui seria login
+    // errado com status de sucesso.
+    if (data && data.error) {
+      return new Response(JSON.stringify(data), {
+        status: LOGIN_ERROR_STATUS[data.error] || 400,
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      });
+    }
 
     return new Response(JSON.stringify(data), {
       status: 200,
