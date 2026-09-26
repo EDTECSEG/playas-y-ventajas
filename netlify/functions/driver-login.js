@@ -7,7 +7,8 @@ const { getSupabaseAdminClient, rpcErrorCode, rpcErrorStatus } = require('./_sup
 // volta como NOT_APPROVED (403) em vez de 401, para o app poder mostrar
 // "aguardando aprovacao" em vez de "senha errada".
 //
-// A sessao devolvida e o driverSessionToken e vale como credencial nos demais
+// A sessao devolvida e o campo `sessionToken` do json da RPC driver_login (nao
+// `driverSessionToken`, que nao existe) e vale como credencial nos demais
 // endpoints de motorista. Tratar como segredo: nao logar, nao persistir em
 // storage compartilhado, nao mandar por query string em link.
 
