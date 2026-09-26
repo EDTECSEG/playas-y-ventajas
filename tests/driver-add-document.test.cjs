@@ -57,15 +57,23 @@ test('upload gera path no servidor e a RPC recebe a URL do Storage', async (t) =
 
   assert.strictEqual(fake.calls.uploads.length, 1);
   const up = fake.calls.uploads[0];
-  assert.match(up.filePath, /^driver-documents\/t-1\/d-1\/[0-9a-f-]{36}\.pdf$/);
+  // O path DENTRO do bucket nao repete `driver-documents/`: o bucket ja se
+  // chama assim. O prefixo volta no que vai para o banco.
+  assert.match(up.filePath, /^t-1\/d-1\/[0-9a-f-]{36}\.pdf$/);
   assert.strictEqual(up.opts.contentType, 'application/pdf');
   assert.strictEqual(up.opts.upsert, false);
   assert.ok(Buffer.isBuffer(up.body));
   assert.ok(up.body.equals(PDF_BYTES), 'os bytes gravados tem de ser os enviados');
 
-  // O que chega na RPC tem de ser a URL do Storage, nunca a do cliente.
+  // O que chega na RPC tem de ser o PATH, nunca URL. A constraint
+  // driver_documents_doc_url_no_http no banco recusa http(s), entao gravar uma
+  // URL aqui quebraria o upload — e o caminho do cliente nunca entra.
   const call = fake.calls.rpc.find((c) => c.name === 'driver_add_document');
-  assert.strictEqual(call.args.p_doc_url, 'https://cdn.example.test/' + up.filePath);
+  assert.strictEqual(call.args.p_doc_url, 'driver-documents/' + up.filePath);
+  assert.ok(
+    !/^https?:\/\//.test(call.args.p_doc_url),
+    'doc_url nao pode ser URL: ' + call.args.p_doc_url,
+  );
   assert.strictEqual(call.args.p_upload_token, 'tok-upload');
   assert.strictEqual(call.args.p_session_token, null);
 });
@@ -86,9 +94,19 @@ test('path traversal em driverId nao escapa da pasta de documentos', async (t) =
     !up.filePath.includes('..'),
     'path com .. no Storage: ' + up.filePath,
   );
+  // driverId '../../admin' vira 'admin--' pelo safeSegment, entao o path
+  // continua preso a pasta do tenant.
   assert.ok(
-    up.filePath.startsWith('driver-documents/'),
-    'saiu da pasta de documentos: ' + up.filePath,
+    up.filePath.startsWith('t-1/'),
+    'saiu da pasta do tenant: ' + up.filePath,
+  );
+  // E o valor gravado tambem nao pode carregar o `..`, nem virar URL: e o que a
+  // constraint do banco recusa.
+  const call = fake.calls.rpc.find((c) => c.name === 'driver_add_document');
+  assert.ok(!call.args.p_doc_url.includes('..'), 'doc_url com ..: ' + call.args.p_doc_url);
+  assert.ok(
+    call.args.p_doc_url.startsWith('driver-documents/'),
+    'saiu da pasta de documentos: ' + call.args.p_doc_url,
   );
 });
 

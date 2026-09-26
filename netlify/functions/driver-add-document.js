@@ -33,8 +33,12 @@ const { randomUUID } = require('crypto');
 
 const DOC_TYPES = ['cnh', 'rg', 'crv'];
 
-const BUCKET = 'pyv-images';
-const FOLDER = 'driver-documents';
+// Bucket PRIVADO, dedicado a documento. Antes o upload ia para `pyv-images`,
+// que e public: true por causa de foto, logo de offer, resize e avatar. Como a
+// visibilidade no Storage e por bucket e nao por prefixo, nao dava para deixar
+// so `driver-documents/` privado sem derrubar /midia. Entao documento ganhou
+// bucket proprio, e o path e gravado em vez da URL.
+const BUCKET = 'driver-documents';
 const MAX_BYTES = 6 * 1024 * 1024; // 6 MB, o mesmo teto do upload-image
 
 // Tipos permitidos e extensao derivada SERVIDOR. Documento aceita PDF alem de
@@ -146,26 +150,31 @@ exports.handler = async (event) => {
   try {
     const supabase = getSupabaseAdminClient();
 
-    uploadedPath = `${FOLDER}/${safeSegment(tenantId)}/${safeSegment(driverId)}/${randomUUID()}.${ext}`;
+    // O path dentro do bucket nao repete o prefixo `driver-documents/`, porque
+    // o bucket ja se chama assim. O que vai para `doc_url` e o path com o nome
+    // do bucket na frente, para o valor se descrever sozinho e o
+    // driver-document-url conseguir separar os dois sem tabela de lookup.
+    const objectPath = `${safeSegment(tenantId)}/${safeSegment(driverId)}/${randomUUID()}.${ext}`;
+    const storedRef = `${BUCKET}/${objectPath}`;
+
     const { error: upErr } = await supabase.storage
       .from(BUCKET)
-      .upload(uploadedPath, buffer, { contentType, upsert: false });
+      .upload(objectPath, buffer, { contentType, upsert: false });
     if (upErr) {
       return { statusCode: 400, body: JSON.stringify({ error: 'falha ao armazenar o documento' }) };
     }
+    // `uploadedPath` e o path DENTRO do bucket, e e o que o cleanup apaga. Os
+    // dois casos de orfao abaixo dependem dele: sem esta atribuicao, um erro da
+    // RPC deixaria o PDF no Storage sem documento vinculado.
+    uploadedPath = objectPath;
 
-    const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(uploadedPath);
-    const storedUrl = pub && pub.publicUrl;
-    if (!storedUrl) {
-      await supabase.storage.from(BUCKET).remove([uploadedPath]);
-      return { statusCode: 500, body: JSON.stringify({ error: 'falha ao montar a URL do documento' }) };
-    }
-
+    // Nao ha mais getPublicUrl: nada de URL no banco. A constraint
+    // driver_documents_doc_url_no_http impede que um http:// volte a entrar.
     const { data, error } = await supabase.rpc('driver_add_document', {
       p_tenant_id: tenantId,
       p_driver_id: driverId,
       p_doc_type: String(docType).toLowerCase(),
-      p_doc_url: storedUrl,
+      p_doc_url: storedRef,
       p_doc_number: docNumber || null,
       p_doc_expires_at: docExpiresAt || null,
       // Passa SO o credencial informado, nunca os dois.

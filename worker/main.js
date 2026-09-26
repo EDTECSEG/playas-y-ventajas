@@ -64,6 +64,16 @@ import driverLogout from '../netlify/functions/driver-logout.js';
 import businessDriverInvite from '../netlify/functions/business-driver-invite.js';
 import driverReviewDocument from '../netlify/functions/driver-review-document.js';
 import driverAddDocument from '../netlify/functions/driver-add-document.js';
+import driverListForBusiness from '../netlify/functions/driver-list-for-business.js';
+import driverDocumentUrl from '../netlify/functions/driver-document-url.js';
+
+// driver-list-for-business e driver-document-url entraram na whitelist juntos
+// porque um sem o outro nao serve: a lista diz que existe um documento pendente,
+// e o segundo e o unico caminho pelo qual o arquivo sai do bucket privado
+// (URL assinada de 5 min, so depois que driver_get_document_path autoriza o
+// ator). Sem os dois na lista, o painel da empresa nao tem nem o que mostrar nem
+// como abrir — que era o estado anterior, em que nada na interface chamava a
+// aprovacao.
 
 // driver-add-document entrou na whitelist: o doc_url deixou de vir do cliente.
 // O endpoint faz o upload para o Storage, monta o path no servidor e passa
@@ -97,6 +107,9 @@ const ROUTES = {
   'business-driver-invite': businessDriverInvite,
   'driver-review-document': driverReviewDocument,
   'driver-add-document': driverAddDocument,
+  // Revisao pela empresa: pendencias e o arquivo sob demanda.
+  'driver-list-for-business': driverListForBusiness,
+  'driver-document-url': driverDocumentUrl,
 };
 
 const CORS_HEADERS = {

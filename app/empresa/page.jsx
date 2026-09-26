@@ -59,6 +59,14 @@ export default function EmpresaPage() {
   const [newPin, setNewPin] = useState('');
   const [newPin2, setNewPin2] = useState('');
   const [authMode, setAuthMode] = useState('login');
+  // Revisao de cadastro de motorista. `drivers` vem de driver-list-for-business,
+  // que NAO traz doc_url: o arquivo sai sob demanda em driver-document-url, que
+  // devolve uma URL assinada de 5 minutos. Ver `openDocument`.
+  const [drivers, setDrivers] = useState([]);
+  const [driversMsg, setDriversMsg] = useState('');
+  const [driversBusy, setDriversBusy] = useState(false);
+  const [rejeitando, setRejeitando] = useState(null);
+  const [motivo, setMotivo] = useState('');
   const [regForm, setRegForm] = useState({
     tenantSlug: 'playas-y-ventajas', name: '', category: 'passeio', city: '', phone: '', email: '',
     cnpj: '', website: '', logoUrl: '', lat: '', lng: '', internalCode: '', pin: '', pin2: '',
@@ -259,6 +267,100 @@ export default function EmpresaPage() {
     const res = await fetch(`/.netlify/functions/empresa?mode=stats`, { headers: { Authorization: `Bearer ${sess.sessionToken}` } });
     const data = await res.json();
     if (res.ok) setStats(data);
+  }
+
+  // --- Revisao de cadastro de motorista -------------------------------
+  //
+  // A listagem vem de driver-list-for-business, que devolve nome, telefone,
+  // status e os documentos (id, tipo, status) — sem URL de arquivo. O
+  //arquivo em si so aparece em driver-document-url, sob forma de URL assinada
+  // de 5 minutos, e por isso `openDocument` busca no clique em vez de a lista
+  // trazer o link pronto.
+
+  async function loadDrivers(s) {
+    const sess = s || session;
+    setDriversBusy(true);
+    setDriversMsg('');
+    try {
+      const res = await fetch('/.netlify/functions/driver-list-for-business', {
+        headers: { Authorization: `Bearer ${sess.sessionToken}` },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDriversMsg(t.driversLoadError ?? 'Não foi possível carregar os motoristas.');
+        setDrivers([]);
+        return;
+      }
+      setDrivers(data.drivers || []);
+      if (!(data.drivers || []).length) {
+        setDriversMsg(t.driversEmpty ?? 'Nenhum motorista cadastrado ainda.');
+      }
+    } catch (e) {
+      setDriversMsg(t.driversLoadError ?? 'Não foi possível carregar os motoristas.');
+    } finally {
+      setDriversBusy(false);
+    }
+  }
+
+  // Abre o documento numa aba nova. A URL vale por 5 minutos, então clicar de
+  // novo é o que renova: não vale guardar em state por causa disso.
+  async function openDocument(documentId) {
+    setDriversMsg('');
+    const sess = session;
+    if (!sess?.sessionToken) return;
+    try {
+      const res = await fetch(
+        `/.netlify/functions/driver-document-url?documentId=${encodeURIComponent(documentId)}`,
+        { headers: { Authorization: `Bearer ${sess.sessionToken}` } }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        setDriversMsg(
+          res.status === 403
+            ? (t.driversDocForbidden ?? 'Você não tem permissão para ver este documento.')
+            : (t.driversDocError ?? 'Não foi possível abrir o documento.')
+        );
+        return;
+      }
+      window.open(data.url, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      setDriversMsg(t.driversDocError ?? 'Não foi possível abrir o documento.');
+    }
+  }
+
+  async function reviewDocument(documentId, action, reason) {
+    setDriversMsg('');
+    const sess = session;
+    if (!sess?.sessionToken) return;
+    setDriversBusy(true);
+    try {
+      const res = await fetch('/.netlify/functions/driver-review-document', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sess.sessionToken}`,
+        },
+        body: JSON.stringify({ documentId, action, reason: reason || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDriversMsg(
+          res.status === 403
+            ? (t.driversReviewForbidden ?? 'Você não pode revisar este cadastro.')
+            : (t.driversReviewError ?? 'Não foi possível registrar a decisão.')
+        );
+        return;
+      }
+      setRejeitando(null);
+      setMotivo('');
+      // Recarrega em vez de remendar a lista local: a aprovação muda o status
+      // do documento E do motorista, e um remendo local erra um dos dois.
+      await loadDrivers(sess);
+    } catch (e) {
+      setDriversMsg(t.driversReviewError ?? 'Não foi possível registrar a decisão.');
+    } finally {
+      setDriversBusy(false);
+    }
   }
 
   async function loadDashboard(s) {
@@ -524,7 +626,78 @@ export default function EmpresaPage() {
             <button style={tab === 'criar' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('criar')}>{t.tabManageOffers}</button>
             <button style={tab === 'validar' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('validar')}>{t.tabValidate}</button>
             <button style={tab === 'dados' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setTab('dados'); loadMyData(); }}>{t.tabMyData}</button>
+            <button style={tab === 'motoristas' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setTab('motoristas'); loadDrivers(); }}>{t.tabDrivers ?? 'Motoristas'}</button>
           </div>
+
+          {tab === 'motoristas' && (
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>{t.driversTitle ?? 'Cadastro de motoristas'}</h3>
+            <p style={{ fontSize: 13, opacity: 0.75, marginTop: 0 }}>
+              {t.driversHint ?? 'Confira o documento e aprove o cadastro. O arquivo abre numa aba nova e o link expira em 5 minutos.'}
+            </p>
+
+            {driversMsg && <p style={{ fontSize: 13, color: '#c0392b', fontWeight: 600 }}>{driversMsg}</p>}
+            {driversBusy && <p style={{ fontSize: 13, opacity: 0.7 }}>{t.loading ?? 'Carregando...'}</p>}
+
+            {!driversBusy && drivers.map((d) => (
+              <div key={d.driverId} style={{ borderTop: `1px solid ${theme.border}`, paddingTop: 12, marginTop: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <strong>{d.name}</strong>
+                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 999, background: d.status === 'approved' ? theme.greenLight : '#fdf3d0', color: d.status === 'approved' ? theme.greenDark : '#8a6d1f' }}>
+                    {d.status === 'approved' ? (t.driverApproved ?? 'aprovado') : d.status === 'pending' ? (t.driverPending ?? 'pendente') : d.status}
+                  </span>
+                </div>
+                <p style={{ fontSize: 13, opacity: 0.75, margin: '4px 0' }}>{d.phone}</p>
+
+                {d.documents.map((doc) => (
+                  <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                    <span style={{ fontSize: 13 }}>
+                      {(doc.docType === 'cnh' ? 'CNH' : doc.docType === 'rg' ? 'RG' : 'CRV')} · {doc.status}
+                    </span>
+                    <button style={smallBtn} onClick={() => openDocument(doc.id)}>{t.viewDocument ?? 'Ver documento'}</button>
+
+                    {doc.status === 'pending' && d.status === 'pending' && (
+                      <>
+                        <button
+                          style={smallBtn}
+                          disabled={driversBusy}
+                          onClick={() => reviewDocument(doc.id, 'approve')}
+                        >
+                          {t.approveDriver ?? 'Aprovar'}
+                        </button>
+                        <button
+                          style={{ ...smallBtn, background: theme.border, color: theme.text }}
+                          disabled={driversBusy}
+                          onClick={() => { setRejeitando(rejeitando === doc.id ? null : doc.id); setMotivo(''); }}
+                        >
+                          {t.rejectDriver ?? 'Reprovar'}
+                        </button>
+                      </>
+                    )}
+
+                    {rejeitando === doc.id && (
+                      <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <input
+                          style={input}
+                          placeholder={t.rejectReason ?? 'Motivo (opcional)'}
+                          value={motivo}
+                          onChange={(e) => setMotivo(e.target.value)}
+                        />
+                        <button
+                          style={{ ...smallBtn, background: '#c0392b', color: '#fff' }}
+                          disabled={driversBusy}
+                          onClick={() => reviewDocument(doc.id, 'reject', motivo)}
+                        >
+                          {t.confirmReject ?? 'Confirmar reprovação'}
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+          )}
 
           {tab === 'validar' && (
           <div style={card}>

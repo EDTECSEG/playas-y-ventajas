@@ -73,6 +73,14 @@ async function post(nome, body, token) {
   return { status: res.status, body: await res.json().catch(() => null) };
 }
 
+async function get(nome, query, token) {
+  const qs = query ? `?${new URLSearchParams(query)}` : '';
+  const res = await fetch(`${BASE}/.netlify/functions/${nome}${qs}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  return { status: res.status, body: await res.json().catch(() => null) };
+}
+
 // estado compartilhado entre os passos, que sao estritamente sequenciais.
 // Tudo fica dentro de um `describe` de proposito: no Node 22 um `before` na
 // raiz do arquivo NAO roda antes de `test` na raiz — so ancora dentro de uma
@@ -178,6 +186,74 @@ describe('aprovacao de motorista: caminho feliz', { skip: enabled() }, () => {
     assert.strictEqual(r.body.error, 'PENDING_APPROVAL');
   });
 
+  // --- a parte que faltava: a empresa precisa poder VER o que tem para aprovar.
+
+  test('empresa ve o motorista pendente na listagem', async () => {
+    const r = await get('driver-list-for-business', { status: 'pending' }, ctx.sessaoEmpresa);
+    assert.strictEqual(r.status, 200, `driver-list-for-business: ${JSON.stringify(r.body)}`);
+
+    const meu = r.body.drivers.find((d) => d.driverId === ctx.driverId);
+    assert.ok(meu, 'o cadastro pendente deve aparecer para a empresa dona');
+    assert.strictEqual(meu.status, 'pending');
+
+    const doc = meu.documents.find((d) => d.id === ctx.documentId);
+    assert.ok(doc, 'o documento enviado deve aparecer na pendencia');
+    assert.strictEqual(doc.docType, 'cnh');
+    assert.strictEqual(doc.status, 'pending');
+  });
+
+  test('a listagem nao entrega caminho nem URL do arquivo', async () => {
+    const r = await get('driver-list-for-business', {}, ctx.sessaoEmpresa);
+    assert.strictEqual(r.status, 200);
+    const bruto = JSON.stringify(r.body);
+    assert.ok(!bruto.includes('docPath'), 'listagem nao pode conter docPath');
+    assert.ok(!bruto.includes('doc_url'), 'listagem nao pode conter doc_url');
+    assert.ok(!/https?:\/\//.test(bruto), 'listagem nao pode conter URL de arquivo');
+  });
+
+  test('listagem sem sessao nao devolve nada', async () => {
+    const sem = await get('driver-list-for-business', {});
+    assert.strictEqual(sem.status, 401, 'listagem sem token precisa negar');
+  });
+
+  test('documento sai como URL assinada que entrega o PDF', async () => {
+    const r = await get('driver-document-url', { documentId: ctx.documentId }, ctx.sessaoEmpresa);
+    assert.strictEqual(r.status, 200, `driver-document-url: ${JSON.stringify(r.body)}`);
+    assert.strictEqual(r.body.expiresIn, 300, 'validade deve ser 5 minutos');
+    assert.ok(r.body.url, 'deve vir uma URL assinada');
+    assert.ok(!r.body.url.includes('token=') === false, 'URL assinada carrega token');
+    ctx.urlAssinada = r.body.url;
+
+    // a URL precisa realmente servir o PDF, e nao um 200 de pagina de erro
+    const arquivo = await fetch(r.body.url);
+    assert.strictEqual(arquivo.status, 200, 'a URL assinada deve entregar o arquivo');
+    const bytes = Buffer.from(await arquivo.arrayBuffer());
+    assert.strictEqual(bytes.toString('latin1', 0, 5), '%PDF-', 'o conteudo deve ser o PDF enviado');
+  });
+
+  test('documento exige sessao: sem token e com token invalido, nada de URL', async () => {
+    const sem = await get('driver-document-url', { documentId: ctx.documentId });
+    assert.strictEqual(sem.status, 401, 'sem sessao precisa negar');
+    assert.ok(!JSON.stringify(sem.body).includes('http'), 'recusa nao pode conter URL');
+
+    const invalido = await get('driver-document-url', { documentId: ctx.documentId }, 'token-que-nao-existe');
+    assert.strictEqual(invalido.status, 401, 'token invalido precisa negar');
+    assert.ok(!JSON.stringify(invalido.body).includes('http'), 'recusa nao pode conter URL');
+  });
+
+  test('o banco guarda o path do documento, nao uma URL publica', async () => {
+    const { NEXT_PUBLIC_SUPABASE_URL: url, SUPABASE_SERVICE_ROLE_KEY: key } = ctx.env;
+    const res = await fetch(
+      `${url}/rest/v1/driver_documents?id=eq.${ctx.documentId}&select=doc_url`,
+      { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+    );
+    const linhas = await res.json();
+    assert.strictEqual(linhas.length, 1, 'o documento deveria existir');
+    const guardado = linhas[0].doc_url;
+    assert.ok(!/^https?:\/\//.test(guardado), `doc_url nao pode ser URL: ${guardado}`);
+    assert.ok(guardado.startsWith('driver-documents/'), `doc_url deveria ser path do bucket: ${guardado}`);
+  });
+
   test('empresa aprova o documento', async () => {
     const r = await post('driver-review-document', {
       documentId: ctx.documentId, action: 'approve',
@@ -227,8 +303,8 @@ describe('aprovacao de motorista: caminho feliz', { skip: enabled() }, () => {
     if (!ctx.driverId || !ctx.env) return;
 
     const { NEXT_PUBLIC_SUPABASE_URL: url, SUPABASE_SERVICE_ROLE_KEY: key } = ctx.env;
-    const bucket = 'pyv-images';
-    const prefix = `driver-documents/${ctx.tenantId}/${ctx.driverId}/`;
+    const bucket = 'driver-documents';
+    const prefix = `${ctx.tenantId}/${ctx.driverId}/`;
 
     try {
       const lista = await fetch(`${url}/storage/v1/object/list/${bucket}`, {

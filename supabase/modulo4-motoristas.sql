@@ -714,12 +714,120 @@ end $function$
 ;
 
 -- ------------------------------------------------------------
--- 11) Fim do Modulo 4
+-- 11) Documento privado: bucket dedicado + path no lugar de URL
+-- ------------------------------------------------------------
+-- Ate a versao anterior, `driver_documents.doc_url` guardava uma URL publica de
+-- um bucket public: true. Isso expunha CNH/RG/CRV — documento de identidade de
+-- terceiro — para qualquer um que tivesse o link, sem sessao e sem expiracao.
+--
+-- A correcao nao pode ser `update storage.buckets set public = false` no
+-- pyv-images: esse bucket e publico por necessidade de foto, logo de offer,
+-- imagem de resize e avatar, e a visibilidade no Supabase Storage e por BUCKET,
+-- nao por prefixo. Virar privado derrubaria /midia e o upload-image.
+--
+-- Entao documento ganha bucket proprio (privado) e o que vai em `doc_url` passa
+-- a ser o PATH do objeto. A URL so existe quando alguem autorizado abre o
+-- documento, e para isso existe a RPC abaixo, consumida por
+-- `driver-document-url` (assinatura de 5 minutos).
+--
+-- Esta secao e a definicao canonica; `fix-driver-documents-private.sql` e a
+-- migration que a aplicou em producao.
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('driver-documents', 'driver-documents', false, 6291456,
+        array['application/pdf','image/jpeg','image/png']::text[])
+ON CONFLICT (id) DO UPDATE
+  SET public             = excluded.public,
+      file_size_limit    = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+-- Sem policy de storage.objects para anon/authenticated neste bucket: o acesso
+-- passa somente pelo service role, dentro de driver-document-url, e so depois
+-- que a RPC abaixo autorizou o ator.
+
+-- Invariante no banco. A coluna se chama doc_url por historico, entao o
+-- comentario sozinho nao segura: a constraint e que impede um http:// de voltar
+-- a entrar, por exemplo se alguem reaplicar getPublicUrl no upload.
+ALTER TABLE public.driver_documents
+  DROP CONSTRAINT IF EXISTS driver_documents_doc_url_no_http;
+
+ALTER TABLE public.driver_documents
+  ADD CONSTRAINT driver_documents_doc_url_no_http
+  CHECK (doc_url !~* '^https?://');
+
+COMMENT ON COLUMN public.driver_documents.doc_url IS
+  'Path do objeto no bucket privado driver-documents, ex.: driver-documents/<tenant>/<driver>/<uuid>.pdf. NAO e URL: a constraint driver_documents_doc_url_no_http recusa http(s). Para exibir, chame driver-document-url, que assina URL curta apos checar o ator.';
+
+-- Autorizacao + path, sem assinatura. Devolver a URL daqui seria errado: a
+-- assinatura depende do service role e da expiracao, que sao coisas da borda.
+-- O criterio de escopo e o mesmo de driver_list_for_business e
+-- driver_review_document: papel de empresa e business_id do proprio ator.
+CREATE OR REPLACE FUNCTION public.driver_get_document_path(
+  p_tenant_id      uuid,
+  p_actor_user_id  uuid,
+  p_document_id    uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $function$
+declare
+  v_actor  users%rowtype;
+  v_doc    driver_documents%rowtype;
+  v_driver drivers%rowtype;
+begin
+  if p_tenant_id is null or p_actor_user_id is null or p_document_id is null then
+    raise exception 'BAD_REQUEST';
+  end if;
+
+  select * into v_actor from users
+  where id = p_actor_user_id and tenant_id = p_tenant_id;
+  if not found then raise exception 'FORBIDDEN'; end if;
+
+  if v_actor.role not in ('MERCHANT','ADMIN','STAFF','SUPER_ADMIN') then
+    raise exception 'FORBIDDEN';
+  end if;
+
+  select * into v_doc from driver_documents
+  where id = p_document_id and tenant_id = p_tenant_id;
+  if not found then raise exception 'NOT_FOUND'; end if;
+
+  select * into v_driver from drivers
+  where id = v_doc.driver_id and tenant_id = p_tenant_id;
+  if not found then raise exception 'NOT_FOUND'; end if;
+
+  if v_actor.role <> 'SUPER_ADMIN'
+     and v_driver.business_id is not null
+     and v_driver.business_id <> v_actor.business_id then
+    raise exception 'FORBIDDEN';
+  end if;
+
+  return jsonb_build_object(
+    'documentId', v_doc.id,
+    'docType',    v_doc.doc_type,
+    'status',     v_doc.status,
+    'docNumber',  v_doc.doc_number,
+    'driverId',   v_driver.id,
+    'driverName', v_driver.name,
+    'docPath',    v_doc.doc_url
+  );
+end
+$function$
+;
+
+REVOKE ALL ON FUNCTION public.driver_get_document_path(uuid, uuid, uuid) FROM public, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.driver_get_document_path(uuid, uuid, uuid) TO service_role;
+
+-- ------------------------------------------------------------
+-- 12) Fim do Modulo 4
 -- ------------------------------------------------------------
 -- Fluxo completo:
 --   1) POST /driver      { name, phone, email, businessId? }  -> driverRegister
 --   2) POST /driver      { phone, pin }                       -> driverSetPin
 --   3) POST /driver/documents  (upload)                       -> driverAddDocument
---   4) empresa: GET /driver?mode=pending  + review            -> aprova
---   5) POST /driver      { phone, pin }                       -> driverLogin
+--   4) empresa: GET  /driver-list-for-business                -> ve a pendencia
+--   5) empresa: GET  /driver-document-url?documentId=...      -> URL assinada 5min
+--   6) empresa: POST /driver-review-document                  -> aprova/reprova
+--   7) POST /driver      { phone, pin }                       -> driverLogin
 --      (so funciona se status = 'approved')
