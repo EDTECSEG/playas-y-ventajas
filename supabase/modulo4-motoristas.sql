@@ -59,63 +59,140 @@ CREATE INDEX IF NOT EXISTS driver_sessions_expires_idx
 ALTER TABLE public.driver_sessions ENABLE ROW LEVEL SECURITY;
 
 -- ------------------------------------------------------------
+-- 2b) Tokens de uso unico do cadastro
+-- ------------------------------------------------------------
+-- driver_register devolve dois tokens em claro, que o cliente usa para definir
+-- o PIN e para enviar documentos antes de existir sessao:
+--   'pin'    -> 2 horas, define o PIN
+--   'upload' -> 24 horas, envia documentos
+-- So o sha256 do token e guardado, entao o banco nao devolve o valor.
+-- Sem esta tabela, driver_set_pin e driver_add_document nao compilam.
+CREATE TABLE IF NOT EXISTS public.driver_registration_tokens (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id   uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  driver_id   uuid NOT NULL REFERENCES public.drivers(id) ON DELETE CASCADE,
+  purpose     text NOT NULL CHECK (purpose IN ('pin', 'upload')),
+  token_hash  text NOT NULL,
+  expires_at  timestamptz NOT NULL,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+-- hash unico: o mesmo token nunca pode valer para dois cadastros
+CREATE UNIQUE INDEX IF NOT EXISTS driver_registration_tokens_hash_uniq
+  ON public.driver_registration_tokens (token_hash);
+CREATE INDEX IF NOT EXISTS driver_registration_tokens_driver_idx
+  ON public.driver_registration_tokens (driver_id, purpose);
+
+-- RLS ligado e sem policy: acesso direto pela API fica bloqueado. So as
+-- funcoes SECURITY DEFINER abaixo leem a tabela, ja com search_path travado.
+ALTER TABLE public.driver_registration_tokens ENABLE ROW LEVEL SECURITY;
+
+-- ------------------------------------------------------------
 -- 3) driver_register - cadastro publico do motorista
 -- ------------------------------------------------------------
 -- Cria o cadastro com status 'pending'. NAO cria sessao: sem aprovacao da
 -- empresa o motorista nao consegue nem entrar na area dele.
--- O PIN e definido logo em seguida por driver_set_pin.
+-- Devolve dois tokens de uso unico, guardados so como sha256:
+--   pinToken    -> 2h, para driver_set_pin
+--   uploadToken -> 24h, para driver_add_document
+-- p_invite_code, se vier, amarra o cadastro a uma empresa parceira e consome
+-- uma uso do convite.
 -- ------------------------------------------------------------
-DROP FUNCTION IF EXISTS public.driver_register(uuid, text, text, text, uuid);
+DROP FUNCTION IF EXISTS public.driver_register(uuid, text, text, text, uuid, text);
 
 CREATE OR REPLACE FUNCTION public.driver_register(
   p_tenant_id uuid,
   p_name text,
   p_phone text,
   p_email text,
-  p_business_id uuid DEFAULT NULL
+  p_business_id uuid DEFAULT NULL,
+  p_invite_code text DEFAULT NULL
 )
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER SET search_path = public, extensions
 AS $function$
 declare
-  v_phone text;
-  v_email text;
-  v_driver_id uuid;
+  v_phone        text;
+  v_email        text;
+  v_driver_id    uuid;
+  v_invite       public.business_invites%rowtype;
+  v_business_id  uuid;
+  v_pin_token    text;
+  v_upload_token text;
+  v_recent       integer;
 begin
   v_phone := regexp_replace(coalesce(p_phone, ''), '\D', '', 'g');
   v_email := lower(trim(coalesce(p_email, '')));
   if p_name is null or btrim(p_name) = '' then raise exception 'NAME_REQUIRED'; end if;
   if length(v_phone) < 10 then raise exception 'PHONE_INVALID'; end if;
   if v_email not like '%@%' then raise exception 'EMAIL_INVALID'; end if;
+  if length(v_phone) > 15 then raise exception 'PHONE_INVALID'; end if;
+  if length(btrim(p_name)) > 120 then raise exception 'NAME_TOO_LONG'; end if;
+
+  -- teto de cadastros por hora por tenant
+  select count(*) into v_recent
+  from public.drivers
+  where tenant_id = p_tenant_id and created_at > now() - interval '1 hour';
+  if v_recent >= 20 then raise exception 'REGISTRATION_RATE_LIMITED'; end if;
 
   -- telefone ja cadastrado no tenant? nao cria duplicado
-  if exists (select 1 from drivers where tenant_id = p_tenant_id and regexp_replace(phone,'\D','','g') = v_phone) then
+  if exists (select 1 from public.drivers where tenant_id = p_tenant_id and regexp_replace(phone,'\D','','g') = v_phone) then
     raise exception 'PHONE_ALREADY_REGISTERED';
   end if;
 
   -- email tambem e unico por tenant (drivers_tenant_email_uniq). Verificamos
   -- aqui para devolver erro legivel em vez de deixar a constraint estourar
   -- com 'duplicate key value violates unique constraint'.
-  if exists (select 1 from drivers where tenant_id = p_tenant_id and lower(email) = v_email) then
+  if exists (select 1 from public.drivers where tenant_id = p_tenant_id and lower(email) = v_email) then
     raise exception 'EMAIL_ALREADY_REGISTERED';
   end if;
 
+  -- convite de empresa parceira: se vier, ele define a empresa
+  v_business_id := p_business_id;
+  if p_invite_code is not null and btrim(p_invite_code) <> '' then
+    select * into v_invite
+    from public.business_invites
+    where tenant_id = p_tenant_id and code = upper(btrim(p_invite_code))
+    for update;
+    if not found then raise exception 'INVITE_INVALID'; end if;
+    if v_invite.revoked_at is not null then raise exception 'INVITE_INVALID'; end if;
+    if v_invite.expires_at is not null and v_invite.expires_at <= now() then raise exception 'INVITE_EXPIRED'; end if;
+    if v_invite.uses >= v_invite.max_uses then raise exception 'INVITE_EXHAUSTED'; end if;
+    if v_invite.business_id is not null then
+      if p_business_id is not null and p_business_id <> v_invite.business_id then raise exception 'INVITE_BUSINESS_MISMATCH'; end if;
+      v_business_id := v_invite.business_id;
+    end if;
+  end if;
+
   -- empresa parceira tem que ser do mesmo tenant
-  if p_business_id is not null then
-    if not exists (select 1 from businesses where id = p_business_id and tenant_id = p_tenant_id) then
+  if v_business_id is not null then
+    if not exists (select 1 from public.businesses where id = v_business_id and tenant_id = p_tenant_id) then
       raise exception 'BUSINESS_NOT_FOUND';
     end if;
   end if;
 
-  insert into drivers (tenant_id, name, phone, email, business_id, status)
-  values (p_tenant_id, btrim(p_name), v_phone, v_email, p_business_id, 'pending')
+  insert into public.drivers (tenant_id, name, phone, email, business_id, status)
+  values (p_tenant_id, btrim(p_name), v_phone, v_email, v_business_id, 'pending')
   returning id into v_driver_id;
+
+  v_pin_token    := encode(gen_random_bytes(32), 'hex');
+  v_upload_token := encode(gen_random_bytes(32), 'hex');
+  insert into public.driver_registration_tokens (tenant_id, driver_id, purpose, token_hash, expires_at)
+  values
+    (p_tenant_id, v_driver_id, 'pin',    encode(digest(v_pin_token,    'sha256'), 'hex'), now() + interval '2 hours'),
+    (p_tenant_id, v_driver_id, 'upload', encode(digest(v_upload_token, 'sha256'), 'hex'), now() + interval '24 hours');
+
+  if v_invite.id is not null then
+    update public.business_invites set uses = uses + 1 where id = v_invite.id;
+  end if;
 
   return jsonb_build_object(
     'driverId', v_driver_id,
     'status', 'pending',
-    'message', 'Cadastro criado. Envie seus documentos e aguarde a aprovacao da empresa.'
+    'pinToken', v_pin_token,
+    'uploadToken', v_upload_token,
+    'message', 'Cadastro criado. Defina seu PIN, envie os documentos e aguarde a aprovacao da empresa.'
   );
 end $function$
 ;
@@ -123,39 +200,63 @@ end $function$
 -- ------------------------------------------------------------
 -- 4) driver_set_pin - o proprio motorista define o PIN
 -- ------------------------------------------------------------
--- Roda no cadastro (ainda pending) e na troca de PIN. Guardamos o hash
--- bcrypt, entao nao existe caminho de leitura do PIN no banco.
+-- Roda no cadastro (ainda pending) e na troca de PIN apos rejeicao. Guardamos
+-- o hash bcrypt, entao nao existe caminho de leitura do PIN no banco.
+-- Exige o pinToken de driver_register e CONSOME o token ao final: sem o
+-- delete, o mesmo token redefinia o PIN quantas vezes quisesse ate expirar.
 -- ------------------------------------------------------------
 DROP FUNCTION IF EXISTS public.driver_set_pin(uuid, text, text);
+DROP FUNCTION IF EXISTS public.driver_set_pin(uuid, text, text, text);
 
 CREATE OR REPLACE FUNCTION public.driver_set_pin(
   p_tenant_id uuid,
   p_phone text,
-  p_pin text
+  p_pin text,
+  p_pin_token text
 )
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER SET search_path = public, extensions
 AS $function$
 declare
-  v_driver drivers%rowtype;
+  v_driver public.drivers%rowtype;
 begin
   if p_pin is null or not (p_pin ~ '^[0-9]{4,8}$') then
     raise exception 'PIN_INVALID: use de 4 a 8 digitos';
   end if;
 
   select * into v_driver
-  from drivers
+  from public.drivers
   where tenant_id = p_tenant_id
     and regexp_replace(phone, '\D', '', 'g') = regexp_replace(coalesce(p_phone,''), '\D', '', 'g');
 
   if not found then raise exception 'DRIVER_NOT_FOUND'; end if;
 
-  update drivers
+  if p_pin_token is null or btrim(p_pin_token) = '' then raise exception 'AUTH_REQUIRED'; end if;
+
+  if not exists (
+    select 1 from public.driver_registration_tokens t
+    where t.driver_id = v_driver.id and t.purpose = 'pin'
+      and t.token_hash = encode(digest(btrim(p_pin_token), 'sha256'), 'hex')
+      and t.expires_at > now()
+  ) then
+    raise exception 'TOKEN_INVALID';
+  end if;
+
+  -- so quem ainda esta em cadastro pode trocar o PIN por este caminho
+  if v_driver.status not in ('pending', 'rejected') then raise exception 'TOKEN_INVALID'; end if;
+
+  update public.drivers
   set pin_hash = crypt(p_pin, gen_salt('bf')),
       pin_updated_at = now(),
       updated_at = now()
   where id = v_driver.id;
+
+  -- consome o token: vale uma vez
+  delete from public.driver_registration_tokens
+  where driver_id = v_driver.id
+    and purpose = 'pin'
+    and token_hash = encode(digest(btrim(p_pin_token), 'sha256'), 'hex');
 
   return jsonb_build_object('ok', true, 'driverId', v_driver.id);
 end $function$
@@ -305,7 +406,11 @@ $function$
 -- 7) Documentos
 -- ------------------------------------------------------------
 -- 7a) motorista anexa documento
-DROP FUNCTION IF EXISTS public.driver_add_document(uuid, text, text, text, date, uuid);
+-- Exige sessao valida OU o uploadToken de driver_register. A versao anterior
+-- aceitava p_driver_id sem sessao nenhuma nesse caminho, o que deixava
+-- qualquer um anexar documento no cadastro de outro motorista.
+DROP FUNCTION IF EXISTS public.driver_add_document(uuid, uuid, text, text, text, date, uuid);
+DROP FUNCTION IF EXISTS public.driver_add_document(uuid, uuid, text, text, text, date, uuid, text);
 
 CREATE OR REPLACE FUNCTION public.driver_add_document(
   p_tenant_id uuid,
@@ -314,40 +419,54 @@ CREATE OR REPLACE FUNCTION public.driver_add_document(
   p_doc_url text,
   p_doc_number text DEFAULT NULL,
   p_doc_expires_at date DEFAULT NULL,
-  p_session_token uuid DEFAULT NULL
+  p_session_token uuid DEFAULT NULL,
+  p_upload_token text DEFAULT NULL
 )
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER SET search_path = public, extensions
 AS $function$
 declare
-  v_driver drivers%rowtype;
+  v_driver public.drivers%rowtype;
   v_doc_id uuid;
 begin
   if p_doc_type not in ('cnh','rg','crv') then raise exception 'DOC_TYPE_INVALID'; end if;
   if p_doc_url is null or btrim(p_doc_url) = '' then raise exception 'DOC_URL_REQUIRED'; end if;
+  if length(p_doc_url) > 500 then raise exception 'DOC_URL_TOO_LONG'; end if;
 
   -- se veio sessao, o motorista so anexa em nome proprio
   if p_session_token is not null then
-    select * into v_driver from drivers
+    select * into v_driver from public.drivers
     where id = p_driver_id and tenant_id = p_tenant_id
-      and exists (select 1 from driver_sessions s where s.token = p_session_token and s.driver_id = p_driver_id and s.expires_at > now());
+      and exists (select 1 from public.driver_sessions s where s.token = p_session_token and s.driver_id = p_driver_id and s.expires_at > now());
     if not found then raise exception 'FORBIDDEN'; end if;
+
+  -- durante o cadastro, antes de existir sessao, vale o uploadToken
+  elsif p_upload_token is not null and btrim(p_upload_token) <> '' then
+    select * into v_driver from public.drivers
+    where id = p_driver_id and tenant_id = p_tenant_id and status in ('pending', 'rejected')
+      and exists (
+        select 1 from public.driver_registration_tokens t
+        where t.driver_id = p_driver_id and t.purpose = 'upload'
+          and t.token_hash = encode(digest(btrim(p_upload_token), 'sha256'), 'hex')
+          and t.expires_at > now()
+      );
+    if not found then raise exception 'FORBIDDEN'; end if;
+
   else
-    select * into v_driver from drivers where id = p_driver_id and tenant_id = p_tenant_id;
-    if not found then raise exception 'DRIVER_NOT_FOUND'; end if;
+    raise exception 'AUTH_REQUIRED';
   end if;
 
   -- um documento por tipo: reenvio substitui o anterior (historico fica
   -- no log de revisao, nao em outra linha, para nao duplicar pendencia)
-  delete from driver_documents where driver_id = p_driver_id and doc_type = p_doc_type;
+  delete from public.driver_documents where driver_id = p_driver_id and doc_type = p_doc_type;
 
-  insert into driver_documents (tenant_id, driver_id, doc_type, doc_url, doc_number, doc_expires_at, status)
+  insert into public.driver_documents (tenant_id, driver_id, doc_type, doc_url, doc_number, doc_expires_at, status)
   values (p_tenant_id, p_driver_id, p_doc_type, btrim(p_doc_url), nullif(trim(coalesce(p_doc_number,'')),''), p_doc_expires_at, 'pending')
   returning id into v_doc_id;
 
   -- se ja estava aprovado e o motorista reenviou, volta para pendente
-  update drivers
+  update public.drivers
   set status = case when status = 'approved' then 'pending' else status end,
       updated_at = now()
   where id = p_driver_id;
