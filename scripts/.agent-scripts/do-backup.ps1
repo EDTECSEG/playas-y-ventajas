@@ -11,6 +11,10 @@
         SUPABASE_SERVICE_ROLE_KEY e RESEND_API_KEY). Isso deixou 6 backups
         antigos com segredo dentro do zip sem o validador acusar.
       - agora o .dev.vars e barrado em /XF (nao copiado) E no regex de checagem.
+      - o script exigia _worker.js no zip, mas o AGENTS.md linha 17 manda excluir
+        out/, e o _worker.js so existe dentro de out/. Os dois checks (antes do zip
+        e no zip) tornavam TODOS os backups impossiveis. Ambos foram removidos e a
+        validacao dos .sql (exigidos na linha 14) foi acrescentada no lugar.
 #>
 param(
   [Parameter(Mandatory = $true)][int]$Idx
@@ -68,7 +72,9 @@ try {
   Write-Output ("BEFORE_$Idx canon_cjs   => " + $cjsBefore)
   Write-Output ("BEFORE_$Idx _worker.js  => " + $wkrBefore)
   if ($esmBefore -eq 0) { throw "espelho ESM nao copiado (antes do zip)" }
-  if ($wkrBefore  -eq 0) { throw "_worker.js nao copiado (antes do zip)" }
+  # _worker.js so existe dentro de out/, que o AGENTS.md linha 17 manda EXCLUIR
+  # do zip. Exigir esse arquivo aqui tornava o backup impossivel de concluir.
+  # Por isso wkrBefore = 0 e o valor ESPERADO, e nao um sinal de falha.
 
   # 3a) Paridade CJS/ESM. Nao e fatal (o repo tem desvio conhecido), mas o
   # desvio precisa ficar VISIVEL em toda execucao para nao passar despercebido.
@@ -117,7 +123,10 @@ try {
   Write-Output ("SEC_$Idx  => " + $secZip.Count)
 
   if ($esmZip -eq 0) { throw "backup invalido: espelho ESM ausente no zip" }
-  if ($wkrZip  -eq 0) { throw "backup invalido: _worker.js ausente no zip" }
+  # WKRZip = 0 e esperado (out/ fora do zip, ver AGENTS.md linha 17).
+  # A cobertura perdida com o _worker.js e compensada pelo .sql, que o AGENTS.md
+  # linha 14 exige no backup e que antes nao era validado de forma alguma.
+  if ($sqlZip -eq 0) { throw "backup invalido: nenhum .sql (migrations) no zip" }
   if ($secZip.Count -gt 0) { throw "backup invalido: segredo vazou no zip => " + ($secZip -join ', ') }
 
   Write-Output "BACKUP_VALIDO => TRUE"
