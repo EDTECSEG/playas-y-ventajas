@@ -102,6 +102,8 @@ exports.handler = async (event) => {
     return { statusCode: 405, body: '{}' };
   } catch (err) {
     const code = err.message === 'SESSION_REQUIRED' || err.message === 'SESSION_EXPIRED' ? 401 : 500;
-    return { statusCode: code, body: JSON.stringify({ error: err.message }) };
+    const body = code === 401 ? err.message : 'erro interno';
+    if (code === 500) console.error('admin: ' + (err && err.message));
+    return { statusCode: code, body: JSON.stringify({ error: body }) };
   }
 };

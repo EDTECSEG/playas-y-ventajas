@@ -82,6 +82,7 @@ exports.handler = async (event) => {
       }),
     };
   } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    console.error('business-driver-invite: ' + (err && err.message));
+    return { statusCode: 500, body: JSON.stringify({ error: 'erro interno' }) };
   }
 };

@@ -401,3 +401,38 @@ freela sem a peça de infraestrutura.
 Responsável pela decisão: usuário do projeto ("remover o email de vez, usando o
 que já funciona", confirmado em conversa).
 
+# Decisão de risco registrada — erro interno nunca mais em resposta HTTP (2026-09-28)
+
+## Contexto
+Os handlers de função devolviam `{ error: err.message }` no catch (status 500) e
+em alguns 409, vazando detalhes internos (RPC, SQL, storage, stack) para o
+cliente — em `netlify/functions` (CJS, bundle do Worker) e nos espelhos ESM
+(`functions/.netlify/functions`, Cloudflare Pages Functions).
+
+## Decisão
+Todo catch de 500 passou a:
+- **logar a causa** via `console.error('<handler>: ' + message)` (detalhe interno
+  fica onde interessa: nos logs);
+- **responder `erro interno`** no corpo;
+- **preservar o contrato de sessão**: `SESSION_REQUIRED`/`SESSION_EXPIRED`
+  continuam `401` com a mensagem original (mencionados em `worker/main.js`).
+- Em `validate-coupon` (409), o fallback `code || error.message` virou
+  `code || 'COUPON_REJECTED'`, com a causa logada.
+
+O padrão-mestre é `driver-add-document.js` (catch com `code`/`body`). Handler
+de email órfão `_verify-email.js` (CJS + ESM) foi deletado.
+
+## Justificativa
+`err.message` em 500/409 expõe nomes de RPC, constraints, caminhos de storage e
+fragmentos de SQL a qualquer visitante; nunca é informação acionável para o
+cliente (a UI só exibe `data.error`). Logar a causa preserva o diagnóstico sem
+publicar a superfície.
+
+## Condição de revisão obrigatória
+Se um novo endpoint precisar repassar uma mensagem interna ao cliente (ex.:
+provedor externo com código de erro semantico), deve ser por mapeamento explícito
+com código próprio — nunca `error.message` cru.
+
+Responsável pela decisão: usuário do projeto (autorizou "corrigir" o vazamento
+de erro interno nos handlers).
+

@@ -53,6 +53,7 @@ exports.handler = async (event) => {
       body: JSON.stringify({ ok: true }),
     };
   } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    console.error('driver-logout: ' + (err && err.message));
+    return { statusCode: 500, body: JSON.stringify({ error: 'erro interno' }) };
   }
 };

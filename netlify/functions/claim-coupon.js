@@ -78,6 +78,7 @@ exports.handler = async (event) => {
       body: JSON.stringify({ ...data, customerToken: buildCustomerToken(customerId), ...extras }),
     };
   } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    console.error('claim-coupon: ' + (err && err.message));
+    return { statusCode: 500, body: JSON.stringify({ error: 'erro interno' }) };
   }
 };

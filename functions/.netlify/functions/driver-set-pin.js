@@ -57,6 +57,7 @@ export async function onRequestPost(context) {
       { status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } },
     );
   } catch (err) {
-    return json({ error: err.message }, 500);
+    console.error('driver-set-pin: ' + (err && err.message));
+    return json({ error: 'erro interno' }, 500);
   }
 }

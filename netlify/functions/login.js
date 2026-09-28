@@ -92,6 +92,7 @@ exports.handler = async (event) => {
     } catch { /* flag ausente: segue sem exigir troca */ }
     return { statusCode: 200, body: JSON.stringify({ ...data, mustChangePin }) };
   } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    console.error('login: ' + (err && err.message));
+    return { statusCode: 500, body: JSON.stringify({ error: 'erro interno' }) };
   }
 };

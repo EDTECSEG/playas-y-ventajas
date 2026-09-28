@@ -18,11 +18,14 @@ export async function onRequestPost(context) {
     });
     if (error) {
       const code = (error.message || '').split(':')[0].trim();
-      return json({ error: code || error.message }, 409);
+      console.error('validate-coupon: rpc recusou: ' + (error && error.message));
+      return json({ error: code || 'COUPON_REJECTED' }, 409);
     }
     return json(data);
   } catch (err) {
     const status = err.message === 'SESSION_REQUIRED' || err.message === 'SESSION_EXPIRED' ? 401 : 500;
-    return json({ error: err.message }, status);
+    const body = status === 401 ? err.message : 'erro interno';
+    if (status === 500) console.error('validate-coupon: ' + (err && err.message));
+    return json({ error: body }, status);
   }
 }

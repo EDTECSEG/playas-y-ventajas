@@ -79,6 +79,7 @@ export async function onRequestPost(context) {
     } catch { /* flag ausente: segue sem exigir troca */ }
     return json({ ...data, mustChangePin });
   } catch (err) {
-    return json({ error: err.message }, 500);
+    console.error('login: ' + (err && err.message));
+    return json({ error: 'erro interno' }, 500);
   }
 }

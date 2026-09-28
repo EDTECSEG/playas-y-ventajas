@@ -14,6 +14,7 @@ export async function onRequestPost(context) {
     if (error) return json({ error: error.message }, 400);
     return json({ customerId: data, customerToken: await buildCustomerToken(env, data) });
   } catch (err) {
-    return json({ error: err.message }, 500);
+    console.error('identify: ' + (err && err.message));
+    return json({ error: 'erro interno' }, 500);
   }
 }

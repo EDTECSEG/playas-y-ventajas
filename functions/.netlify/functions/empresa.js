@@ -23,7 +23,9 @@ export async function onRequestGet(context) {
     return json(data);
   } catch (err) {
     const status = err.message === 'SESSION_REQUIRED' || err.message === 'SESSION_EXPIRED' ? 401 : 500;
-    return json({ error: err.message }, status);
+    const body = status === 401 ? err.message : 'erro interno';
+    if (status === 500) console.error('empresa: ' + (err && err.message));
+    return json({ error: body }, status);
   }
 }
 
@@ -107,6 +109,8 @@ export async function onRequestPost(context) {
     return json({ error: 'action inválida' }, 400);
   } catch (err) {
     const status = err.message === 'SESSION_REQUIRED' || err.message === 'SESSION_EXPIRED' ? 401 : 500;
-    return json({ error: err.message }, status);
+    const body = status === 401 ? err.message : 'erro interno';
+    if (status === 500) console.error('empresa: ' + (err && err.message));
+    return json({ error: body }, status);
   }
 }

@@ -91,6 +91,7 @@ export async function onRequestPost(context) {
       ...extras,
     });
   } catch (err) {
-    return json({ error: err.message }, 500);
+    console.error('claim-coupon: ' + (err && err.message));
+    return json({ error: 'erro interno' }, 500);
   }
 }

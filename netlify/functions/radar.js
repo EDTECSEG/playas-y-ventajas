@@ -11,6 +11,7 @@ exports.handler = async (event) => {
     if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
     return { statusCode: 200, body: JSON.stringify(data) };
   } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    console.error('radar: ' + (err && err.message));
+    return { statusCode: 500, body: JSON.stringify({ error: 'erro interno' }) };
   }
 };

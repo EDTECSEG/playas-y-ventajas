@@ -70,6 +70,7 @@ export async function onRequestPost(context) {
       expiresAt: data.expiresAt,
     }, 200);
   } catch (err) {
-    return json({ error: err.message }, 500);
+    console.error('business-driver-invite: ' + (err && err.message));
+    return json({ error: 'erro interno' }, 500);
   }
 }

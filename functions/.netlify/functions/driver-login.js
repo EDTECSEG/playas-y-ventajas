@@ -76,6 +76,7 @@ export async function onRequestPost(context) {
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
     });
   } catch (err) {
-    return json({ error: err.message }, 500);
+    console.error('driver-login: ' + (err && err.message));
+    return json({ error: 'erro interno' }, 500);
   }
 }

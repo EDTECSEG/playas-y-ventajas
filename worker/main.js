@@ -27,9 +27,6 @@
 //      /_supabaseAdmin e /_resend expostas.
 //   2) a regex de rota aceita apenas [a-z0-9-], entao um nome com underscore
 //      nunca casa. Os helpers ficam inalcancaveis por construcao.
-// _verify-email saiu da lista: ele exige fs e path (netlify/functions/
-// _verify-email.js), que nao existem no Workers. Nao e um ajuste de
-// allowlist, e uma impossibilidade de plataforma.
 // ----------------------------------------------------------------------------
 // ENV: com nodejs_compat, o runtime popula process.env sozinho
 // (nodejs_compat_populate_process_env, padrao para compatibility_date >=

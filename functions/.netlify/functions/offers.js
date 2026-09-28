@@ -62,6 +62,7 @@ export async function onRequestGet(context) {
     if (error) return json({ error: error.message }, 400);
     return json(await withOfferImages(supabase, tenantId, data));
   } catch (err) {
-    return json({ error: err.message }, 500);
+    console.error('offers: ' + (err && err.message));
+    return json({ error: 'erro interno' }, 500);
   }
 }

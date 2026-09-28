@@ -16,6 +16,7 @@ export async function onRequestGet(context) {
     if (error) return json({ error: error.message }, 400);
     return json(data);
   } catch (err) {
-    return json({ error: err.message }, 500);
+    console.error('radar: ' + (err && err.message));
+    return json({ error: 'erro interno' }, 500);
   }
 }

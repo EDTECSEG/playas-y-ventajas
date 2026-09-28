@@ -65,6 +65,7 @@ exports.handler = async (event) => {
       body: JSON.stringify({ ok: data.ok === true, driverId: data.driverId }),
     };
   } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    console.error('driver-set-pin: ' + (err && err.message));
+    return { statusCode: 500, body: JSON.stringify({ error: 'erro interno' }) };
   }
 };

@@ -29,11 +29,14 @@ exports.handler = async (event) => {
 
     if (error) {
       const code = (error.message || '').split(':')[0].trim();
-      return { statusCode: 409, body: JSON.stringify({ error: code || error.message }) };
+      console.error('validate-coupon: rpc recusou: ' + (error && error.message));
+      return { statusCode: 409, body: JSON.stringify({ error: code || 'COUPON_REJECTED' }) };
     }
     return { statusCode: 200, body: JSON.stringify(data) };
   } catch (err) {
     const code = err.message === 'SESSION_REQUIRED' || err.message === 'SESSION_EXPIRED' ? 401 : 500;
-    return { statusCode: code, body: JSON.stringify({ error: err.message }) };
+    const body = code === 401 ? err.message : 'erro interno';
+    if (code === 500) console.error('validate-coupon: ' + (err && err.message));
+    return { statusCode: code, body: JSON.stringify({ error: body }) };
   }
 };
