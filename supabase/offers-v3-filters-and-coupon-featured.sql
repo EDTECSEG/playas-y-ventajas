@@ -197,6 +197,11 @@ end $function$;
 
 REVOKE EXECUTE ON FUNCTION public.business_set_coupon_featured(uuid, uuid, uuid, timestamptz) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.admin_set_coupon_featured(uuid, uuid, uuid, timestamptz) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.norm_categoria(text) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.list_categories(uuid) FROM PUBLIC, anon, authenticated;
+-- DROP+CREATE acima zera o ACL: revogar explicitamente para preservar o fecho.
+REVOKE EXECUTE ON FUNCTION public.list_offers(uuid, text, text, double precision, double precision, double precision) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.business_update_own(uuid, uuid, text, text, text, text, text, text, double precision, double precision) FROM PUBLIC, anon, authenticated;
 
 -- ------------------------------------------------------------
 -- 6) business_update_own v10: empresa edita a propria categoria

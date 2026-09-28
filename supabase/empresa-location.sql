@@ -55,3 +55,7 @@ begin
     where id=v_actor.business_id and tenant_id=p_tenant_id;
 end $function$
 ;
+
+-- DROP+CREATE acima zera o ACL: revogar explicitamente para preservar o fecho.
+REVOKE EXECUTE ON FUNCTION public.business_get_own(uuid, uuid) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.business_update_own(uuid, uuid, text, text, text, text, text, double precision, double precision) FROM PUBLIC, anon, authenticated;

@@ -198,6 +198,7 @@ begin
   );
 end $function$;
 
+REVOKE EXECUTE ON FUNCTION public.affiliate_dashboard(uuid, uuid, text, timestamptz, timestamptz) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.admin_affiliate_report(uuid, uuid, timestamptz, timestamptz) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.admin_get_affiliate_rewards(uuid, uuid) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.admin_set_affiliate_rewards(uuid, uuid, uuid, uuid, boolean) FROM PUBLIC, anon, authenticated;
