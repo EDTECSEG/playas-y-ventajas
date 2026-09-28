@@ -41,7 +41,7 @@
 // argumento do fetch. Em Pages esse argumento nao traz as env vars do projeto,
 // entao admin e empresa respondiam 500 "Env vars ausentes" mesmo com as
 // variaveis configuradas no painel.
-// VARS esperadas: RESEND_API_KEY, RESEND_FROM, NEXT_PUBLIC_SUPABASE_URL,
+// VARS esperadas: NEXT_PUBLIC_SUPABASE_URL,
 // SUPABASE_SERVICE_ROLE_KEY
 
 import admin from '../netlify/functions/admin.js';
@@ -52,11 +52,8 @@ import login from '../netlify/functions/login.js';
 import mapPlaces from '../netlify/functions/map-places.js';
 import offers from '../netlify/functions/offers.js';
 import radar from '../netlify/functions/radar.js';
-import sendOtp from '../netlify/functions/send-otp.js';
 import uploadImage from '../netlify/functions/upload-image.js';
 import validateCoupon from '../netlify/functions/validate-coupon.js';
-import loginByEmail from '../netlify/functions/login-by-email.js';
-import registerBusinessByEmail from '../netlify/functions/register-business-by-email.js';
 import driverRegister from '../netlify/functions/driver-register.js';
 import driverSetPin from '../netlify/functions/driver-set-pin.js';
 import driverLogin from '../netlify/functions/driver-login.js';
@@ -93,12 +90,8 @@ const ROUTES = {
   'map-places': mapPlaces,
   offers,
   radar,
-  'send-otp': sendOtp,
   'upload-image': uploadImage,
   'validate-coupon': validateCoupon,
-  // Cadastro/autenticacao de empresa por email + OTP.
-  'login-by-email': loginByEmail,
-  'register-business-by-email': registerBusinessByEmail,
   // Fluxo do motorista: registro, PIN, sessao, aprovacao, convite.
   'driver-register': driverRegister,
   'driver-set-pin': driverSetPin,
@@ -143,8 +136,6 @@ const ENV_DIAG_VARS = [
   'NEXT_PUBLIC_SUPABASE_URL',
   'NEXT_PUBLIC_SUPABASE_ANON_KEY',
   'SUPABASE_SERVICE_ROLE_KEY',
-  'RESEND_API_KEY',
-  'RESEND_FROM',
 ];
 
 const SUPAHOST_RE = /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/;

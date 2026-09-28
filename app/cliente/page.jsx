@@ -56,18 +56,6 @@ export default function ClientePage() {
   const [name, setName] = useState('');
   const [instagram, setInstagram] = useState('');
   const [email, setEmail] = useState('');
-  const [emailCode, setEmailCode] = useState('');
-  const [emailCodeSent, setEmailCodeSent] = useState(false);
-  const requestEmailCode = async () => {
-    setMsg(''); setMsg('Enviaremos um codigo de 6 digitos para o seu email.');
-    try {
-      const res = await fetch('/.netlify/functions/send-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
-      const data = await res.json();
-      if (res.ok) { setEmailCodeSent(true); setMsg('Codigo enviado! Confira seu email (inclusive o lixo eletronico).'); }
-      else { setMsg('Erro ao enviar codigo: ' + (data.error || 'tente novamente')); }
-    } catch (err) { setMsg('Falha ao enviar codigo: ' + err.message); }
-  };
-  const [emailVerified, setEmailVerified] = useState(false);
   const [customerId, setCustomerId] = useState(null);
   const [offers, setOffers] = useState([]);
   // Separado de msg de proposito: msg e feedback de acao (cupom resgatado,
@@ -178,14 +166,13 @@ export default function ClientePage() {
 
   async function finalizeRegistration() {
     if (!phone) { setMsg('Informe seu telefone.'); return; }
-    if (email && !emailCode) { setMsg('Informe o código enviado ao teu email.'); return; }
-    const res = await fetch('/.netlify/functions/identify', { method: 'POST', body: JSON.stringify({ phone, name, email, instagram, emailCode }) });
+    const res = await fetch('/.netlify/functions/identify', { method: 'POST', body: JSON.stringify({ phone, name, email, instagram }) });
     const data = await res.json();
     if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
     localStorage.setItem('pyv_customer', JSON.stringify({ phone, name, instagram, email, customerId: data.customerId, customerToken: data.customerToken }));
     setCustomerId(data.customerId);
     setMsg('✅ Cadastro finalizado com sucesso!');
-    loadMyCoupons(data.customerIdiden0);
+    loadMyCoupons(data.customerId, data.customerToken);
   }
 
   async function claim(offer) {
@@ -436,20 +423,6 @@ export default function ClientePage() {
           <input style={input} placeholder={t.phone} value={phone} onChange={(e) => setPhone(e.target.value)} />
           <input style={input} placeholder={t.name} value={name} onChange={(e) => setName(e.target.value)} />
           <input style={input} placeholder={t.email} value={email} onChange={(e) => setEmail(e.target.value)} />
-          {email && !emailCodeSent && (
-            <div>
-              <button style={btn} onClick={requestEmailCode}>Enviar código de confirmação</button>
-              <p style={{ fontSize: 11, color: '#888', margin: '0 0 6px' }}>Enviaremos um código de 6 dígitos para <strong>{email}</strong>.</p>
-            </div>
-          )}
-          {emailCodeSent && (
-            <input
-              style={input}
-              placeholder="Digite o código de 6 dígitos recebido por email"
-              value={emailCode}
-              onChange={(e) => setEmailCode(e.target.value)}
-            />
-          )}
           <input style={input} placeholder={t.instagram} value={instagram} onChange={(e) => setInstagram(e.target.value)} />
           <p style={{ fontSize: 12 }}>{t.noPasswordNote}</p>
           <button style={btn} onClick={finalizeRegistration}>{t.finishRegistration}</button>

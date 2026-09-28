@@ -12,10 +12,7 @@ const IGNORE = ['package.json'];
 
 // Modulos compartilhados: nao sao rotas, entao nao devem exportar handler HTTP.
 //
-// Declarado explicitamente em vez de inferido do grafo de imports, porque o
-// grafo diverge entre os dois dialetos: o CJS `_otp.js` faz require('./_resend'),
-// mas o ESM `_otp.js` tem sendEmail inline e nao importa nada. Inferindo, o
-// `_resend.js` ESM pareceria um endpoint.
+// Declarado explicitamente em vez de inferido do grafo de imports.
 //
 // Este conjunto e a unica fonte de verdade sobre o que e helper. O teste
 // 'helpers declarados batem com o grafo de imports'cruza os dois, para um
@@ -24,8 +21,6 @@ const HELPERS = new Set([
   '_supabaseAdmin.js', // canonico; par no ESM e _shared.js
   '_shared.js',
   '_mapPlaces.js', // logica Overpass, compartilhada pelos dois handlers de mapa
-  '_otp.js',
-  '_resend.js',
   '_wa.js',
 ]);
 
@@ -66,8 +61,8 @@ test('toda function CJS exporta handler e toda ESM exporta handlers onRequestGet
     if (isHelper(file)) {
       // Um helper NAO deve virar rota. O file-based routing do Cloudflare Pages
       // (e do Netlify) mapeia todo .js do diretorio para uma rota; um handler
-      // no-op em `_resend.js` publicaria uma rota que carrega a logica da chave
-      // da Resend sem servir para nada. Helper nao aceita handler HTTP.
+      // no-op em helper publicaria uma rota que carrega logica de segredo sem
+      // servir para nada. Helper nao aceita handler HTTP.
       assert.doesNotMatch(cjs, /exports\.handler/, `${file} e helper e nao deve exportar handler (viraria rota publica)`);
       assert.doesNotMatch(esm, /onRequest(?:Get|Post)/, `${file} e helper e nao deve exportar onRequest (viraria rota publica)`);
       assert.match(cjs, /module\.exports/, `${file} (CJS) deve exportar helpers via module.exports`);

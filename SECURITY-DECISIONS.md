@@ -346,3 +346,58 @@ Reabrir assim que o domínio existir:
 Responsável pela decisão: usuário do projeto (adiou explicitamente até ter o
 domínio, ciente de que o email segue inoperante para terceiros nesse intervalo).
 
+---
+
+# Envio de email e login por email removidos de vez (2026-09-28)
+
+## Contexto
+O fluxo de email + OTP (login/cadastro de empresa, identidade do cliente) nunca
+entregou uma mensagem a um cliente real: dependia de domínio verificado e de
+chave de API (Resend) que não existem em produção. O domínio foi adiado de novo,
+e o usuário decidiu não manter código que depende de uma peça que não vai existir.
+
+## Decisão
+Remover de vez o email como mecanismo de autenticação, usando o que já opera:
+
+- **Empresa — login:** única via `/login` → RPC `auth_login` (código interno +
+  senha, PIN hasheado com lockout por tentativas). O modo "entrar com email"
+  (login-by-email) saiu da UI e do servidor.
+- **Empresa — cadastro:** única via `register_business` (código interno + senha,
+  `pin_hash` já gravado). O modo "email + OTP" saiu da UI; a RPC
+  `register_business_by_email` foi removida do banco.
+- **Cliente:** identifica-se por telefone. Email virou campo opcional de cadastro,
+  **sem verificação** (`identify_customer` guarda o endereço como dado, e o
+  fluxo de OTP do cliente foi retirado do `identify.js` e da UI).
+- **Banco:** `DROP FUNCTION public.auth_login_by_email(text, text)` e
+  `DROP FUNCTION public.register_business_by_email(...)` aplicadas
+  (migração `drop_email_auth`). Recriáveis pelos SQL versionados se um dia
+  voltarem.
+- Removidos handlers e espelhos ESM: `send-otp.js`, `login-by-email.js`,
+  `register-business-by-email.js`, `_otp.js`, `_resend.js`, e o teste
+  `otp-email.test.cjs`. Rotas correspondentes saíram da whitelist do
+  `worker/main.js` e `RESEND_API_KEY`/`RESEND_FROM` saíram do diagnóstico.
+- O teste E2E live de aprovação de motorista trocou o login por OTP pelo login
+  por código + senha (`/login`), exigindo `LIVE_BUSINESS_CODE` + PIN por env.
+
+## Risco explicado e aceito
+- **Sem verificação de email no cliente:** qualquer pessoa pode cadastrar um
+  telefone/email que não seja de um terceiro. Isso já era verdade para telefone
+  e instagram; o email era o único campo verificado e agora deixou de ser.
+- **Escopo menor de login de empresa:** quem só tinha acesso por email precisará
+  do código interno + senha. É o segredo real da conta; o email nunca foi um
+  segredo.
+
+## Mitigação que permanece ativa
+- PIN de empresa: hasheado, mínimo 6 caracteres, lockout no `auth_login` (teste
+  de senha por tentativa + backoff em memória e no banco via `login_attempts`).
+- `identify_customer` sem OTP, porém sem token de sessão durável diferente do
+  já existente (`buildCustomerToken`, token de cliente por telefone).
+
+## Condição de revisão obrigatória
+Reabrir este fluxo **somente quando** existir domínio verificado E uma decisão
+trackeada de qual provedor (Resend verificada, SMTP, etc.) — não reintroduzir
+freela sem a peça de infraestrutura.
+
+Responsável pela decisão: usuário do projeto ("remover o email de vez, usando o
+que já funciona", confirmado em conversa).
+

@@ -11,12 +11,9 @@
 // documento no storage e uma sessao. O cleanup roda no `after()` mesmo se
 // alguma assercao falhar no meio.
 //
-// O OTP de empresa e STATELESS (netlify/functions/_otp.js): e
-// HMAC-SHA256("email|janela de 5min") usando a SUPABASE_SERVICE_ROLE_KEY como
-// segredo, sem tabela. Por isso calculamos o codigo localmente em vez de ler o
-// email. `login-by-email` so VALIDA o codigo, nao envia nada, entao nenhum
-// email sai daqui. E o dominio do Resend ainda nao esta verificado, o que
-// impediria o login por email mesmo.
+// Empresa autentica pelo caminho de codigo + senha (`/login`), o que sobrou
+// depois da remocao do email/OTP (ver SECURITY-DECISIONS.md). O codigo interno
+// e a senha da empresa vem de ambiente: LIVE_BUSINESS_CODE e PIN.
 //
 // A service role e lida de .dev.vars e NUNCA e impressa.
 
@@ -24,11 +21,10 @@ const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
 const path = require('node:path');
 const fs = require('node:fs');
-const { createHmac } = require('node:crypto');
 
 const BASE = process.env.LIVE_BASE || 'https://playas-y-ventajas.pages.dev';
 const SLUG = 'playas-y-ventajas';
-const BUSINESS_EMAIL = process.env.LIVE_BUSINESS_EMAIL || 'edtecseglagos@gmail.com';
+const BUSINESS_CODE = process.env.LIVE_BUSINESS_CODE || '';
 const PIN = '4821';
 
 // `path.join(__dirname, '..')` e nao '.dev.vars': assim funciona independente
@@ -53,13 +49,7 @@ function lerEnv() {
   );
 }
 
-// mesmo algoritmo de netlify/functions/_otp.js
-function buildOtpCode(secret, email, bucket) {
-  const hex = createHmac('sha256', secret)
-    .update(`${String(email).trim().toLowerCase()}|${bucket}`)
-    .digest('hex');
-  return String(parseInt(hex.slice(0, 8), 16) % 1000000).padStart(6, '0');
-}
+// mesmo algoritmo de netlify/functions/login.js
 
 async function post(nome, body, token) {
   const res = await fetch(`${BASE}/.netlify/functions/${nome}`, {
@@ -84,7 +74,7 @@ async function get(nome, query, token) {
 // estado compartilhado entre os passos, que sao estritamente sequenciais.
 // Tudo fica dentro de um `describe` de proposito: no Node 22 um `before` na
 // raiz do arquivo NAO roda antes de `test` na raiz — so ancora dentro de uma
-// suite. Sem o describe, o `before` nao executa e `ctx.otp` chega undefined.
+// suite. Sem o describe, o `before` nao executa e `ctx` chega vazio.
 const ctx = {};
 
 // `describe` nao aceita `skip`, entao o guard fica em cada `test` e no
@@ -93,14 +83,13 @@ describe('aprovacao de motorista: caminho feliz', { skip: enabled() }, () => {
   before(() => {
     const env = lerEnv();
     if (!env.SUPABASE_SERVICE_ROLE_KEY) {
-      throw new Error('SUPABASE_SERVICE_ROLE_KEY ausente em .dev.vars');
+      throw new Error('SUPABASE_SERVICE_ROLE_KEY ausente em .dev.vars (usado no cleanup)');
     }
     ctx.env = env;
-    ctx.otp = buildOtpCode(
-      env.SUPABASE_SERVICE_ROLE_KEY,
-      BUSINESS_EMAIL,
-      Math.floor(Date.now() / 1000 / 300)
-    );
+    ctx.internalCode = BUSINESS_CODE;
+    if (!BUSINESS_CODE) {
+      throw new Error('LIVE_BUSINESS_CODE ausente: defina o codigo interno da empresa de teste');
+    }
     // telefone e email ineditos: o banco rejeita telefone e email repetidos
     // por tenant, entao um valor fixo so funcionaria na primeira execucao
     const sufixo = Date.now().toString().slice(-9);
@@ -112,11 +101,11 @@ describe('aprovacao de motorista: caminho feliz', { skip: enabled() }, () => {
     ).toString('base64');
   });
 
-  test('empresa autentica por OTP', async () => {
-    const r = await post('login-by-email', {
-      tenantSlug: SLUG, email: BUSINESS_EMAIL, emailOtp: ctx.otp,
+  test('empresa autentica por codigo e senha', async () => {
+    const r = await post('login', {
+      tenantSlug: SLUG, internalCode: ctx.internalCode, pin: PIN,
     });
-    assert.strictEqual(r.status, 200, `login-by-email: ${JSON.stringify(r.body)}`);
+    assert.strictEqual(r.status, 200, `login: ${JSON.stringify(r.body)}`);
     assert.ok(r.body.sessionToken, 'deve vir sessionToken');
     assert.ok(r.body.businessId, 'deve vir businessId');
     assert.ok(r.body.tenantId, 'deve vir tenantId');

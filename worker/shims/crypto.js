@@ -8,8 +8,8 @@
 // nodejs_compat) em vez de require.
 //
 // Superficie realmente usada pelos handlers:
-//   upload-image.js / validate-coupon.js  -> createHmac, timingSafeEqual
-//   _otp.js                               -> randomUUID
+//   upload-image.js / validate-coupon.js / driver-add-document.js
+//     -> createHmac, timingSafeEqual, randomUUID
 // Buffer vem do nodejs_compat como global.
 
 import * as nodeCrypto from 'node:crypto';
