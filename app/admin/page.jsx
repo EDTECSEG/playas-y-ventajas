@@ -84,6 +84,8 @@ export default function AdminPage() {
     loadCustomers();
   }
   const [billing, setBilling] = useState([]);
+  const [affiliates, setAffiliates] = useState([]);
+  const [affRewards, setAffRewards] = useState({ affiliateRewardTemplateId: '', welcomeTemplateId: '', requireFirstClaim: true });
   const [msg, setMsg] = useState('');
   const [form, setForm] = useState({
     name: '', category: 'passeio', city: '', phone: '', email: '', cnpj: '', website: '', logoUrl: '',
@@ -98,6 +100,8 @@ export default function AdminPage() {
     setSession(data);
     loadBusinesses(data);
     loadBilling(data);
+    loadAffiliates(data);
+    loadAffiliateRewards(data);
   }
 
   async function loadBusinesses(s) {
@@ -120,6 +124,42 @@ export default function AdminPage() {
     const res = await fetch(`/.netlify/functions/admin?mode=billing`, { headers: { Authorization: `Bearer ${sess.sessionToken}` } });
     const data = await res.json();
     if (res.ok) setBilling(data);
+  }
+
+  async function loadAffiliates(s) {
+    const sess = s || session;
+    const res = await fetch(`/.netlify/functions/admin?mode=affiliates`, { headers: { Authorization: `Bearer ${sess.sessionToken}` } });
+    const data = await res.json();
+    if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
+    setAffiliates(Array.isArray(data) ? data : []);
+  }
+
+  async function loadAffiliateRewards(s) {
+    const sess = s || session;
+    const res = await fetch(`/.netlify/functions/admin?mode=affiliate-rewards`, { headers: { Authorization: `Bearer ${sess.sessionToken}` } });
+    const data = await res.json();
+    if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
+    const c = (data && data.config) || {};
+    setAffRewards({
+      affiliateRewardTemplateId: c.affiliateRewardTemplateId || '',
+      welcomeTemplateId: c.welcomeTemplateId || '',
+      requireFirstClaim: c.requireFirstClaim !== false,
+    });
+  }
+
+  async function saveAffiliateRewards() {
+    const res = await fetch('/.netlify/functions/admin', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
+      body: JSON.stringify({
+        action: 'set_affiliate_rewards',
+        affiliateRewardTemplateId: affRewards.affiliateRewardTemplateId.trim() || null,
+        welcomeTemplateId: affRewards.welcomeTemplateId.trim() || null,
+        requireFirstClaim: affRewards.requireFirstClaim,
+      }),
+    });
+    const data = await res.json();
+    setMsg(res.ok ? 'Config de recompensas salva.' : `Erro: ${data.error}`);
   }
 
   async function handleLogoUpload(e) {
@@ -361,6 +401,61 @@ export default function AdminPage() {
             <li key={i} style={{ fontSize: 13 }}>{c.businessName} — {c.couponPublicId} — R$ {(c.amountCents / 100).toFixed(2)} — {new Date(c.validatedAt).toLocaleString('pt-BR')}</li>
           ))}</ul>
         )}
+      </div>
+
+      <div style={card}>
+        <h3>{t.affiliatesTitle ?? '🤝 Afiliados'}</h3>
+        <p style={{ fontSize: 12, marginTop: 0 }}>
+          {t.affiliatesHint ?? 'Cada afiliado compartilha o link da home com \u200b?ref=CÓDIGO. O indicado é bonificado no resgate, e o afiliado recebe o prêmio quando configurado abaixo.'}
+        </p>
+        {affiliates.length === 0 ? (
+          <p style={{ fontSize: 13 }}>{t.affiliatesNone ?? 'Nenhum afiliado cadastrado ainda — eles se cadastram por /afiliado.'}</p>
+        ) : (
+          affiliates.map((a) => (
+            <div key={a.affiliateId} style={{ borderTop: '1px solid #e2e8f0', padding: '10px 0' }}>
+              <strong>{a.name}</strong> — <span style={{ fontFamily: 'monospace' }}>{a.referralCode}</span> — {a.kind}
+              <span style={{ fontSize: 12 }}> · 📱 {a.phone}</span>
+              <br />
+              <span style={{ fontSize: 12 }}>
+                {t.affReferrals ?? 'Referidos'}: {a.totalReferrals ?? 0} · {t.affConverted ?? 'Convertidos'}: {a.converted ?? 0} · {t.affPending ?? 'Pendentes'}: {a.pending ?? 0}
+              </span>
+              <br />
+              <span style={{ fontSize: 12 }}>
+                {t.affRewardStatus ?? 'Recompensa'}: {a.rewardStatus} · {t.affSince ?? 'Desde'} {new Date(a.createdAt).toLocaleDateString('pt-BR')}
+              </span>
+              <br />
+              <button style={{ ...smallBtn, marginTop: 6 }} onClick={() => { navigator.clipboard?.writeText(String(a.referralCode)); setMsg('Código copiado.'); }}>
+                {t.affCopyCode ?? 'Copiar código'}
+              </button>
+            </div>
+          ))
+        )}
+
+        <h3 style={{ fontSize: 15, marginBottom: 8 }}>{t.affRewardsTitle ?? 'Recompensas (cupons-prêmio)'}</h3>
+        <p style={{ fontSize: 12, marginTop: 0 }}>
+          {t.affRewardsHint ?? 'Cole os UUIDs dos templates de cupom: o prêmio do afiliado e o bônus de boas-vindas do indicado. Em branco, a indicação ainda converte, só sem cupom.'}
+        </p>
+        <input
+          style={{ ...input, width: '100%', boxSizing: 'border-box' }}
+          placeholder={t.affRewardTemplate ?? 'UUID do template de recompensa do afiliado'}
+          value={affRewards.affiliateRewardTemplateId}
+          onChange={(e) => setAffRewards({ ...affRewards, affiliateRewardTemplateId: e.target.value })}
+        />
+        <input
+          style={{ ...input, width: '100%', boxSizing: 'border-box' }}
+          placeholder={t.affWelcomeTemplate ?? 'UUID do template de boas-vindas do indicado'}
+          value={affRewards.welcomeTemplateId}
+          onChange={(e) => setAffRewards({ ...affRewards, welcomeTemplateId: e.target.value })}
+        />
+        <label style={{ fontSize: 13, display: 'block', marginBottom: 8 }}>
+          <input
+            type="checkbox"
+            checked={affRewards.requireFirstClaim}
+            onChange={(e) => setAffRewards({ ...affRewards, requireFirstClaim: e.target.checked })}
+          /> {t.affRequireFirstClaim ?? 'Exigir o resgate do indicado antes de creditar o prêmio'}
+        </label>
+        <button style={btn} onClick={saveAffiliateRewards}>{t.save}</button>
+        <button style={smallBtn} onClick={() => { loadAffiliates(); loadAffiliateRewards(); }}>↻ {t.refreshAffiliates ?? 'Atualizar'}</button>
       </div>
 
       {msg && <p style={{ fontSize: 13 }}>{msg}</p>}

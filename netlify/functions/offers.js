@@ -2,9 +2,9 @@ const { getSupabaseAdminClient, verifyCustomerToken } = require('./_supabaseAdmi
 
 async function withOfferImages(supabase, tenantId, offers) {
   if (!Array.isArray(offers) || offers.length === 0) return offers;
-  const missing = offers.filter((o) => !o.imageUrl && o.offerId);
+  const missing = offers.filter((o) => !o.imageUrl && o.templateId);
   if (missing.length === 0) return offers;
-  const ids = [...new Set(missing.map((o) => o.offerId))];
+  const ids = [...new Set(missing.map((o) => o.templateId))];
   const { data, error } = await supabase
     .from('coupon_templates')
     .select('id,image_url')
@@ -12,7 +12,7 @@ async function withOfferImages(supabase, tenantId, offers) {
     .in('id', ids);
   if (error || !Array.isArray(data)) return offers;
   const byId = new Map(data.map((row) => [row.id, row.image_url]));
-  return offers.map((o) => (o.imageUrl || byId.get(o.offerId) ? { ...o, imageUrl: o.imageUrl || byId.get(o.offerId) } : o));
+  return offers.map((o) => (o.imageUrl || byId.get(o.templateId) ? { ...o, imageUrl: o.imageUrl || byId.get(o.templateId) } : o));
 }
 
 exports.handler = async (event) => {
@@ -29,6 +29,12 @@ exports.handler = async (event) => {
 
     if (mode === 'cities') {
       const { data, error } = await supabase.rpc('list_cities', { p_tenant_id: tenantId });
+      if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+      return { statusCode: 200, body: JSON.stringify(data) };
+    }
+
+    if (mode === 'categories') {
+      const { data, error } = await supabase.rpc('list_categories', { p_tenant_id: tenantId });
       if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
       return { statusCode: 200, body: JSON.stringify(data) };
     }

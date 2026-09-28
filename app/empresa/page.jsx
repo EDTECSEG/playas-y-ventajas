@@ -41,6 +41,11 @@ const input = { padding: 9, borderRadius: 8, border: `1px solid ${theme.border}`
 const btn = { padding: '9px 16px', borderRadius: 10, border: 'none', cursor: 'pointer', background: theme.gold, color: theme.greenDark, fontWeight: 700, marginRight: 8 };
 const smallBtn = { ...btn, padding: '5px 12px', fontSize: 12 };
 
+const CATEGORY_OPTIONS = [
+  ['passeio', 'Passeio'], ['hotel', 'Hotel'], ['pousada', 'Pousada'],
+  ['restaurante', 'Restaurante'], ['bar', 'Bar'], ['translado', 'Translado'], ['servico', 'Serviço'],
+];
+
 export default function EmpresaPage() {
   const { t } = useLanguage();
   const [splashDone, setSplashDone] = useState(false);
@@ -54,7 +59,10 @@ export default function EmpresaPage() {
   const [justCreatedTemplate, setJustCreatedTemplate] = useState(null);
   const [editingTemplate, setEditingTemplate] = useState(null);
   const [tab, setTab] = useState('criar');
-  const [myData, setMyData] = useState({ name: '', phone: '', email: '', city: '', logoUrl: '', lat: '', lng: '' });
+  const [myData, setMyData] = useState({ name: '', phone: '', email: '', city: '', category: '', logoUrl: '', lat: '', lng: '' });
+  const [featuredSel, setFeaturedSel] = useState({});
+  const [igForm, setIgForm] = useState({ templateId: '', title: '', value: '', businessName: '', handle: '' });
+  const igCanvasRef = useRef(null);
   const [mustChangePin, setMustChangePin] = useState(false);
   const [newPin, setNewPin] = useState('');
   const [newPin2, setNewPin2] = useState('');
@@ -129,7 +137,7 @@ export default function EmpresaPage() {
   async function loadMyData() {
     const res = await fetch(`/.netlify/functions/empresa?mode=my-data`, { headers: { Authorization: `Bearer ${session.sessionToken}` } });
     const data = await res.json();
-    if (res.ok) setMyData({ name: data.name || '', phone: data.phone || '', email: data.email || '', city: data.city || '', logoUrl: data.logoUrl || '', lat: data.lat ?? '', lng: data.lng ?? '' });
+    if (res.ok) setMyData({ name: data.name || '', phone: data.phone || '', email: data.email || '', city: data.city || '', category: data.category || '', logoUrl: data.logoUrl || '', lat: data.lat ?? '', lng: data.lng ?? '' });
   }
 
   async function handleMyLogoUpload(e) {
@@ -162,6 +170,113 @@ export default function EmpresaPage() {
     });
     const data = await res.json();
     setMsg(res.ok ? 'Dados atualizados.' : `Erro: ${data.error}`);
+  }
+
+  // --- Destaque de cupom ------------------------------------------------
+  // Self-service: a empresa destaca o proprio cupom por N dias. `business_set_coupon_featured`
+  // zera o anterior (sem prorrogacao) e ativa o novo ate `until` (UTC).
+  async function setCouponFeatured(tpl, days) {
+    const until = days > 0 ? new Date(Date.now() + days * 86400000).toISOString() : null;
+    const res = await fetch('/.netlify/functions/empresa', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.sessionToken}` },
+      body: JSON.stringify({ action: 'set_coupon_featured', templateId: tpl.id, until }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
+    setDash((d) => ({ ...d, templates: (d?.templates || []).map((x) => (x.id === tpl.id ? { ...x, featured_until: until } : x)) }));
+    if (days > 0) {
+      const ate = new Date(until).toLocaleDateString();
+      setMsg(`⭐ ${t.featured} ativo até ${ate}.`);
+    } else {
+      setMsg('⭐ Destaque removido.');
+    }
+  }
+
+  // --- Card para Instagram (opcao A: gerador local) ----------------------
+  // Card 1080x1080 desenhado em canvas, so com texto e formas: sem imagens
+  // remotas, para nao sujar o canvas com CORS taint e o download nunca falhar.
+  function wrapCanvasText(ctx, text, maxWidth) {
+    const words = String(text || '').split(/\s+/).filter(Boolean);
+    const lines = [];
+    let line = '';
+    for (const w of words) {
+      const cand = line ? `${line} ${w}` : w;
+      if (line && ctx.measureText(cand).width > maxWidth) { lines.push(line); line = w; } else { line = cand; }
+    }
+    if (line) lines.push(line);
+    return lines.slice(0, 3);
+  }
+
+  function pickTemplate(id) {
+    const tpl = (dash?.templates || []).find((x) => x.id === id);
+    if (tpl) {
+      setIgForm({
+        templateId: id,
+        title: tpl.title || '',
+        value: tpl.benefit_value != null ? tpl.benefit_value : (tpl.benefitValue ?? ''),
+        businessName: (dash && (dash.businessName || dash.business_name)) || myData.name || '',
+        handle: '',
+      });
+    }
+  }
+
+  function drawIgCard() {
+    const canvas = igCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = 1080, H = 1080;
+    canvas.width = W; canvas.height = H;
+    const title = igForm.title.trim() || 'Oferta imperdível';
+    const valueText = String(igForm.value).trim() || '0';
+    const biz = igForm.businessName.trim() || 'Playas y Ventajas';
+    const handle = igForm.handle.trim().replace(/^@/, '');
+
+    // Fundo verde degradê + formas decorativas em dourado.
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#0B6E4F'); g.addColorStop(1, '#064B35');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(242,193,78,0.18)';
+    ctx.beginPath(); ctx.arc(W - 120, 120, 270, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(242,193,78,0.12)';
+    ctx.beginPath(); ctx.arc(40, H - 60, 210, 0, Math.PI * 2); ctx.fill();
+
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#F2C14E'; ctx.font = '900 380px Arial';
+    ctx.fillText(`${valueText}%`, W / 2, 430);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 46px Arial';
+    ctx.fillText('OFF', W / 2, 590);
+
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 64px Arial';
+    const lines = wrapCanvasText(ctx, title, W - 160);
+    lines.forEach((line, i) => ctx.fillText(line, W / 2, 750 + i * 80));
+
+    ctx.fillStyle = '#FDF6E3'; ctx.font = 'bold 46px Arial';
+    ctx.fillText(biz, W / 2, H - 170);
+    if (handle) {
+      ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.font = '34px Arial';
+      ctx.fillText(`@${handle}`, W / 2, H - 100);
+    }
+  }
+
+  function igCaptionText() {
+    const tpl = (dash?.templates || []).find((x) => x.id === igForm.templateId);
+    const title = igForm.title.trim() || (tpl && tpl.title) || '';
+    const value = String(igForm.value).trim();
+    const biz = igForm.businessName.trim() || (dash && (dash.businessName || dash.business_name)) || myData.name || '';
+    const parts = [title];
+    if (value) parts.push(`${value}% OFF`);
+    parts.push('Aproveite enquanto dura!');
+    return `${parts.join(' — ')}\n\n${biz} ${handle ? `· @${handle.replace(/^@/, '')}` : ''}\n🌊 ${t.tagline}`;
+  }
+
+  function downloadIgCard() {
+    try { drawIgCard(); } catch (err) { setMsg(`Não foi possível gerar o card (${err.message}).`); return; }
+    const a = document.createElement('a');
+    a.download = `pyv-card-${igForm.templateId || 'oferta'}.png`;
+    a.href = igCanvasRef.current.toDataURL('image/png');
+    a.click();
+    setMsg('Card baixado. Publique no Instagram ou toque em "Abrir Instagram".');
   }
 
   const [validateForm, setValidateForm] = useState({ publicId: '', rawToken: '', shortCode: '' });
@@ -468,9 +583,7 @@ export default function EmpresaPage() {
               <p style={{ fontSize: 13 }}>{t.authRegisterSub}</p>
               <input style={input} placeholder={t.businessName} value={regForm.name} onChange={(e) => setRegForm({ ...regForm, name: e.target.value })} />
               <select style={input} value={regForm.category} onChange={(e) => setRegForm({ ...regForm, category: e.target.value })}>
-                <option value="passeio">Passeio</option><option value="hotel">Hotel</option><option value="pousada">Pousada</option>
-                <option value="restaurante">Restaurante</option><option value="bar">Bar</option>
-                <option value="translado">Translado</option><option value="servico">Serviço</option>
+                {CATEGORY_OPTIONS.map(([val, label]) => <option key={val} value={val}>{label}</option>)}
               </select>
               <input style={input} placeholder={t.city} value={regForm.city} onChange={(e) => setRegForm({ ...regForm, city: e.target.value })} />
               <br />
@@ -511,6 +624,7 @@ export default function EmpresaPage() {
             <button style={tab === 'criar' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('criar')}>{t.tabManageOffers}</button>
             <button style={tab === 'validar' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('validar')}>{t.tabValidate}</button>
             <button style={tab === 'dados' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setTab('dados'); loadMyData(); }}>{t.tabMyData}</button>
+            <button style={tab === 'ig' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('ig')}>{t.igTab ?? '📣 Instagram'}</button>
             <button style={tab === 'motoristas' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setTab('motoristas'); loadDrivers(); }}>{t.tabDrivers ?? 'Motoristas'}</button>
           </div>
 
@@ -697,6 +811,20 @@ export default function EmpresaPage() {
                     {tpl.title} — {t.issued} {tpl.issued_count}
                   </span>
                   {tpl.is_active === false && <strong style={{ fontSize: 11, color: '#c0392b' }}>{t.disabledLabel}</strong>}
+                  {tpl.featured_until && (
+                    <span style={{ fontSize: 11, fontWeight: 700, background: theme.goldLight, color: theme.greenDark, padding: '2px 8px', borderRadius: 999 }}>
+                      ⭐ {t.featured} até {new Date(tpl.featured_until).toLocaleDateString()}
+                    </span>
+                  )}
+                  <select
+                    style={{ ...input, padding: '4px 6px', fontSize: 12, marginBottom: 0 }}
+                    value={featuredSel[tpl.id] ?? '7'}
+                    onChange={(e) => setFeaturedSel({ ...featuredSel, [tpl.id]: e.target.value })}
+                  >
+                    <option value="1">1 dia</option><option value="3">3 dias</option><option value="7">7 dias</option><option value="30">30 dias</option>
+                  </select>
+                  <button style={smallBtn} onClick={() => setCouponFeatured(tpl, Number(featuredSel[tpl.id] ?? 7))}>⭐ {t.featured}</button>
+                  {!!tpl.featured_until && <button style={{ ...smallBtn, background: theme.border, color: theme.text }} onClick={() => setCouponFeatured(tpl, 0)}>✕</button>}
                   <button style={{ ...smallBtn, background: tpl.is_active === false ? '#0B6E4F' : '#c0392b', color: '#fff' }} onClick={() => toggleTemplate(tpl)}>
                     {tpl.is_active === false ? t.active : t.deactivate}
                   </button>
@@ -731,6 +859,14 @@ export default function EmpresaPage() {
             <input style={input} placeholder={t.phoneField} value={myData.phone} onChange={(e) => setMyData({ ...myData, phone: e.target.value })} />
             <input style={input} placeholder={t.emailField} value={myData.email} onChange={(e) => setMyData({ ...myData, email: e.target.value })} />
             <input style={input} placeholder={t.cityField} value={myData.city} onChange={(e) => setMyData({ ...myData, city: e.target.value })} />
+            <select
+              style={input}
+              value={myData.category}
+              onChange={(e) => setMyData({ ...myData, category: e.target.value })}
+            >
+              <option value="">{t.allActivities}</option>
+              {CATEGORY_OPTIONS.map(([val, label]) => <option key={val} value={val}>{label}</option>)}
+            </select>
             <input style={input} placeholder={t.latField} value={myData.lat} onChange={(e) => setMyData({ ...myData, lat: e.target.value })} />
             <input style={input} placeholder={t.lngField} value={myData.lng} onChange={(e) => setMyData({ ...myData, lng: e.target.value })} />
             <button style={{ ...smallBtn, marginLeft: 8 }} onClick={useMyLocation}>{t.useMyLocation}</button>
@@ -739,6 +875,50 @@ export default function EmpresaPage() {
             {myData.logoUrl && <img src={myData.logoUrl} alt="" style={{ height: 40, marginLeft: 8, verticalAlign: 'middle' }} />}
             <br />
             <button style={{ ...btn, marginTop: 8 }} onClick={saveMyData}>{t.saveData}</button>
+          </div>
+          )}
+
+          {tab === 'ig' && (
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>{t.igTab ?? '📣 Instagram'}</h3>
+            <p style={{ fontSize: 13, marginTop: 0 }}>
+              {t.igHint ?? 'Gere o card 1080×1080 de uma oferta, baixe o PNG e publique no Instagram. O card usa só texto (sem foto), para o download nunca falhar por bloqueio de imagem.'}
+            </p>
+            <select
+              style={input}
+              value={igForm.templateId}
+              onChange={(e) => pickTemplate(e.target.value)}
+            >
+              <option value="">{t.igSelectOffer ?? 'Selecione a oferta'}</option>
+              {(dash?.templates || []).map((tpl) => <option key={tpl.id} value={tpl.id}>{tpl.title}</option>)}
+            </select>
+            <input style={input} placeholder={t.igTitle ?? 'título do card'} value={igForm.title} onChange={(e) => setIgForm({ ...igForm, title: e.target.value })} />
+            <input style={input} placeholder={t.igValue ?? 'valor (%)'} value={igForm.value} onChange={(e) => setIgForm({ ...igForm, value: e.target.value })} />
+            <input style={input} placeholder={t.igBusiness ?? 'nome da empresa'} value={igForm.businessName} onChange={(e) => setIgForm({ ...igForm, businessName: e.target.value })} />
+            <input style={input} placeholder={t.igHandle ?? '@seu_instagram'} value={igForm.handle} onChange={(e) => setIgForm({ ...igForm, handle: e.target.value })} />
+            <br />
+            <canvas
+              ref={igCanvasRef}
+              onClick={() => { try { drawIgCard(); } catch (err) { setMsg(`Erro ao gerar: ${err.message}`); } }}
+              style={{ width: '100%', maxWidth: 360, height: 360, borderRadius: 12, border: `1px solid ${theme.border}`, background: '#0B6E4F', cursor: 'pointer' }}
+            />
+            <p style={{ fontSize: 11, color: theme.textMuted }}>{t.igPreviewHint ?? 'Prévia (clique para atualizar). O arquivo baixado tem 1080×1080.'}</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <button style={btn} onClick={downloadIgCard}>{t.igDownload ?? '⬇️ Baixar PNG 1080×1080'}</button>
+              <button style={{ ...btn, background: '#E4405F', color: '#fff' }} onClick={() => window.open('https://www.instagram.com/', '_blank')}>
+                {t.igOpenInstagram ?? '📸 Abrir Instagram'}
+              </button>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <strong style={{ fontSize: 13 }}>{t.igCaption ?? 'Legenda sugerida (toque para copiar):'}</strong>
+              <pre
+                onClick={() => { navigator.clipboard?.writeText(igCaptionText()); setMsg('Legenda copiada.'); }}
+                style={{
+                  whiteSpace: 'pre-wrap', fontSize: 13, background: theme.bg, border: `1px solid ${theme.border}`,
+                  borderRadius: 8, padding: 10, cursor: 'pointer', margin: '6px 0 0',
+                }}
+              >{igCaptionText()}</pre>
+            </div>
           </div>
           )}
         </>

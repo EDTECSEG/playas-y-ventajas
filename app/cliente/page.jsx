@@ -65,13 +65,21 @@ export default function ClientePage() {
   // consumidor achar que a loja sumiu.
   const [offersErro, setOffersErro] = useState('');
   const [cities, setCities] = useState([]);
-  const [filter, setFilter] = useState({ city: '', category: '', radiusKm: null, byDistance: false });
+  const [categories, setCategories] = useState([]);
+  const [filter, setFilter] = useState({ city: '', category: '', radiusKm: 16, byDistance: false, lat: null, lng: null });
+  const [geoStatus, setGeoStatus] = useState('idle');
   const [filterMsg, setFilterMsg] = useState('');
+  // loadOffers le filter deste ref, nao do state: setFilter e async e o handler
+  // alem de setar ainda recarrega na mesma funcao, entao ler o state logo apos
+  // setar veria o valor antigo (filtro aplicado "um clique atras", ou none).
+  const filterRef = useRef(filter);
   const [myCoupons, setMyCoupons] = useState([]);
   const [couponFilter, setCouponFilter] = useState('available');
   const [justClaimed, setJustClaimed] = useState(null);
   const [msg, setMsg] = useState('');
   const [mapStatus, setMapStatus] = useState('idle');
+  const [invite, setInvite] = useState(null);
+  const [inviteMsg, setInviteMsg] = useState('');
 
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -80,6 +88,12 @@ export default function ClientePage() {
   const [openCoupon, setOpenCoupon] = useState(null);
 
   useEffect(() => {
+    // Guarda o ?ref= do link de afiliado antes de qualquer fluxo de resgate.
+    try {
+      const ref = new URLSearchParams(window.location.search).get('ref');
+      if (ref && /^[A-Za-z0-9-]{1,32}$/.test(ref)) localStorage.setItem('pyv_ref', ref);
+    } catch (e) { /* segui sem referido */ }
+
     const saved = localStorage.getItem('pyv_customer');
     if (saved) {
       const s = JSON.parse(saved);
@@ -90,14 +104,46 @@ export default function ClientePage() {
     loadCityAndCategoryOptions();
   }, []);
 
+  function updateFilter(patch) {
+    const next = { ...filterRef.current, ...patch };
+    filterRef.current = next;
+    setFilter(next);
+  }
+
+  function applyNearMe(radiusKm) {
+    if (!('geolocation' in navigator)) { setGeoStatus('denied'); return; }
+    setGeoStatus('locating');
+    setFilterMsg(t.nearMe);
+    navigator.geolocation.getCurrentPosition((pos) => {
+      updateFilter({ byDistance: true, radiusKm, lat: pos.coords.latitude, lng: pos.coords.longitude });
+      setGeoStatus('done');
+      setFilterMsg('');
+      loadOffers();
+    }, () => { setGeoStatus('denied'); setFilterMsg(t.locationDenied); }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
+  }
+
+  function turnOffNearMe() {
+    updateFilter({ byDistance: false, lat: null, lng: null });
+    setGeoStatus('idle');
+    setFilterMsg('');
+    loadOffers();
+  }
+
+  function changeRadius(radiusKm) {
+    updateFilter({ radiusKm });
+    setFilterMsg('');
+    loadOffers();
+  }
+
   async function loadOffers() {
+    const f = filterRef.current;
     const params = new URLSearchParams({ tenantId: TENANT_ID });
-    if (filter.city) params.set('city', filter.city);
-    if (filter.category) params.set('category', filter.category);
-    if (filter.byDistance && filter.lat != null && filter.lng != null) {
-      params.set('lat', filter.lat);
-      params.set('lng', filter.lng);
-      params.set('radiusKm', filter.radiusKm || 50);
+    if (f.city) params.set('city', f.city);
+    if (f.category) params.set('category', f.category);
+    if (f.byDistance && f.lat != null && f.lng != null) {
+      params.set('lat', f.lat);
+      params.set('lng', f.lng);
+      params.set('radiusKm', f.radiusKm || 50);
     }
     // O endpoint devolve array no caminho feliz, mas em erro devolve
     // {"error": ...} com 500. setOffers com esse objeto chegava ao render,
@@ -126,20 +172,21 @@ export default function ClientePage() {
   }
 
   async function loadCityAndCategoryOptions() {
-    if (cities.length > 0) {
-      setFilter((f) => ({ ...f, categories: Array.from(new Set(offers.map((o) => o.category).filter(Boolean))) }));
-      return;
-    }
     try {
-      const res = await fetch(`/.netlify/functions/offers?tenantId=${TENANT_ID}&mode=cities`);
-      if (res.ok) {
-        const data = await res.json();
-        const opts = Array.isArray(data) ? data : (Array.isArray(data.cities) ? data.cities : []);
-        setCities(opts);
-        if (opts.length === 1) {
-          setFilter((f) => ({ ...f, city: opts[0], categories: Array.from(new Set(offers.map((o) => o.category).filter(Boolean))) }));
-        }
-      }
+      // Cidades e categorias vem do banco (RPCs list_cities/list_categories).
+      // Antes as categorias eram derivadas da lista de ofertas ja carregada na
+      // tela, que vinha vazia no mount: os chips nunca apareciam.
+      const [cidades, cats] = await Promise.all([
+        fetch(`/.netlify/functions/offers?tenantId=${TENANT_ID}&mode=cities`)
+          .then((r) => r.ok ? r.json() : []),
+        fetch(`/.netlify/functions/offers?tenantId=${TENANT_ID}&mode=categories`)
+          .then((r) => r.ok ? r.json() : []),
+      ]);
+      const cityOpts = (Array.isArray(cidades) ? cidades : (Array.isArray(cidades.cities) ? cidades.cities : [])).filter(Boolean);
+      const catOpts = (Array.isArray(cats) ? cats : (Array.isArray(cats.categories) ? cats.categories : [])).filter(Boolean);
+      setCities(cityOpts);
+      setCategories(catOpts);
+      setFilter((f) => ({ ...f, city: cityOpts.length === 1 ? cityOpts[0] : f.city }));
     } catch { /* chips opcionais: ofertas continuam carregando mesmo se isso falhar */ }
   }
 
@@ -166,13 +213,46 @@ export default function ClientePage() {
 
   async function finalizeRegistration() {
     if (!phone) { setMsg('Informe seu telefone.'); return; }
-    const res = await fetch('/.netlify/functions/identify', { method: 'POST', body: JSON.stringify({ phone, name, email, instagram }) });
+    let ref;
+    try { ref = localStorage.getItem('pyv_ref') || undefined; } catch (e) { /* sem referido */ }
+    const res = await fetch('/.netlify/functions/identify', { method: 'POST', body: JSON.stringify({ phone, name, email, instagram, ref }) });
     const data = await res.json();
     if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
     localStorage.setItem('pyv_customer', JSON.stringify({ phone, name, instagram, email, customerId: data.customerId, customerToken: data.customerToken }));
     setCustomerId(data.customerId);
+    if (data.referral) { try { localStorage.removeItem('pyv_ref'); } catch (e) { /* sem referido */ } }
     setMsg('✅ Cadastro finalizado com sucesso!');
     loadMyCoupons(data.customerId, data.customerToken);
+  }
+
+  // Card "Indique um amigo": o mesmo telefone sempre devolve o mesmo link de
+  // afiliado (affiliates.js faz get-or-create), entao gerar de novo nao duplica.
+  async function ensureInvite() {
+    const savedInvite = JSON.parse(localStorage.getItem('pyv_customer_invite') || 'null');
+    if (savedInvite && savedInvite.referralCode) { setInvite(savedInvite); return; }
+    const savedCustomer = JSON.parse(localStorage.getItem('pyv_customer') || 'null') || {};
+    const effPhone = phone || savedCustomer.phone || '';
+    if (!effPhone) { setInviteMsg(t.inviteNeedsPhone ?? 'Cadastre seu telefone acima para gerar seu link.'); return; }
+    const effName = name || savedCustomer.name || 'Cliente';
+    setInviteMsg('');
+    const res = await fetch('/.netlify/functions/affiliates', {
+      method: 'POST',
+      body: JSON.stringify({ name: effName, phone: effPhone }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.referralCode) { setInviteMsg(t.inviteRetry ?? 'Não foi possível gerar seu link. Tente novamente.'); return; }
+    const inv = { affiliateId: data.affiliateId, referralCode: data.referralCode, shareUrl: data.shareUrl };
+    try { localStorage.setItem('pyv_customer_invite', JSON.stringify(inv)); } catch (e) { /* sem storage */ }
+    setInvite(inv);
+  }
+
+  async function copyInviteLink() {
+    try {
+      await navigator.clipboard.writeText(window.location.origin + invite.shareUrl);
+      setInviteMsg(t.inviteCopied ?? 'Link copiado!');
+    } catch (e) {
+      setInviteMsg(t.inviteCopyFailed ?? 'Não foi possível copiar. Selecione e copie o link acima.');
+    }
   }
 
   async function claim(offer) {
@@ -183,12 +263,15 @@ export default function ClientePage() {
     const effName = name || saved.name || '';
     const effInstagram = instagram || saved.instagram || '';
     const effEmail = email || saved.email || '';
+    let ref;
+    try { ref = localStorage.getItem('pyv_ref') || undefined; } catch (e) { /* sem referido */ }
     const res = await fetch('/.netlify/functions/claim-coupon', {
       method: 'POST',
-      body: JSON.stringify({ tenantId: TENANT_ID, templateId, phone: effPhone, name: effName, instagram: effInstagram, email: effEmail }),
+      body: JSON.stringify({ tenantId: TENANT_ID, templateId, phone: effPhone, name: effName, instagram: effInstagram, email: effEmail, ref }),
     });
     const data = await res.json();
     if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
+    if (data.referral) { try { localStorage.removeItem('pyv_ref'); } catch (e) { /* sem referido */ } }
     localStorage.setItem('pyv_customer', JSON.stringify({ ...saved, phone: effPhone, name: effName, instagram: effInstagram, email: effEmail, customerId: data.customerId, customerToken: data.customerToken }));
     const tokens = JSON.parse(localStorage.getItem('pyv_coupon_tokens') || '{}');
     tokens[data.publicId] = data.rawToken;
@@ -404,6 +487,8 @@ export default function ClientePage() {
     }, () => setMapStatus('denied'));
   }
 
+  const inviteUrl = (typeof window !== 'undefined' && invite) ? window.location.origin + invite.shareUrl : '';
+
   return (
     <main style={{ background: theme.bg, minHeight: '100vh' }}>
       <style>{`
@@ -491,7 +576,7 @@ export default function ClientePage() {
                 color: filter.city === '' ? theme.greenDark : theme.text,
                 border: `1px solid ${filter.city === '' ? theme.gold : theme.border}`,
               }}
-              onClick={() => { setFilter((f) => ({ ...f, city: '' })); loadOffers(); }}
+              onClick={() => { updateFilter({ city: '' }); loadOffers(); }}
             >{t.allCities}</button>
             {cities.map((c) => (
               <button
@@ -502,17 +587,80 @@ export default function ClientePage() {
                   color: filter.city === c ? theme.greenDark : theme.text,
                   border: `1px solid ${filter.city === c ? theme.gold : theme.border}`,
                 }}
-                onClick={() => { setFilter((f) => ({ ...f, city: c })); loadOffers(); }}
+                onClick={() => { updateFilter({ city: c }); loadOffers(); }}
               >{c}</button>
             ))}
           </div>
         )}
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '0 0 12px', alignItems: 'center' }}>
+          <button
+            type="button"
+            style={{
+              ...smallBtn, borderRadius: 999, padding: '5px 12px', cursor: 'pointer',
+              background: filter.byDistance ? theme.gold : theme.bg,
+              color: filter.byDistance ? theme.greenDark : theme.text,
+              border: `1px solid ${filter.byDistance ? theme.gold : theme.border}`,
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}
+            onClick={() => (filter.byDistance ? turnOffNearMe() : applyNearMe(filter.radiusKm || 16))}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ flexShrink: 0 }}>
+              <path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z" />
+            </svg>
+            {filter.byDistance ? `${filter.radiusKm} km` : t.nearMe}
+          </button>
+          {filter.byDistance && (
+            <select
+              aria-label={t.filterRadius}
+              value={filter.radiusKm}
+              onChange={(e) => changeRadius(Number(e.target.value))}
+              style={{
+                ...smallBtn, padding: '5px 8px', borderRadius: 999, cursor: 'pointer',
+                border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text,
+              }}
+            >
+              {[5, 16, 50, 100].map((km) => <option key={km} value={km}>{km} km</option>)}
+            </select>
+          )}
+          {geoStatus === 'locating' && <span style={{ fontSize: 12, color: theme.textMuted }}>{t.checking}</span>}
+        </div>
+        {filterMsg && <p style={{ fontSize: 12, color: theme.textMuted, margin: '-4px 0 10px' }}>{filterMsg}</p>}
+
+        {categories.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '0 0 12px' }}>
+            <button
+              style={{
+                ...smallBtn, borderRadius: 999, padding: '5px 12px', cursor: 'pointer',
+                background: filter.category === '' ? theme.gold : theme.bg,
+                color: filter.category === '' ? theme.greenDark : theme.text,
+                border: `1px solid ${filter.category === '' ? theme.gold : theme.border}`,
+              }}
+              onClick={() => { updateFilter({ category: '' }); loadOffers(); }}
+            >{t.allActivities}</button>
+            {categories.map((c) => (
+              <button
+                key={c}
+                style={{
+                  ...smallBtn, borderRadius: 999, padding: '5px 12px', cursor: 'pointer',
+                  background: filter.category === c ? theme.gold : theme.bg,
+                  color: filter.category === c ? theme.greenDark : theme.text,
+                  border: `1px solid ${filter.category === c ? theme.gold : theme.border}`,
+                }}
+                onClick={() => { updateFilter({ category: c }); loadOffers(); }}
+              >{t['cat_' + c] || c}</button>
+            ))}
+          </div>
+        )}
+
         {offersErro ? (
           <p style={{ color: '#B42318', margin: 0 }}>{offersErro}</p>
         ) : offers.length === 0 ? <p>{t.noOffers}</p> : offers.map((o) => (
           <div key={o.templateId} className="offer-row" style={{
-            display: 'flex', alignItems: 'center', gap: 14, border: `1px solid ${theme.border}`,
-            borderRadius: 12, padding: 12, marginBottom: 10, background: theme.bg,
+            display: 'flex', alignItems: 'center', gap: 14,
+            border: o.featured ? `2px solid ${theme.gold}` : `1px solid ${theme.border}`,
+            borderRadius: 12, padding: 12, marginBottom: 10,
+            background: o.featured ? theme.goldLight : theme.bg,
           }}>
             {o.imageUrl ? (
               <img className="offer-img" src={o.imageUrl} alt={o.title} style={{ width: 56, height: 44, objectFit: 'cover', borderRadius: 10, flexShrink: 0 }} />
@@ -528,10 +676,55 @@ export default function ClientePage() {
             <button className="offer-btn" style={{ ...smallBtn, flexShrink: 0 }} onClick={() => claim(o)}>{t.redeem}</button>
             <div className="offer-info" style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
               <strong>{o.title}</strong>
-              <div style={{ fontSize: 12, color: theme.textMuted }}>{o.businessName} · {o.category} · {Number(o.benefitValue)}% OFF</div>
+              <div style={{ fontSize: 12, color: theme.textMuted }}>
+                {o.featured && <span style={{ color: theme.greenDark, fontWeight: 700 }}>⭐ {t.featured} · </span>}
+                {o.businessName} · {t['cat_' + o.category] || o.category} · {Number(o.benefitValue)}% OFF
+              </div>
+              {o.distanceKm != null && o.distanceKm !== '' && (
+                <div style={{ fontSize: 12, color: theme.textMuted }}>{Number(o.distanceKm).toFixed(1)} km</div>
+              )}
             </div>
           </div>
         ))}
+      </div>
+
+      <div style={card}>
+        <h3 style={{ marginTop: 0 }}>{t.inviteTitle ?? '💛 Indique um amigo'}</h3>
+        <p style={{ fontSize: 13, marginTop: 0 }}>
+          {t.inviteSub ?? 'Quem entra pelo seu link e resgata um cupom pela primeira vez também libera um bônus para você.'}
+        </p>
+        {!invite ? (
+          <>
+            <button style={btn} onClick={ensureInvite}>{t.inviteGenerate ?? 'Gerar meu link'}</button>
+            {inviteMsg && <p style={{ fontSize: 13 }}>{inviteMsg}</p>}
+          </>
+        ) : (
+          <>
+            <p style={{ fontSize: 13, margin: 0 }}>
+              {t.yourCode ?? 'Seu código:'} <strong style={{ fontFamily: 'monospace', letterSpacing: 1 }}>{invite.referralCode}</strong>
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0' }}>
+              <input readOnly style={{ ...input, flex: 1, minWidth: 220, background: theme.bg, margin: 0 }} value={inviteUrl} onFocus={(e) => e.target.select()} />
+              <button style={btn} onClick={copyInviteLink}>{t.inviteCopy ?? 'Copiar link'}</button>
+              <a
+                style={{ ...btn, background: '#128C4A', color: '#fff', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                href={`https://api.whatsapp.com/send?text=${encodeURIComponent('Ganhe desconto e aproveite Cabo Frio: ' + inviteUrl)}`}
+                target="_blank"
+                rel="noreferrer"
+              >WhatsApp</a>
+              <a
+                style={{ ...btn, background: '#E4405F', color: '#fff', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                href={`https://www.instagram.com/?caption=${encodeURIComponent('Aproveite a sua próxima visita ♥ ' + inviteUrl)}`}
+                target="_blank"
+                rel="noreferrer"
+              >Instagram</a>
+            </div>
+            <p style={{ fontSize: 13, margin: 0 }}>{inviteMsg}</p>
+          </>
+        )}
+        <p style={{ fontSize: 12, margin: '10px 0 0' }}>
+          <a href="/afiliado" style={{ color: theme.greenDark, fontWeight: 700 }}>{t.invitePanel ?? 'Painel completo do afiliado →'}</a>
+        </p>
       </div>
 
       <div style={card}>

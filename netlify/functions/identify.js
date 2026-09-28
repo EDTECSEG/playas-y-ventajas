@@ -8,14 +8,28 @@ const TENANT_ID = '0dc57eeb-46c8-47ac-aad4-640d9d59e7b9';
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return { statusCode: 405, body: '{}' };
   try {
-    const { phone, name, email, instagram } = JSON.parse(event.body || '{}');
+    const { phone, name, email, instagram, ref } = JSON.parse(event.body || '{}');
     if (!phone) return { statusCode: 400, body: JSON.stringify({ error: 'telefone obrigat\u00f3rio' }) };
     const supabase = getSupabaseAdminClient();
     const { data, error } = await supabase.rpc('identify_customer', {
       p_tenant_id: TENANT_ID, p_phone: phone, p_name: name || null, p_email: email || null, p_instagram: instagram || null,
     });
     if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
-    return { statusCode: 200, body: JSON.stringify({ customerId: data, customerToken: buildCustomerToken(data) }) };
+
+    // Indicacao (Modelo A): se veio com ?ref=CODIGO, registra no modulo 3.
+    // Best-effort e fail-open: um codigo invalido nunca bloqueia o cadastro.
+    let referral = null;
+    if (data && ref) {
+      const { error: refErr } = await supabase.rpc('referral_track', {
+        p_tenant_id: TENANT_ID, p_referral_code: ref, p_referred_user_id: data,
+      });
+      referral = refErr ? null : { code: ref };
+    }
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ customerId: data, customerToken: buildCustomerToken(data), referral }),
+    };
   } catch (err) {
     console.error('identify: ' + (err && err.message));
     return { statusCode: 500, body: JSON.stringify({ error: 'erro interno' }) };

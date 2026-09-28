@@ -117,16 +117,32 @@ test('rota de funcao ganha do estatico e nunca vira asset', { skip: semBundle },
   const env = { ASSETS: assetsFalso(chamadas) };
 
   // Allowlist: tem que responder a funcao, mesmo com um arquivo de mesmo nome.
-  const ok = await w.fetch(req('/.netlify/functions/__envdiag'), env);
-  assert.strictEqual(ok.status, 200);
-  assert.ok(!chamadas.includes('/.netlify/functions/__envdiag'), 'envdiag foi delegado por engano');
+  // offers sem tenantId responde 400 em json — nunca um asset.
+  const ok = await w.fetch(req('/.netlify/functions/offers'), env);
+  assert.strictEqual(ok.status, 400);
+  const body = await ok.json();
+  assert.strictEqual(body.error, 'tenantId obrigatório');
+  assert.ok(!chamadas.includes('/.netlify/functions/offers'), 'offers foi delegado por engano');
 
   // Funcao inexistente tem que continuar 404 em json, nao cair no estatico.
   const inexistente = await w.fetch(req('/.netlify/functions/nao-existe-xyz'), env);
   assert.strictEqual(inexistente.status, 404);
-  const body = await inexistente.json();
-  assert.strictEqual(body.error, 'funcao desconhecida: nao-existe-xyz');
+  const corpoInexistente = await inexistente.json();
+  assert.strictEqual(corpoInexistente.error, 'funcao desconhecida: nao-existe-xyz');
   assert.ok(!chamadas.includes('/.netlify/functions/nao-existe-xyz'), 'rota de funcao Caiu no estatico');
+});
+
+test('__envdiag foi removido: nunca mais atende em /.netlify/functions/', { skip: semBundle }, async () => {
+  const w = await worker();
+  const chamadas = [];
+  const env = { ASSETS: assetsFalso(chamadas) };
+
+  // O nome tem underscore, que a regex de rota nao casa: agora deveria cair no
+  // static (404 do delegate) e NUNCA responder 200 com o report de env vars.
+  const res = await w.fetch(req('/.netlify/functions/__envdiag'), env);
+  assert.notStrictEqual(res.status, 200, '__envdiag voltou a responder');
+  const texto = await res.text();
+  assert.ok(!texto.includes('NEXT_PUBLIC_SUPABASE_URL'), 'respondeu o report do envdiag');
 });
 
 test('caminho com traversal e barrado antes do delegate', { skip: semBundle }, async () => {

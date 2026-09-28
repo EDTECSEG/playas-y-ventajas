@@ -35,7 +35,7 @@ async function loadOfferContext(supabase, templateId) {
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return { statusCode: 405, body: '{}' };
   try {
-    const { tenantId, templateId, phone, name, instagram, email } = JSON.parse(event.body || '{}');
+    const { tenantId, templateId, phone, name, instagram, email, ref } = JSON.parse(event.body || '{}');
     if (!tenantId || !templateId || !phone) return { statusCode: 400, body: JSON.stringify({ error: 'tenantId, templateId, phone obrigatórios' }) };
     const supabase = getSupabaseAdminClient();
 
@@ -65,7 +65,19 @@ exports.handler = async (event) => {
     } catch (e) { /* segue: resgate ja aconteceu */ }
 
     if (ctx) {
+// Indicacao (Modelo A): se o cliente ainda nao foi vinculado a um
+    // codigo (claim aconteceu antes do identify), registra agora e deixa
+    // o try_referral_convert abaixo converter na mesma requisicao.
+    // Best-effort e fail-open: codigo invalido nunca bloqueia o resgate.
+    if (ref && customerId) {
       try {
+        await supabase.rpc('referral_track', {
+          p_tenant_id: tenantId, p_referral_code: ref, p_referred_user_id: customerId,
+        });
+      } catch (e) { /* segue normal */ }
+    }
+
+    try {
         const message = buildCouponMessage({
           publicId, businessName: ctx.businessName, title: ctx.title, shortCode: data.shortCode,
         });

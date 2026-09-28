@@ -22,6 +22,16 @@ exports.handler = async (event) => {
         if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
         return { statusCode: 200, body: JSON.stringify(data) };
       }
+      if (mode === 'affiliates') {
+        const { data, error } = await supabase.rpc('admin_affiliate_report', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+        return { statusCode: 200, body: JSON.stringify(data) };
+      }
+      if (mode === 'affiliate-rewards') {
+        const { data, error } = await supabase.rpc('admin_get_affiliate_rewards', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+        return { statusCode: 200, body: JSON.stringify({ config: data }) };
+      }
       const { data, error } = await supabase.rpc('admin_list_businesses', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
       if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
       return { statusCode: 200, body: JSON.stringify(data) };
@@ -56,6 +66,26 @@ exports.handler = async (event) => {
         });
         if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
         return { statusCode: 200, body: JSON.stringify({ ok: true }) };
+      }
+      if (body.action === 'set_coupon_featured') {
+        // Override/limpeza do destaque de cupom (fora do self-service da empresa).
+        const until = body.until ? new Date(body.until).toISOString() : null;
+        const { error } = await supabase.rpc('admin_set_coupon_featured', {
+          p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId,
+          p_template_id: body.templateId, p_until: until,
+        });
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
+        return { statusCode: 200, body: JSON.stringify({ ok: true, until }) };
+      }
+      if (body.action === 'set_affiliate_rewards') {
+        const { data, error } = await supabase.rpc('admin_set_affiliate_rewards', {
+          p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId,
+          p_affiliate_reward_template_id: body.affiliateRewardTemplateId || null,
+          p_welcome_template_id: body.welcomeTemplateId || null,
+          p_require_first_claim: body.requireFirstClaim !== false,
+        });
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
+        return { statusCode: 200, body: JSON.stringify(data) };
       }
       if (body.action === 'set_billing') {
         const { error } = await supabase.rpc('admin_set_billing', {

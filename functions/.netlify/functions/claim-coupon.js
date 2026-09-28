@@ -35,7 +35,7 @@ async function loadOfferContext(supabase, templateId) {
 export async function onRequestPost(context) {
   const { request, env } = context;
   try {
-    const { tenantId, templateId, phone, name, instagram, email } = await request.json();
+    const { tenantId, templateId, phone, name, instagram, email, ref } = await request.json();
     if (!tenantId || !templateId || !phone) return json({ error: 'tenantId, templateId, phone obrigatórios' }, 400);
     const supabase = getSupabaseAdminClient(env);
 
@@ -58,6 +58,16 @@ export async function onRequestPost(context) {
       ctx = await loadOfferContext(supabase, templateId);
     } catch (e) {
       extras.notes.push('contexto indisponivel');
+    }
+
+    // (1b) Indicacao (Modelo A): vincula o codigo se o claim aconteceu antes
+    // do identify; o try_referral_convert abaixo converte na mesma requisicao.
+    if (ref && customerId) {
+      try {
+        await supabase.rpc('referral_track', {
+          p_tenant_id: tenantId, p_referral_code: ref, p_referred_user_id: customerId,
+        });
+      } catch (e) { /* segue normal */ }
     }
 
     // (1) Credito da indicacao: best-effort, nunca lanca.

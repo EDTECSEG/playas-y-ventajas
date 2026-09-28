@@ -2,9 +2,9 @@ import { getSupabaseAdminClient, verifyCustomerToken, json } from './_shared.js'
 
 async function withOfferImages(supabase, tenantId, offers) {
   if (!Array.isArray(offers) || offers.length === 0) return offers;
-  const missing = offers.filter((o) => !o.imageUrl && o.offerId);
+  const missing = offers.filter((o) => !o.imageUrl && o.templateId);
   if (missing.length === 0) return offers;
-  const ids = [...new Set(missing.map((o) => o.offerId))];
+  const ids = [...new Set(missing.map((o) => o.templateId))];
   const { data, error } = await supabase
     .from('coupon_templates')
     .select('id,image_url')
@@ -12,7 +12,7 @@ async function withOfferImages(supabase, tenantId, offers) {
     .in('id', ids);
   if (error || !Array.isArray(data)) return offers;
   const byId = new Map(data.map((row) => [row.id, row.image_url]));
-  return offers.map((o) => (o.imageUrl || byId.get(o.offerId) ? { ...o, imageUrl: o.imageUrl || byId.get(o.offerId) } : o));
+  return offers.map((o) => (o.imageUrl || byId.get(o.templateId) ? { ...o, imageUrl: o.imageUrl || byId.get(o.templateId) } : o));
 }
 
 export async function onRequestGet(context) {
@@ -35,6 +35,12 @@ export async function onRequestGet(context) {
 
     if (mode === 'cities') {
       const { data, error } = await supabase.rpc('list_cities', { p_tenant_id: tenantId });
+      if (error) return json({ error: error.message }, 400);
+      return json(data);
+    }
+
+    if (mode === 'categories') {
+      const { data, error } = await supabase.rpc('list_categories', { p_tenant_id: tenantId });
       if (error) return json({ error: error.message }, 400);
       return json(data);
     }

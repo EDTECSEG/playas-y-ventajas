@@ -25,6 +25,16 @@ export async function onRequestGet(context) {
       if (error) return json({ error: error.message }, 400);
       return json(data);
     }
+    if (mode === 'affiliates') {
+      const { data, error } = await supabase.rpc('admin_affiliate_report', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
+      if (error) return json({ error: error.message }, 400);
+      return json(data);
+    }
+    if (mode === 'affiliate-rewards') {
+      const { data, error } = await supabase.rpc('admin_get_affiliate_rewards', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
+      if (error) return json({ error: error.message }, 400);
+      return json({ config: data });
+    }
     const { data, error } = await supabase.rpc('admin_list_businesses', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
     if (error) return json({ error: error.message }, 400);
     return json(data);
@@ -68,6 +78,25 @@ export async function onRequestPost(context) {
       });
       if (error) return json({ error: (error.message || '').split(':')[0].trim() }, 400);
       return json({ ok: true });
+    }
+    if (body.action === 'set_coupon_featured') {
+      const until = body.until ? new Date(body.until).toISOString() : null;
+      const { error } = await supabase.rpc('admin_set_coupon_featured', {
+        p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId,
+        p_template_id: body.templateId, p_until: until,
+      });
+      if (error) return json({ error: (error.message || '').split(':')[0].trim() }, 400);
+      return json({ ok: true, until });
+    }
+    if (body.action === 'set_affiliate_rewards') {
+      const { data, error } = await supabase.rpc('admin_set_affiliate_rewards', {
+        p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId,
+        p_affiliate_reward_template_id: body.affiliateRewardTemplateId || null,
+        p_welcome_template_id: body.welcomeTemplateId || null,
+        p_require_first_claim: body.requireFirstClaim !== false,
+      });
+      if (error) return json({ error: (error.message || '').split(':')[0].trim() }, 400);
+      return json(data);
     }
     if (body.action === 'set_billing') {
       const { error } = await supabase.rpc('admin_set_billing', {

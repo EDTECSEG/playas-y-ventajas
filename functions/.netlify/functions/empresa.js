@@ -94,10 +94,19 @@ export async function onRequestPost(context) {
       const { error } = await supabase.rpc('business_update_own', {
         p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_name: body.name || null,
         p_phone: body.phone || null, p_email: body.email || null, p_city: body.city || null, p_logo_url: body.logoUrl || null,
-        p_lat: lat, p_lng: lng,
+        p_category: body.category || null, p_lat: lat, p_lng: lng,
       });
       if (error) return json({ error: (error.message || '').split(':')[0].trim() }, 400);
       return json({ ok: true });
+    }
+    if (body.action === 'set_coupon_featured') {
+      const until = body.until ? new Date(body.until).toISOString() : null;
+      const { error } = await supabase.rpc('business_set_coupon_featured', {
+        p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId,
+        p_template_id: body.templateId, p_until: until,
+      });
+      if (error) return json({ error: (error.message || '').split(':')[0].trim() }, 400);
+      return json({ ok: true, until });
     }
     if (body.action === 'set_pin') {
       const { data, error } = await supabase.rpc('business_set_pin', {
