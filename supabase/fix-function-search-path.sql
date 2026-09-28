@@ -71,6 +71,25 @@
 -- script. Workaround para quem chama: passar `p_image_url` explicitamente,
 -- mesmo como NULL. Correcao definitiva fica para a slice de cupons.
 --
+-- ARMADILHA 3 — CREATE OR REPLACE APAGA O search_path SEM AVISAR
+-- -----------------------------------------------------------------
+-- Este script e idempotente e varre o banco inteiro, mas o setting que ele
+-- aplica e FRAGIL: `CREATE OR REPLACE FUNCTION` substitui a definicao completa
+-- e descarta os GUCs de nivel de funcao, a nao ser que a nova definicao repita
+-- o `SET search_path`. Nao ha erro, aviso nem mudanca visivel — a funcao simplesmente
+-- volta a ser mutavel.
+--
+-- Ja aconteceu uma vez, e e a razao de este script existir: a migration
+-- `fix_list_offers_image_url` (20260926122446) redeclarou a sobrecarga de 6
+-- argumentos de `list_offers` sem repetir o `SET`, e o finding
+-- `function_search_path_mutable` voltou do zero para 1 — a sobrecarga de 1
+-- argumento, que nao foi redeclarada, continuou com o setting.
+--
+-- REGRA: toda redefinicao de funcao do app tem que declarar
+-- `SET search_path = public, extensions` na propria assinatura. Hoje as 56
+-- definicoes em supabase/ estao assim. Rode este script depois de QUALQUER
+-- leva que mexa em funcao, e nao so uma vez.
+--
 -- POR QUE AS 3 FUNCOES "SO PUBLIC" FICARAM DE FORA
 -- -----------------------------------------------
 -- `admin_featured_ranks`, `admin_set_featured` e `business_logo_by_id` ja

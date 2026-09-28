@@ -20,6 +20,7 @@ CREATE OR REPLACE FUNCTION public.business_report(
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE
+SET search_path = public, extensions
 AS $function$
 declare
   v_actor users%rowtype;

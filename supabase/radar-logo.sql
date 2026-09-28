@@ -10,6 +10,7 @@
 CREATE OR REPLACE FUNCTION public.find_nearby_businesses(p_tenant_id uuid, p_lat double precision, p_lng double precision, p_radius_km double precision DEFAULT 20)
  RETURNS jsonb
  LANGUAGE plpgsql
+SET search_path = public, extensions
 AS $function$
 declare v_result jsonb;
 begin

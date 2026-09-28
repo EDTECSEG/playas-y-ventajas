@@ -283,13 +283,26 @@ end $function$
 -- Reproveita login_attempts para travar forca bruta (mesmo chave/padrao do
 -- login da empresa).
 --
--- ATENCAO AO APLICAR: este arquivo nao traz `SET search_path`. No banco, as
--- 67 funcoes do app tem `search_path = public, extensions` fixado pelo
--- fix-function-search-path.sql, e `CREATE OR REPLACE` sobrescreve esse setting
--- se a definicao nao o declarar. Rodar este arquivo e depois nao rodar
--- fix-function-search-path.sql reabre o finding `function_search_path_mutable`
--- que o Advisor fechou. Para este slice o SQL foi aplicado com o SET embutido;
--- qualquer reaplicacao futura precisa dos dois.
+-- ATENCAO AO APLICAR ESTE ARQUIVO — DUAS ARMADILHAS
+-- ---------------------------------------------------
+-- 1) O `DROP FUNCTION` abaixo apaga o ACL da funcao. As funcoes deste modulo
+--    sao `service_role` only (nao podem ser chamadas via /rest/v1/rpc/). Dropar
+--    e recriar devolve o EXECUTE para o default do tipo, que e PUBLIC, e abre o
+--    `driver_login` para `anon`. Foi o que aconteceu com `list_offers` em
+--    26/09: o Advisor passou a acusar `anon_security_definer_function_executable`.
+--    Para alterar corpo destas funcoes, use SO `CREATE OR REPLACE`, que preserva
+--    OID, dono e ACL.
+-- 2) `CREATE OR REPLACE` tambem apaga GUCs de nivel de funcao. Se a definicao
+--    nao repetir `SET search_path = public, extensions`, o setting que o
+--    fix-function-search-path.sql aplicou se perde e o finding
+--    `function_search_path_mutable` reabre. Por isso TODA funcao deste arquivo
+--    declara o `SET search_path` explicitamente — inclusive as que nao sao
+--    SECURITY DEFINER (driver_verify_session, driver_list_documents), porque o
+--    risco de sequestro de nome existe em qualquer funcao.
+--
+-- Procedimento seguro: `CREATE OR REPLACE` sem `DROP`, com o `SET search_path`
+-- embutido. Se ainda assim rodar o fix-function-search-path.sql no final, ele
+-- e idempotente e nao atrapalha.
 -- ------------------------------------------------------------
 DROP FUNCTION IF EXISTS public.driver_login(uuid, text, text);
 
@@ -403,6 +416,7 @@ CREATE OR REPLACE FUNCTION public.driver_verify_session(p_session_token uuid)
  RETURNS jsonb
  LANGUAGE sql
  STABLE
+SET search_path = public, extensions
 AS $function$
   select case when d.id is null then null else jsonb_build_object(
     'driverId', d.id,
@@ -519,6 +533,7 @@ CREATE OR REPLACE FUNCTION public.driver_list_documents(
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE
+SET search_path = public, extensions
 AS $function$
 begin
   if p_session_token is null or not exists (

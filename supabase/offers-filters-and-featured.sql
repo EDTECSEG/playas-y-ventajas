@@ -73,6 +73,7 @@ CREATE OR REPLACE FUNCTION public.list_cities(p_tenant_id uuid)
  RETURNS text[]
  LANGUAGE sql
  STABLE
+SET search_path = public, extensions
 AS $function$
   select coalesce(array_agg(distinct b.city order by b.city), '{}'::text[])
   from coupon_templates t
@@ -103,6 +104,7 @@ CREATE OR REPLACE FUNCTION public.list_offers(
  RETURNS jsonb
  LANGUAGE sql
  STABLE
+SET search_path = public, extensions
 AS $function$
   select coalesce(jsonb_agg(
     jsonb_build_object(

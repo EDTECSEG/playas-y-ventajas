@@ -41,6 +41,7 @@ CREATE OR REPLACE FUNCTION public.list_offers_public(
  RETURNS jsonb
  LANGUAGE sql
  STABLE
+SET search_path = public, extensions
 AS $function$
   select coalesce(jsonb_agg(
     jsonb_build_object(
@@ -117,6 +118,7 @@ CREATE OR REPLACE FUNCTION public.set_coupon_proximity(
 )
  RETURNS void
  LANGUAGE plpgsql
+SET search_path = public, extensions
 AS $function$
 declare
   v_actor users%rowtype;

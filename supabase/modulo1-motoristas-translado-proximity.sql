@@ -222,6 +222,7 @@ CREATE OR REPLACE FUNCTION public.list_shuttle_services(
  RETURNS jsonb
  LANGUAGE sql
  STABLE
+SET search_path = public, extensions
 AS $function$
   select coalesce(jsonb_agg(
     jsonb_build_object(
@@ -276,6 +277,7 @@ CREATE OR REPLACE FUNCTION public.list_live_vehicles(
  RETURNS jsonb
  LANGUAGE sql
  STABLE
+SET search_path = public, extensions
 AS $function$
   select coalesce(jsonb_agg(
     jsonb_build_object(

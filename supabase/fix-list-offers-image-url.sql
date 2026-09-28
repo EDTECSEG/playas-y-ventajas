@@ -19,6 +19,7 @@ CREATE OR REPLACE FUNCTION public.list_offers(
 )
 RETURNS jsonb
 LANGUAGE sql
+SET search_path = public, extensions
 AS $$
   select coalesce(jsonb_agg(
       jsonb_build_object(

@@ -7,6 +7,7 @@
 CREATE OR REPLACE FUNCTION public.business_get_own(p_tenant_id uuid, p_actor_user_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
+SET search_path = public, extensions
 AS $function$
 declare v_actor users%rowtype; v_business businesses%rowtype;
 begin
@@ -36,6 +37,7 @@ CREATE OR REPLACE FUNCTION public.business_update_own(
 )
  RETURNS void
  LANGUAGE plpgsql
+SET search_path = public, extensions
 AS $function$
 declare v_actor users%rowtype;
 begin

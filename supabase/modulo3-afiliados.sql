@@ -138,6 +138,7 @@ CREATE OR REPLACE FUNCTION public.affiliate_register(
 )
  RETURNS jsonb
  LANGUAGE plpgsql
+SET search_path = public, extensions
 AS $function$
 declare
   v_aff public.affiliates%rowtype;
@@ -194,6 +195,7 @@ CREATE OR REPLACE FUNCTION public.referral_track(
 )
  RETURNS void
  LANGUAGE plpgsql
+SET search_path = public, extensions
 AS $function$
 declare
   v_aff public.affiliates%rowtype;
@@ -380,6 +382,7 @@ CREATE OR REPLACE FUNCTION public.affiliate_report(
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE
+SET search_path = public, extensions
 AS $function$
 declare
   v_actor users%rowtype;

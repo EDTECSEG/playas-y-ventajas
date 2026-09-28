@@ -78,6 +78,7 @@ CREATE OR REPLACE FUNCTION public.get_referral_bonus(
  RETURNS jsonb
  LANGUAGE sql
  STABLE
+SET search_path = public, extensions
 AS $function$
   select coalesce((
     select jsonb_build_object(
