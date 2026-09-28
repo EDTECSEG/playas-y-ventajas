@@ -40,7 +40,11 @@ const FRIENDLY = {
   SESSION_REQUIRED: 'Faca login para continuar.',
   SESSION_EXPIRED: 'Sua sessao expirou. Entre de novo.',
   NOT_APPROVED: 'Seu cadastro ainda nao foi aprovado pela empresa.',
+  PENDING_APPROVAL: 'Seu cadastro ainda nao foi aprovado pela empresa.',
+  REGISTRATION_REJECTED: 'Seu cadastro foi recusado. Envie o documento corrigido para nova analise.',
   ACCOUNT_SUSPENDED: 'Sua conta esta suspensa. Fale com a empresa.',
+  INVALID_CREDENTIALS: 'Telefone ou PIN incorreto.',
+  ACCOUNT_LOCKED: 'Muitas tentativas. Aguarde alguns minutos.',
   DOCUMENT_NOT_FOUND: 'Documento nao encontrado.',
   RATE_LIMITED: 'Muitas tentativas. Aguarde alguns minutos.',
   FILE_UNREADABLE: 'Nao foi possivel ler o arquivo.',
@@ -78,14 +82,28 @@ export function driverIdFor({ session, pending } = {}) {
   return id;
 }
 
-// driver_login devolve {error: 'NOT_APPROVED'} com HTTP 200 quando o cadastro
-// existe mas nao esta aprovado. Ler o status HTTP e o jeito classico de deixar
-// o motorista nao aprovado entrar como se tivesse logado. So sessionToken e
-// sucesso de verdade.
+// O login e simples e nao depende de aprovacao: driver_login emite sessao para
+// 'pending', 'approved' e 'rejected', e devolve {error: 'ACCOUNT_SUSPENDED'}
+// com HTTP 403 para o suspenso.
+//
+// Ler o status HTTP nao basta, e continua valendo: um {error: ...} no corpo com
+// HTTP 200 nao e sucesso. O unico sucesso de verdade e o sessionToken, porque
+// e ele que autoriza os demais endpoints. Um login nao aprovado que "entrou"
+// apareceria na tela como logado e so falharia depois, no envio do documento.
 export function interpretLogin(data) {
   if (data && data.sessionToken) return { ok: true, session: data, error: null };
   if (data && data.error) return { ok: false, session: null, error: friendlyMessage(data.error) };
   return { ok: false, session: null, error: friendlyMessage('LOGIN_FAILED') };
+}
+
+// Entrar no app e dirigir sao coisas diferentes. 'pending' e 'rejected' acessam
+// o app (para enviar documento e ver a situacao) mas nao ficam na frota:
+// quem expose motorista em list_live_vehicles exige 'approved' (modulo 1).
+//
+// A tela usa isto para nao prometer habilitacao a quem so tem acesso. Retorna
+// false para status desconhecido, porque o padrao seguro e nao dirigir.
+export function canDrive(status) {
+  return String(status || '') === 'approved';
 }
 
 export function checkPin(pin, pin2) {

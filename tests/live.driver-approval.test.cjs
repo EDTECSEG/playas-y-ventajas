@@ -180,10 +180,31 @@ describe('aprovacao de motorista: caminho feliz', { skip: enabled() }, () => {
     ctx.documentId = r.body.documentId;
   });
 
-  test('login e recusado antes da aprovacao', async () => {
+  test('pendente entra no app, mas ainda nao pode dirigir', async () => {
+    // Login simples: o motorista entra assim que define o PIN. A aprovacao
+    // virou aviso dentro do app, nao mais um 403 na porta.
     const r = await post('driver-login', { tenantId: ctx.tenantId, phone: ctx.fone, pin: PIN });
-    assert.strictEqual(r.status, 403, 'pendente nao pode entrar');
-    assert.strictEqual(r.body.error, 'PENDING_APPROVAL');
+    assert.strictEqual(r.status, 200, `pendente deveria entrar: ${JSON.stringify(r.body)}`);
+    assert.ok(r.body.sessionToken, 'a sessao precisa vir para o app usar');
+    assert.strictEqual(r.body.status, 'pending', 'o status vem no corpo para a tela mostrar');
+    ctx.sessaoMotorista = r.body.sessionToken;
+  });
+
+  test('a sessao do pendente e aceita pelos endpoints de documento', async () => {
+    // Se a sessao so valesse para aprovado, o motorista nao conseguiria enviar
+    // o proprio documento — que e justamente o que ele precisa fazer.
+    //
+    // O pedido vai sem arquivo de proposito: o esperado e 400 (conteudo
+    // invalido), e nao 401 (credencial recusada). Isso prova que a sessao
+    // passou pela autorizacao sem gravar nada no banco nem no Storage.
+    const r = await post('driver-add-document', {
+      tenantId: ctx.tenantId,
+      driverId: ctx.driverId,
+      docType: 'cnh',
+      contentType: 'application/pdf',
+    }, ctx.sessaoMotorista);
+    assert.notStrictEqual(r.status, 401, `sessao de pendente deveria valer: ${JSON.stringify(r.body)}`);
+    assert.strictEqual(r.status, 400, `sem arquivo, a recusa e de conteudo: ${JSON.stringify(r.body)}`);
   });
 
   // --- a parte que faltava: a empresa precisa poder VER o que tem para aprovar.

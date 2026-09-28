@@ -22,7 +22,9 @@
 --   - PIN guardado com bcrypt (crypt do pgcrypto), nunca em texto;
 --   - bloqueio por tentativas reaproveitando login_attempts (mesmo
 --     mecanismo do login da empresa);
---   - so entra quem tem status 'approved' â€” documento reprovado nao entra.
+--   - so 'suspended' tranca o acesso, e a suspensao derruba a sessao aberta;
+--   - entrar no app nao e dirigir: so quem tem 'approved' aparece na frota
+--     (list_live_vehicles, modulo 1).
 -- ============================================================
 
 -- ------------------------------------------------------------
@@ -265,8 +267,29 @@ end $function$
 -- ------------------------------------------------------------
 -- 5) driver_login - telefone + PIN
 -- ------------------------------------------------------------
--- So aprova quem tem status 'approved'. Reproveita login_attempts para
--- travar forca bruta (mesmo chave/padrao do login da empresa).
+-- Login simples, igual ao das outras categorias: telefone + PIN e pronto.
+-- Entra quem tem status 'pending', 'approved' ou 'rejected'. O aviso de
+-- aprovacao e o upload de documento passam a ficar dentro do app, em vez de
+-- trancar a porta de entrada.
+--
+-- Quem decide se o motorista pode DIRIGIR continua sendo a empresa, e nao este
+-- login: list_live_vehicles so expoe driver com status 'approved'
+-- (modulo1-motoristas-translado-proximity.sql). Entrar no app e dirigir sao
+-- coisas separadas, entao destravar o login nao coloca ninguem sem CNH na frota.
+--
+-- So 'suspended' e recusado, e driver_verify_session tambem o exclui: suspender
+-- precisa derrubar a sessao aberta, nao so a proxima tentativa de login.
+--
+-- Reproveita login_attempts para travar forca bruta (mesmo chave/padrao do
+-- login da empresa).
+--
+-- ATENCAO AO APLICAR: este arquivo nao traz `SET search_path`. No banco, as
+-- 67 funcoes do app tem `search_path = public, extensions` fixado pelo
+-- fix-function-search-path.sql, e `CREATE OR REPLACE` sobrescreve esse setting
+-- se a definicao nao o declarar. Rodar este arquivo e depois nao rodar
+-- fix-function-search-path.sql reabre o finding `function_search_path_mutable`
+-- que o Advisor fechou. Para este slice o SQL foi aplicado com o SET embutido;
+-- qualquer reaplicacao futura precisa dos dois.
 -- ------------------------------------------------------------
 DROP FUNCTION IF EXISTS public.driver_login(uuid, text, text);
 
@@ -332,17 +355,15 @@ begin
     return jsonb_build_object('error', 'INVALID_CREDENTIALS');
   end if;
 
-  -- PIN certo, mas cadastro nao liberado
-  if v_driver.status <> 'approved' then
-    return jsonb_build_object('error',
-      case v_driver.status
-        when 'pending'   then 'PENDING_APPROVAL'
-        when 'rejected'  then 'REGISTRATION_REJECTED'
-        when 'suspended' then 'ACCOUNT_SUSPENDED'
-        else 'NOT_APPROVED'
-      end,
-      'status', v_driver.status
-    );
+  -- PIN certo. So a suspensao fecha o acesso: 'pending' e 'rejected' entram
+  -- no app (o primero precisa enviar documento, o segundo precisa reenviar o
+  -- corrigido) e recebem a situacao no corpo da sessao para a tela mostrar.
+  --
+  -- Antes esta condicao era `status <> 'approved'`, que negava o login antes de
+  -- qualquer sessao e obrigava o motorista a cadastrar, definir PIN, enviar
+  -- documento, esperar a empresa e so entao entrar.
+  if v_driver.status = 'suspended' then
+    return jsonb_build_object('error', 'ACCOUNT_SUSPENDED', 'status', v_driver.status);
   end if;
 
   -- login ok: limpa tentativas e emite sessao
@@ -367,6 +388,15 @@ end $function$
 -- ------------------------------------------------------------
 -- 6) driver_verify_session / driver_logout
 -- ------------------------------------------------------------
+-- A sessao do motorista e valida para 'pending', 'approved' e 'rejected': o
+-- acesso ao app acompanha o login, e a habilitacao a dirigir nao.
+--
+-- 'suspended' e excluido de proposito. E o unico status que derruba a sessao
+-- ja aberta no meio da navegacao, sem esperar o token expirar: a empresa
+-- suspende e o motorista perde o acesso na proxima chamada. Trocar este
+-- `d.status <> 'suspended'` por um `in ('pending','approved','rejected')` e
+-- seguro, mas o `<> 'suspended'` continua sendo o que protege esse caso.
+-- ------------------------------------------------------------
 DROP FUNCTION IF EXISTS public.driver_verify_session(uuid);
 
 CREATE OR REPLACE FUNCTION public.driver_verify_session(p_session_token uuid)
@@ -387,7 +417,7 @@ AS $function$
   join drivers d on d.id = s.driver_id
   where s.token = p_session_token
     and s.expires_at > now()
-    and d.status = 'approved'
+    and d.status <> 'suspended'
   limit 1;
 $function$
 ;
@@ -830,4 +860,5 @@ GRANT  EXECUTE ON FUNCTION public.driver_get_document_path(uuid, uuid, uuid) TO 
 --   5) empresa: GET  /driver-document-url?documentId=...      -> URL assinada 5min
 --   6) empresa: POST /driver-review-document                  -> aprova/reprova
 --   7) POST /driver      { phone, pin }                       -> driverLogin
---      (so funciona se status = 'approved')
+--      (entra com status pending/approved/rejected. So 'suspended' e recusado.
+--       Dirigir continua exigindo 'approved' em list_live_vehicles.)

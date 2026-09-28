@@ -219,3 +219,59 @@ test('logic.js nao depende de nada: nem React, nem theme, nem rede', () => {
   const imports = src.match(/^\s*import\s.*$/gm) || [];
   assert.deepStrictEqual(imports, [], 'logic.js precisa continuar sem imports');
 });
+
+// ------------------------------------------------------------
+// Login simples: entrar no app nao e dirigir
+// ------------------------------------------------------------
+
+test('sessao de pendente e sucesso de login, com o status preservado', () => {
+  // A RPC emite sessao para 'pending' e devolve o status no corpo. Se a tela
+  // tratasse ausencia de 'approved' como falha, o motorista nao entraria nunca.
+  const r = L.interpretLogin({ sessionToken: 's', driverId: 'd-2', status: 'pending' });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.session.status, 'pending');
+  assert.strictEqual(r.error, null);
+});
+
+test('rejeitado tambem entra, para poder reenviar o documento corrigido', () => {
+  const r = L.interpretLogin({ sessionToken: 's', driverId: 'd-3', status: 'rejected' });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.session.status, 'rejected');
+});
+
+test('suspenso continua sendo recusa, e a mensagem fala de suspensao', () => {
+  const r = L.interpretLogin({ error: 'ACCOUNT_SUSPENDED', status: 'suspended' });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.session, null);
+  assert.match(r.error, /suspensa/i);
+});
+
+test('credenciais erradas dizem telefone ou PIN, nao "aguardando aprovacao"', () => {
+  // A confusao classica: com o login destravado, tratar qualquer falha como
+  // "cadastro pendente" manda o motorista cadastro novo em vez de conferir o PIN.
+  const r = L.interpretLogin({ error: 'INVALID_CREDENTIALS' });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.error, /Telefone ou PIN/i);
+  assert.doesNotMatch(r.error, /aprovacao/i);
+});
+
+test('conta bloqueada por tentativas tem mensagem propria', () => {
+  const r = L.interpretLogin({ error: 'ACCOUNT_LOCKED' });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.error, /Muitas tentativas/i);
+});
+
+test('canDrive e verdadeiro so para aprovado', () => {
+  assert.strictEqual(L.canDrive('approved'), true);
+  for (const status of ['pending', 'rejected', 'suspended', '', null, undefined, 'APPROVED']) {
+    assert.strictEqual(L.canDrive(status), false, `${status} nao pode dirigir`);
+  }
+});
+
+test('entrar e dirigir sao decisiones separadas: pendente entra, nao dirige', () => {
+  // Este e o contrato do login simples. Se alguem voltar a exigir 'approved'
+  // para emitir sessao, a segunda assercao deste teste e a que quebra.
+  const r = L.interpretLogin({ sessionToken: 's', driverId: 'd-2', status: 'pending' });
+  assert.strictEqual(r.ok, true, 'pendente precisa entrar no app');
+  assert.strictEqual(L.canDrive(r.session.status), false, 'mas nao pode dirigir');
+});

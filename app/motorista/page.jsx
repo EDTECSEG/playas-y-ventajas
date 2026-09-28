@@ -19,6 +19,7 @@ import {
   DOC_TYPES,
   friendlyMessage,
   interpretLogin,
+  canDrive,
   checkPin,
   pinConsumed,
   buildDocumentRequest,
@@ -120,19 +121,30 @@ export default function MotoristaPage() {
     }
   }
 
-  const entrar = () => run(async () => {
+  // Faz o login e guarda a sessao. Compartilhado pelo botao Entrar e pelo
+  // passo automatico depois de definir o PIN, para os dois nao divergirem.
+  //
+  // Limpar o cadastro pela metade aqui e obrigatorio: a sessao passa a mandar,
+  // e e ela que autoriza o envio dos documentos. Sem isso, a tela continuaria
+  // mostrando "defina seu PIN" depois de ja estar logado.
+  async function autenticar(phone, pin) {
     const data = await call('driver-login', {
-      body: { tenantId: TENANT_ID, phone: login.phone.trim(), pin: login.pin },
+      body: { tenantId: TENANT_ID, phone: phone.trim(), pin },
     });
-    // A RPC devolve {error: 'NOT_APPROVED'} com HTTP 200 quando o cadastro
-    // existe mas nao esta aprovado. So o sessionToken e sucesso de verdade, e
-    // e o que interpretLogin checa.
+    // A RPC devolve {error: ...} no corpo quando recusa, com HTTP 403. So o
+    // sessionToken e sucesso, e e interpretLogin que decide isso.
     const r = interpretLogin(data);
     if (!r.ok) throw new Error(r.error);
     localStorage.setItem('pyv_driver', JSON.stringify(r.session));
     setSession(r.session);
+    localStorage.removeItem('pyv_driver_pending');
+    setPending(null);
+    return r.session;
+  }
+
+  const entrar = () => run(async () => {
+    await autenticar(login.phone, login.pin);
     setLogin({ phone: '', pin: '' });
-    if (r.session.status !== 'approved') setPending(null);
   });
 
   const cadastrar = () => run(async () => {
@@ -165,12 +177,16 @@ export default function MotoristaPage() {
       body: { tenantId: TENANT_ID, phone: pending.phone, pin: pinForm.pin, pinToken: pending.pinToken },
     });
     setPinForm({ pin: '', pin2: '' });
-    // O PIN definido consome o pinToken; uploadToken continua valido para os
-    // documentos, porque ainda nao ha sessao.
+    // O PIN definido consome o pinToken no servidor, entao tira o pinToken do
+    // navegador antes de qualquer outra coisa. O uploadToken fica: e ele que
+    // ainda autoriza o envio de documento caso o login logo abaixo falhe.
     const p = pinConsumed(pending);
     localStorage.setItem('pyv_driver_pending', JSON.stringify(p));
     setPending(p);
-  }, 'PIN definido. Agora envie seus documentos e entre com telefone e PIN.');
+    // O login nao depende mais de aprovacao, entao entra na hora, sem o
+    // motorista digitar telefone e PIN de novo.
+    await autenticar(p.phone, pinForm.pin);
+  }, 'PIN definido e voce ja entrou. Envie seus documentos abaixo.');
 
   const enviarDoc = () => run(async () => {
     const file = fileRef.current && fileRef.current.files && fileRef.current.files[0];
@@ -235,6 +251,15 @@ export default function MotoristaPage() {
             <p style={{ color: theme.textMuted, marginTop: 0 }}>
               Telefone {session.phone} · documento {docEnviado ? 'enviado' : 'pendente'}
             </p>
+            {/* Entrar no app e dirigir sao coisas separadas. Sem esta frase o
+                motorista aprovado em documentos acha que ja esta na frota,
+                e o que nao esta aprovado nao entende por que nao aparece. */}
+            {!canDrive(session.status) ? (
+              <p style={{ color: theme.textMuted, marginBottom: 0 }}>
+                Voce entrou, mas ainda nao pode dirigir. Assim que a empresa aprovar seus
+                documentos, voce passa a aparecer na lista de veiculos.
+              </p>
+            ) : null}
           </div>
         ) : null}
 
@@ -252,8 +277,12 @@ export default function MotoristaPage() {
                 <button style={btn} onClick={definirPin} disabled={ocupado}>Salvar PIN</button>
               </>
             ) : (
+              /* pinToken ja foi consumido, entao este estado so aparece se o
+                 login automatico apos salvar o PIN nao completou. Da para
+                 enviar documento por aqui mesmo, e o login fica na aba Entrar. */
               <p style={{ color: theme.textMuted, margin: 0 }}>
-                PIN definido. Envie os documentos abaixo e depois entre com seu telefone e PIN.
+                PIN ja definido. Envie os documentos abaixo e entre pela aba Entrar com seu
+                telefone e PIN.
               </p>
             )}
           </div>

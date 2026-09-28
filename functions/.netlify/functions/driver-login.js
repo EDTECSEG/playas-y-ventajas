@@ -2,10 +2,14 @@ import { getSupabaseAdminClient, rpcErrorCode, rpcErrorStatus, json } from './_s
 
 // Espelho ESM. Canon CJS: netlify/functions/driver-login.js
 //
-// Login do motorista por telefone + PIN. A RPC so emite sessao para status
-// aprovado — quem ainda esta pending/rejected nao entra por aqui, e o motivo
-// volta como NOT_APPROVED (403) em vez de 401, para o app poder mostrar
-// "aguardando aprovacao" em vez de "senha errada".
+// Login do motorista por telefone + PIN, igual ao das demais categorias: o
+// motorista entra assim que define o PIN e ve dentro do app o aviso de
+// aprovacao e o upload de documento. Entrar no app nao e dirigir — dirigir
+// continua exigindo status 'approved', checado em list_live_vehicles (modulo 1),
+// e nao aqui.
+//
+// So a suspensao fecha o acesso: vem como ACCOUNT_SUSPENDED (403) em vez de
+// 401, para o app dizer "conta suspensa" e nao "senha errada".
 //
 // A sessao devolvida e o campo `sessionToken` do json da RPC driver_login (nao
 // `driverSessionToken`, que nao existe) e vale como credencial nos demais
@@ -17,6 +21,11 @@ import { getSupabaseAdminClient, rpcErrorCode, rpcErrorStatus, json } from './_s
 // com {error:'INVALID_CREDENTIALS'} — login errado com status de sucesso. O
 // cliente contornava (interpretLogin), mas qualquer outro consumidor trataria
 // falha como sucesso e o monitoramento nao veria a tentativa falha.
+//
+// PENDING_APPROVAL, REGISTRATION_REJECTED e NOT_APPROVED nao sao mais devolvidos
+// pela RPC: 'pending' e 'rejected' entram e recebem a sessao com o status. Ficam
+// no mapa como rede de seguranca, para uma versao antiga da RPC em producao nao
+// virar 400 ambiguo.
 const LOGIN_ERROR_STATUS = {
   INVALID_CREDENTIALS: 401,
   ACCOUNT_LOCKED: 429,

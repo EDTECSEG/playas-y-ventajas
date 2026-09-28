@@ -75,6 +75,38 @@ test('login valido continua 200 e devolve a sessao', async () => {
   assert.strictEqual(r.headers['Cache-Control'], 'no-store');
 });
 
+test('pendente e rejeitado entram: a RPC emite sessao e o status vem no corpo', async () => {
+  // Login simples: o motorista entra assim que define o PIN e a aprovacao vira
+  // aviso dentro do app. O handler nao pode tratar status != approved como
+  // recusa, senao volta a trancar a porta.
+  for (const status of ['pending', 'rejected', 'approved']) {
+    respostaRpc = { data: { sessionToken: 'tok', driverId: 'd1', status }, error: null };
+    const r = await handler(ev(valido));
+    assert.strictEqual(r.statusCode, 200, `${status} deveria entrar`);
+    const corpo = JSON.parse(r.body);
+    assert.strictEqual(corpo.sessionToken, 'tok');
+    assert.strictEqual(corpo.status, status, 'o cliente precisa do status para mostrar a situacao');
+  }
+});
+
+test('suspenso continua 403, e e a suspensao que corta o acesso', async () => {
+  respostaRpc = { data: { error: 'ACCOUNT_SUSPENDED', status: 'suspended' }, error: null };
+  const r = await handler(ev(valido));
+  assert.strictEqual(r.statusCode, 403);
+  assert.strictEqual(JSON.parse(r.body).error, 'ACCOUNT_SUSPENDED');
+});
+
+test('os codigos antigos de nao-aprovado continuam mapeados, como rede de seguranca', async () => {
+  // A RPC nao devolve mais PENDING_APPROVAL/REGISTRATION_REJECTED/NOT_APPROVED.
+  // O mapa os mantem para uma versao antiga em producao nao virar 400 ambiguo
+  // e, mais importante, para nunca virar 200.
+  for (const codigo of ['PENDING_APPROVAL', 'REGISTRATION_REJECTED', 'NOT_APPROVED']) {
+    respostaRpc = { data: { error: codigo }, error: null };
+    const r = await handler(ev(valido));
+    assert.strictEqual(r.statusCode, 403, `${codigo} deveria ser 403`);
+  }
+});
+
 test('nenhum caminho de recusa devolve 200', async () => {
   for (const codigo of ['INVALID_CREDENTIALS', 'ACCOUNT_LOCKED', 'PENDING_APPROVAL', 'REGISTRATION_REJECTED', 'ACCOUNT_SUSPENDED', 'NOT_APPROVED']) {
     respostaRpc = { data: { error: codigo }, error: null };
