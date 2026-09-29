@@ -79,7 +79,7 @@ Grupos por domínio (56 funções com `search_path` fixado):
 - Tokens de cliente HMAC (anti-IDOR); storage privado com URL assinada; `no-store` em rotas de sessão; CORS controlado.
 - PIN hasheado + lockout em memória e `login_attempts`; `search_path` fixo; `REVOKE` de `function_exec`; RLS ativa.
 - Pendências registradas em **SECURITY-DECISIONS.md** (inclui vazamento de credenciais numa conversa anterior — rotação a critério do dono).
-- Bateria de segurança da fase 2 (2026-09-29): apenas `service_role` executa as funções de app (regra 4 → `app_ainda_abertas=0`); `billing_record_coupon_tax` não aparece nos advisors de `SECURITY DEFINER` exposto (anon/authenticated). Único ERROR restante é `spatial_ref_sys` sem RLS (tabela do postgis, owned por `supabase_admin` — ação manual do dono no dashboard, pendente).
+- Bateria de segurança da fase 2 (2026-09-29): apenas `service_role` executa as funções de app (regra 4 → `app_ainda_abertas=0`); `billing_record_coupon_tax` não aparece nos advisors de `SECURITY DEFINER` exposto (anon/authenticated). Único ERROR restante é `spatial_ref_sys` sem RLS — tabela da extensão postgis, owned por `supabase_admin`; o MCP (roda como `postgres`, não-superuser) não consegue (falha `42501 must be owner`). Resolução manual no SQL Editor do dashboard: `alter table public.spatial_ref_sys enable row level security;`.
 
 ## 9. Qualidade
 
