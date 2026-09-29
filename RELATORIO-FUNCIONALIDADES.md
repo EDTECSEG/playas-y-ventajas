@@ -88,5 +88,5 @@ Grupos por domínio (56 funções com `search_path` fixado):
 ## 9. Qualidade
 
 - **233 testes / 227 passando / 0 falhas / 6 pulados** (`node:test`) — cobrem handlers, lógica pura, consistência CJS/ESM, headers e asset routing do Worker (incluindo `shuttle.test.cjs`, 10 casos de contrato/erro do endpoint de translado, e `shuttle-manage.test.cjs` com 15 casos do fluxo de escrita: `mode=shuttles`, `save/toggle/delete_shuttle_service` e `driver-position`).
-- Testes **live opcionais** (smoke + aprovação de motorista) rodam com `RUN_LIVE=1` contra produção.
+- Testes **live opcionais** (smoke, aprovação de motorista e reporte de posição) rodam com `RUN_LIVE=1` contra produção (`npm run test:live[:approval|:position]`).
 - Build gera Worker autocontido; rotas fora da whitelist → 404.
