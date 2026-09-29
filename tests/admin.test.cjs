@@ -104,6 +104,24 @@ test('admin: actions de billing/customer validas', async (t) => {
   assert.strictEqual(calls[2], 'admin_update_business');
 });
 
+test('admin: set_billing repassa plano PER_COUPON e feeCents', async (t) => {
+  const calls = [];
+  const fake = adminFake(VALID_ACTORS.admin, async (name, args) => {
+    if (name === 'admin_set_billing') { calls.push(args); return { data: null, error: null }; }
+    return { data: null, error: { message: 'unexpected rpc ' + name } };
+  });
+  const { handler, restore } = loadFunction('admin.js', fake);
+  t.after(restore);
+  const res = await handler(makeEvent({
+    method: 'POST', headers: authHeaders(),
+    body: { action: 'set_billing', businessId: 'b-1', plan: 'PER_COUPON', status: 'ACTIVE', feeCents: 500 },
+  }));
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(calls[0].p_plan, 'PER_COUPON');
+  assert.strictEqual(calls[0].p_status, 'ACTIVE');
+  assert.strictEqual(calls[0].p_fee_cents, 500);
+});
+
 test('admin: mode billing e customers usam rpcs certas', async (t) => {
   const calls = [];
   const fake = adminFake(VALID_ACTORS.admin, async (name) => {

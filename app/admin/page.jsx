@@ -56,6 +56,7 @@ export default function AdminPage() {
   const [customerSearch, setCustomerSearch] = useState('');
   const [editingBusiness, setEditingBusiness] = useState(null);
   const [featuredRanks, setFeaturedRanks] = useState({});
+  const [feePerCoupon, setFeePerCoupon] = useState({});
 
   async function saveBusinessEdit() {
     const res = await fetch('/.netlify/functions/admin', {
@@ -210,6 +211,13 @@ export default function AdminPage() {
     loadBusinesses();
   }
 
+  async function setPerCouponPlan(b) {
+    const cents = Math.round((Number(feePerCoupon[b.id]) || 0) * 100);
+    if (cents < 1 || cents > 1000000) { setMsg('Defina a taxa por cupom (R$ 0,01 a R$ 10.000,00).'); return; }
+    await setBillingPlan(b, 'PER_COUPON', 'ACTIVE', cents);
+    setMsg(`${b.name} agora cobra R$ ${(cents / 100).toFixed(2)} por cupom resgatado.`);
+  }
+
   async function setFeatured(b, rank) {
     const n = Math.max(0, parseInt(rank, 10) || 0);
     const res = await fetch('/.netlify/functions/admin', {
@@ -325,6 +333,19 @@ export default function AdminPage() {
             <span style={{ fontSize: 12 }}>Login: {b.ownerInternalCode} · CNPJ: {b.cnpj || '—'} · {b.website || '—'}</span>
             <br />
             <span style={{ fontSize: 12 }}>{b.billingPlan} · {b.billingStatus}</span>
+            {b.billingPlan === 'PER_COUPON' && (
+              <span style={{ fontSize: 12, marginLeft: 8 }}>Taxa/cupom: R$ {((b.billingFeeCents ?? 0) / 100).toFixed(2)}</span>
+            )}
+            <div style={{ marginTop: 4 }}>
+              <input
+                style={{ ...input, width: 120 }}
+                type="number" min={0} step="0.01"
+                placeholder="Taxa/cupom (R$)"
+                value={feePerCoupon[b.id] ?? ((b.billingFeeCents ?? 0) / 100).toFixed(2)}
+                onChange={(e) => setFeePerCoupon((prev) => ({ ...prev, [b.id]: e.target.value }))}
+              />
+              <button style={smallBtn} onClick={() => setPerCouponPlan(b)}>Plano por cupom</button>
+            </div>
             {(featuredRanks[b.id] > 0) && <span style={{ fontSize: 12, marginLeft: 8, fontWeight: 800, color: theme.green }}>⭐ Destaque pos. {featuredRanks[b.id]}</span>}
             <div style={{ marginTop: 6 }}>
               <input
@@ -336,8 +357,8 @@ export default function AdminPage() {
               />
               <button style={smallBtn} onClick={() => setFeatured(b, featuredRanks[b.id])}>⭐ {t.featured}</button>
               <button style={smallBtn} onClick={() => toggleActive(b)}>{b.isActive ? t.deactivate : t.active}</button>
-              <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'ACTIVE', b.monthlyFeeCents)}>{t.activateBilling}</button>
-              <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'SUSPENDED', b.monthlyFeeCents)}>{t.suspend}</button>
+              <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'ACTIVE', b.billingPlan === 'PER_COUPON' ? (b.billingFeeCents ?? 0) : b.monthlyFeeCents)}>{t.activateBilling}</button>
+              <button style={smallBtn} onClick={() => setBillingPlan(b, b.billingPlan, 'SUSPENDED', b.billingPlan === 'PER_COUPON' ? (b.billingFeeCents ?? 0) : b.monthlyFeeCents)}>{t.suspend}</button>
               <button style={smallBtn} onClick={() => setEditingBusiness({ ...b })}>{t.editBusiness}</button>
               <button style={{ ...smallBtn, background: '#c0392b', color: '#fff' }} onClick={() => resetPassword(b)}>{t.resetPassword}</button>
               <button style={{ ...smallBtn, background: '#c0392b', color: '#fff' }} onClick={() => deleteBusiness(b)}>{t.deleteBusiness}</button>
@@ -398,7 +419,7 @@ export default function AdminPage() {
         <h3>{t.billingPanel}</h3>
         {billing.length === 0 ? <p style={{ fontSize: 13 }}>{t.noBillingYet}</p> : (
           <ul>{billing.map((c, i) => (
-            <li key={i} style={{ fontSize: 13 }}>{c.businessName} — {c.couponPublicId} — R$ {(c.amountCents / 100).toFixed(2)} — {new Date(c.validatedAt).toLocaleString('pt-BR')}</li>
+            <li key={i} style={{ fontSize: 13 }}>{c.businessName} — {c.couponPublicId} — R$ {(c.amountCents / 100).toFixed(2)} — {c.validatedAt ? new Date(c.validatedAt).toLocaleString('pt-BR') : '—'}</li>
           ))}</ul>
         )}
       </div>

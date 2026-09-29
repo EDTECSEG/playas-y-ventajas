@@ -1,14 +1,14 @@
 # Playas y Ventajas — Relatório de Funcionalidades
 
 > Mapeado diretamente do código (rotas do App Router, endpoints do Worker, RPCs do banco).
-> Data: 28/09/2026.
+> Data: 29/09/2026.
 
 ## 1. Panorama e arquitetura
 
 | Camada | Tecnologia |
 |---|---|
 | Front (5 rotas, App Router) | Next.js 14 + React, i18n PT/EN/ES, tema próprio |
-| Servidor | Cloudflare Pages — Worker em modo avançado, bundle self-contained (`_worker.js`, 264,8 kB) |
+| Servidor | Cloudflare Pages — Worker em modo avançado, bundle self-contained (`_worker.js`, 273,7 kB) |
 | API | handlers em `netlify/functions` (CJS, canon) com espelhos ESM (`functions/.netlify/functions`), 19 endpoints reais |
 | Banco | Supabase (Postgres), regras de negócio em RPC, Storage de imagens/documentos, RLS ativa |
 | Comunicação | WhatsApp (`wa.me`), QR code (qrcodejs), mapa Leaflet + OpenStreetMap/Overpass |
@@ -53,7 +53,7 @@ Fluxo completo com lógica pura testada em `app/motorista/logic.js`:
 
 - **Login** com checagem de papel `ADMIN`/`SUPER_ADMIN` (não basta entrar).
 - **Negócios**: listar, criar (nome, CNPJ, logo, plano, dono com código+pin), ativar/desativar, editar, apagar.
-- **Planos/faturamento**: painel `admin_billing_panel`, troca de plano.
+- **Planos/faturamento**: painel `admin_billing_panel`, troca de plano. **Plano por cupom** (`PER_COUPON`): admin define `billing_fee_cents` no card do negócio; a cada resgate (`claim-coupon`) a taxa é acumulada em `billing_charges` (`coupon_id` preenchido, dedupe por cupom) e vista no painel `billing` — cobrança manual, sem assinatura MP (`billing_mp_prepare` recusa `PER_COUPON` com `PLAN_NOT_SUBSCRIPTION`).
 - **Destaques**: `admin_featured_ranks` / `admin_set_featured`.
 - **Clientes**: busca e edição (nome, email, Instagram, ativo).
 - **Resset de senha** de negócio (PIN temporário) e **reset de PIN de motorista** (`admin_driver_reset_pin`).
@@ -68,6 +68,7 @@ Grupos por domínio (56 funções com `search_path` fixado):
 - **Motoristas**: `driver_register/set_pin/login/logout/verify_session/add_document/review_document/list_documents/list_for_business/get_document_path`, `admin_driver_reset_pin`.
 - **Empresa**: `business_get_own`, `business_update_own`, `business_report`, `business_generate_invite`, `business_logo_by_id`.
 - **Admin**: gestão de negócios/faturamento/clientes/destaques/delete.
+- **Faturamento fase 2**: `billing_record_coupon_tax` (taxa por resgate em `PER_COUPON`, dedupe por `coupon_id`), `billing_mp_prepare/register/cancel` e webhooks MP recusam/ignoram `PER_COUPON`.
 - **Afiliados/indicação** (pronto no banco, **sem tela no front**): `affiliate_register`, `affiliate_report`, `referral_track`, `referral_convert`, `try_referral_convert`, `get_referral_bonus`.
 - **Translado/proximidade** (RPCs existentes, sem UI dedicada): `list_shuttle_services`, `list_live_vehicles`.
 
@@ -78,9 +79,10 @@ Grupos por domínio (56 funções com `search_path` fixado):
 - Tokens de cliente HMAC (anti-IDOR); storage privado com URL assinada; `no-store` em rotas de sessão; CORS controlado.
 - PIN hasheado + lockout em memória e `login_attempts`; `search_path` fixo; `REVOKE` de `function_exec`; RLS ativa.
 - Pendências registradas em **SECURITY-DECISIONS.md** (inclui vazamento de credenciais numa conversa anterior — rotação a critério do dono).
+- Bateria de segurança da fase 2 (2026-09-29): apenas `service_role` executa as funções de app (regra 4 → `app_ainda_abertas=0`); `billing_record_coupon_tax` não aparece nos advisors de `SECURITY DEFINER` exposto (anon/authenticated). Único ERROR restante é `spatial_ref_sys` sem RLS (tabela do postgis, owned por `supabase_admin` — ação manual do dono no dashboard, pendente).
 
 ## 9. Qualidade
 
-- **157 testes passando / 0 falhas / 6 pulados** (`node:test`) — cobrem handlers, lógica pura, consistência CJS/ESM, headers e asset routing do Worker.
+- **202 testes passando / 0 falhas / 6 pulados** (`node:test`) — cobrem handlers, lógica pura, consistência CJS/ESM, headers e asset routing do Worker.
 - Testes **live opcionais** (smoke + aprovação de motorista) rodam com `RUN_LIVE=1` contra produção.
 - Build gera Worker autocontido; rotas fora da whitelist → 404.

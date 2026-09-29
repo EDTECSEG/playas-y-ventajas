@@ -47,6 +47,16 @@ export async function onRequestPost(context) {
     if (error) return json({ error: (error.message || '').split(':')[0].trim() }, 400);
     // ---------- FIM DO CAMINHO CRITICO ----------
 
+    // ---------- TAXA POR CUPOM (fase 2). Best-effort. ----------
+    // Plano PER_COUPON: cada resgate acumula uma taxa em billing_charges para
+    // cobrança manual do admin. Se a RPC falhar, o resgate JÁ aconteceu e a
+    // resposta continua 200 — mesmo contrato do WhatsApp/indicação abaixo.
+    try {
+      await supabase.rpc('billing_record_coupon_tax', {
+        p_tenant_id: tenantId, p_template_id: templateId, p_coupon_id: data.couponId,
+      });
+    } catch (e) { /* opcional: cobrança acumulada depois */ }
+
     const publicId = data.publicId;
     const customerId = data.customerId;
     const extras = { whatsappUrl: null, referral: null, notes: [] };

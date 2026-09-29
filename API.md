@@ -30,6 +30,7 @@ Mapa de referência: rota pública → handler Netlify → RPC do Supabase → S
 `POST /.netlify/functions/claim-coupon` `{ tenantId, templateId, phone, name?, instagram?, email?, ref? }`
 - Caminho crítico: `claim_coupon` (produção, intocada). Depois `try_referral_convert` (convert do indicado) e `loadOfferContext` para montar o link wa.me (`buildWaLink` de `_wa.js`).
 - Se `ref` presente e o vínculo não tiver ocorrido no identify → `referral_track` antes do convert. Tudo best-effort: o resgate nunca é bloqueado.
+- Fase 2 (taxa por cupom): no sucesso, handler chama **`billing_record_coupon_tax`** (`p_tenant_id`, `p_template_id`, `p_coupon_id`) best-effort (try/catch — o 200 nunca cai; falha é logada e ignorada).
 - Resposta: `{ ...claim, customerToken, whatsappUrl, referral, notes }`.
 
 ### `login` — sessão de empresa/admin
@@ -50,6 +51,7 @@ Mapa de referência: rota pública → handler Netlify → RPC do Supabase → S
   - `billing` → `admin_billing_panel` · `featured` → `admin_featured_ranks` · `customers` → `admin_list_customers` (produção).
   - `affiliates` → **`admin_affiliate_report`** · `affiliate-rewards` → **`admin_get_affiliate_rewards`** (`{ config }`).
 - `POST` `{ action }`: `create_business`, `toggle_business`, `set_featured` (rank), `set_billing`, `update_business`, `request_password_reset`, `update_customer`, `delete_business`, `set_coupon_featured` (override/limpeza → `admin_set_coupon_featured`), `set_affiliate_rewards` (→ **`admin_set_affiliate_rewards`**, com `requireFirstClaim !== false`).
+- Fase 2: `admin_list_businesses` devolve `billingFeeCents` (e `monthlyFeeCents`); `set_billing` aceita `p_plan='PER_COUPON'` → grava a taxa em `billing_fee_cents` (mensal zerada); demais planos → `monthly_fee_cents` (taxa por cupom zerada).
 
 ### `affiliates` — módulo afiliado (público, sem sessão)
 - `POST` `{ name, phone, email?, kind? }` → `affiliate_register`. Devolve `{ affiliateId, referralCode, shareUrl }`.
@@ -65,6 +67,7 @@ Mapa de referência: rota pública → handler Netlify → RPC do Supabase → S
   - `cancel` → cancela no MP (best-effort) → `billing_mp_cancel`.
 - Envs: `MP_ACCESS_TOKEN`, `MP_NOTIFICATION_URL` (ou `NEXT_PUBLIC_SITE_URL` + sufixo webhook), `MP_API_BASE` (teste).
 - Segredos (`MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`) ficam só no servidor; o browser só vê `initPoint`.
+- Fase 2: plano `PER_COUPON` **não é assinatura** — `billing_mp_prepare` rejeita com `PLAN_NOT_SUBSCRIPTION`. A taxa por resgate é acumulada em `billing_charges` (`coupon_id` preenchido, dedupe por cupom) e cobrada manualmente pelo admin; o painel `billing` do `/admin` lista essas linhas.
 
 ### `billing-webhook` — webhook de Assinatura do MP (PÚBLICO, sem sessão)
 - `POST /.netlify/functions/billing-webhook` (query `data.id`/`type` + headers `x-signature`, `ts`, `x-request-id`).
@@ -97,6 +100,7 @@ Vínculo por telefone: `driver_register`, `driver_set_pin`, `driver_login`, `dri
 | `billing_mp_cancel` | idem | Limpa assinatura locaç e marca `CANCELLED` |
 | `billing_mp_webhook_preapproval` | idem | Evento `subscription_preapproval` → status do negócio |
 | `billing_mp_webhook_charge` | idem | `subscription_authorized_payment` → insere `billing_charges` (dedupe) + ACTIVE |
+| `billing_record_coupon_tax` | `supabase/p2-taxa-por-cupom.sql` | Fase 2: grava taxa por resgate (plano `PER_COUPON`) em `billing_charges` com `coupon_id`; dedupe por cupom; devolve `true/false` (via em conflito). Excludente com `billing_mp_*` |
 
 **Nota**: as funções de produção (linha "produção" acima) não têm arquivo `.sql` no repo — vivem apenas no Supabase remoto. Não edite produção sem passar pelo `supabase` (migração versionada + advisors).
 
@@ -112,3 +116,4 @@ Vínculo por telefone: `driver_register`, `driver_set_pin`, `driver_login`, `dri
 
 1. `supabase/offers-v3-filters-and-coupon-featured.sql` — coluna `featured_until`, `norm_categoria`, `list_categories`, `list_offers` v3, `business_set_coupon_featured`, `admin_set_coupon_featured`, `business_update_own` v10, e DROPs das assinaturas antigas (`list_offers(uuid)`, `business_update_own` 9-arg).
 2. `supabase/affiliates-wiring.sql` — `affiliate_dashboard`, `admin_affiliate_report`, `admin_get/set_affiliate_rewards` (dependem do Módulo 3/3b já aplicado).
+3. `supabase/p2-taxa-por-cupom.sql` — **fase 2** (aplacada em 3 migrations via MCP: `p2_taxa_por_cupom`, `p2_billing_plan_check_per_coupon`, `p2_fix_billing_record_coupon_tax_null`): coluna `businesses.billing_fee_cents`, índice parcial `idx_billing_charges_coupon_id`, plano `PER_COUPON` no check, RPC `billing_record_coupon_tax` (SECURITY DEFINER, `search_path` fixo, EXECUTE só `service_role`) e ajustes de `admin_set_billing`/`admin_list_businesses`/`billing_mp_prepare`.
