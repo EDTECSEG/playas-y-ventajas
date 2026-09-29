@@ -436,3 +436,56 @@ com código próprio — nunca `error.message` cru.
 Responsável pela decisão: usuário do projeto (autorizou "corrigir" o vazamento
 de erro interno nos handlers).
 
+---
+
+# Risco aceito — RLS em `spatial_ref_sys` inalcançável (2026-09-29)
+
+## Contexto
+A bateria de segurança da fase 2 (2026-09-29) deixou um único ERROR no advisor
+`rls_disabled_in_public`: `public.spatial_ref_sys` com RLS desligada e SELECT
+disponível para `anon`/`authenticated`/`service_role`. Tentativas de corrigir
+falharam e a falta foi verificada por inspeção do banco:
+
+- `postgres` (papel do MCP, da CLI e do SQL Editor do dashboard) tem
+  `rolsuper=false`; `supabase_admin` é superuser, mas
+  `pg_has_role(current_user, 'supabase_admin', 'MEMBER') = false` →
+  `set role supabase_admin` também é negado.
+- `spatial_ref_sys` é owned por `supabase_admin` (extensão postgis instalada
+  em `public`), e **todos** os grants (inclusive SELECT) têm grantor
+  `supabase_admin` → nem `REVOKE` é possível (quem revoga precisa ser owner ou
+  o grantor).
+- `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` exige ownership ou superuser:
+  falha `42501: must be owner of table spatial_ref_sys` por igual no MCP e no
+  SQL Editor do dashboard. Nenhum caminho SQL existe a partir de
+  dashboard/MCP/CLI (todos conectam como `postgres`).
+
+## Decisão
+Aceitar o risco e documentá-lo. A remediação só é possível com intervenção do
+Supabase (ticket para executar o `ALTER` como `supabase_admin`), o que é
+desproporcional para uma tabela de catálogo de referência. Não há código que
+leia `spatial_ref_sys`; o app usa postgis via `st_*`/`geometry` nas próprias
+colunas (`businesses.location` etc. — ver decisão postgis de 2026-09-25).
+
+## Risco explicado e aceito
+`spatial_ref_sys` contém ~8.500 linhas de definição de SRID (EPSG): dados de
+referência públicos e sem PII. A exposição real, mesmo com o ERROR no advisor,
+é teórica — leitura de catálogo por `anon`/`authenticated`, dado não sensível.
+Como a extensão instala o postgis em `public` com esses grants em **todos os
+projetos Supabase**, este finding é inerente à plataforma, não ao app.
+
+## Mitigação que permanece ativa
+- Nenhuma rota do app consulta `spatial_ref_sys`; toda chamada passa por
+  Netlify function com `service_role`.
+- As 30 tabelas do app seguem com RLS ligada (sem policy), e as 67 funções do
+  app estão fechadas para `anon`/`authenticated`.
+
+## Condição de revisão obrigatória
+Reabrir se:
+- Surge dependência de consulta a `spatial_ref_sys` com papel de solicitante
+  (hoje nenhuma usa), ou se o Supabase oferecer comando oficial para RLS em
+  tabelas de extensão.
+- A adoção iniciada neste projeto reabrir a decisão postgis geral.
+
+Responsável pela decisão: usuário do projeto (escolheu "aceitar e documentar"
+após o bloqueio `42501` ser verificado no MCP e no dashboard).
+
