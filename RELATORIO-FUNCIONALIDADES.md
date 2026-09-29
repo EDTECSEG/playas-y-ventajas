@@ -8,8 +8,8 @@
 | Camada | Tecnologia |
 |---|---|
 | Front (5 rotas, App Router) | Next.js 14 + React, i18n PT/EN/ES, tema próprio |
-| Servidor | Cloudflare Pages — Worker em modo avançado, bundle self-contained (`_worker.js`, 273,7 kB) |
-| API | handlers em `netlify/functions` (CJS, canon) com espelhos ESM (`functions/.netlify/functions`), 19 endpoints reais |
+| Servidor | Cloudflare Pages — Worker em modo avançado, bundle self-contained (`_worker.js`, 275,2 kB) |
+| API | handlers em `netlify/functions` (CJS, canon) com espelhos ESM (`functions/.netlify/functions`), 23 rotas na whitelist (`worker/main.js` ROUTES; fora dela → 404) |
 | Banco | Supabase (Postgres), regras de negócio em RPC, Storage de imagens/documentos, RLS ativa |
 | Comunicação | WhatsApp (`wa.me`), QR code (qrcodejs), mapa Leaflet + OpenStreetMap/Overpass |
 
@@ -25,6 +25,7 @@
 - **Identificação por telefone** (`identify`): devolve `customerId` + token assinado (HMAC) antir-IDOR. Nome, Instagram e email são opcionais; **email não é mais verificado** (decisão registrada).
 - **Vitrine de ofertas** (`offers`): lista ativas por cidade, categoria e raio/distância (geolocalização), com imagens compensadas do catálogo.
 - **Mapa de proximidade**: radar (`find_nearby_businesses`) + camada de dados abertos OSM via `map-places` (Overpass, servidor-side por CORS).
+- **Translado e proximidade**: card dedicado consumindo `shuttle` (`list_shuttle_services` + `list_live_vehicles`). Com geolocalização mostra distâncias e raio de 16 km; negada/indisponível ainda lista (sem `distanceKm`, aviso honesto). Veículos ao vivo mostram motorista, distância, velocidade e "atualizado há X"; sem dados → "Nenhum translado ativo por aqui no momento."
 - **Resgate de cupom** (`claim-coupon`): caminho crítico roda RPC `claim_coupon` (estoque, hash, limite); extras best-effort: conversão de indicação (`try_referral_convert`) e link WhatsApp montado a partir do contexto do banco (nunca do navegador). Retorna QR code.
 - **Meus cupons** (`offers?mode=my-coupons`): exige token de cliente válido; status de resgate.
 - **Validação manual** (`validate-coupon`): código curto digitado, com códigos de recusa e idempotência.
@@ -69,8 +70,8 @@ Grupos por domínio (56 funções com `search_path` fixado):
 - **Empresa**: `business_get_own`, `business_update_own`, `business_report`, `business_generate_invite`, `business_logo_by_id`.
 - **Admin**: gestão de negócios/faturamento/clientes/destaques/delete.
 - **Faturamento fase 2**: `billing_record_coupon_tax` (taxa por resgate em `PER_COUPON`, dedupe por `coupon_id`), `billing_mp_prepare/register/cancel` e webhooks MP recusam/ignoram `PER_COUPON`.
-- **Afiliados/indicação** (pronto no banco, **sem tela no front**): `affiliate_register`, `affiliate_report`, `referral_track`, `referral_convert`, `try_referral_convert`, `get_referral_bonus`.
-- **Translado/proximidade** (RPCs existentes, sem UI dedicada): `list_shuttle_services`, `list_live_vehicles`.
+- **Afiliados/indicação**: RPCs (`affiliate_register`, `affiliate_report`, `referral_track`, `referral_convert`, `try_referral_convert`, `get_referral_bonus`) consumidas pelas telas `/afiliado` (cadastro, link com QR, painel) e pela seção Afiliados do `/admin`.
+- **Translado/proximidade**: RPCs `list_shuttle_services` e `list_live_vehicles` (Módulo 1) com UI dedicada em `/cliente` (card "Translado e proximidade"). Sem caminho de escrita: posições e serviços ainda não têm fluxo de cadastro.
 
 ## 8. Segurança (estado atual)
 
@@ -83,6 +84,6 @@ Grupos por domínio (56 funções com `search_path` fixado):
 
 ## 9. Qualidade
 
-- **202 testes passando / 0 falhas / 6 pulados** (`node:test`) — cobrem handlers, lógica pura, consistência CJS/ESM, headers e asset routing do Worker.
+- **212 testes passando / 0 falhas / 6 pulados** (`node:test`) — cobrem handlers, lógica pura, consistência CJS/ESM, headers e asset routing do Worker (incluindo `shuttle.test.cjs`, 10 casos de contrato/erro do endpoint de translado).
 - Testes **live opcionais** (smoke + aprovação de motorista) rodam com `RUN_LIVE=1` contra produção.
 - Build gera Worker autocontido; rotas fora da whitelist → 404.

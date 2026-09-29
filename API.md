@@ -79,6 +79,14 @@ Mapa de referência: rota pública → handler Netlify → RPC do Supabase → S
 ### Mapas / infra
 - `map-places` → Overpass (OSM, sem dado de cliente). · `radar` → `find_nearby_businesses`. · `upload-image` → storage (sem RPC).
 
+### `shuttle` — translado/proximidade (público, sem sessão)
+`GET /.netlify/functions/shuttle?tenantId=...` (+ parâmetros)
+- Sempre devolve `{ services: [], vehicles: [] }` (duas RPCs STABLE do Módulo 1, via client de administração):
+  - `list_shuttle_services` → serviços de translado ativos do tenant (`shuttleId`, `name`, `serviceType`, `businessName`, `priceCents`, `opensAt`, `closesAt`, `activeDays`, `origin/destination` `{lat,lng}`, `stops`, `distanceKm`).
+  - `list_live_vehicles` → posições frescas dos veículos (`driverId`, `driverName`, `lat/lng`, `heading`, `speedKmh`, `recordedAt`, `distanceKm`), descartando posições mais velhas que `maxAgeS` (padrão 300 s).
+- Parâmetros opcionais: `lat` + `lng` (juntos, numéricos), `radiusKm` (aplica o raio nos serviços em km e nos veículos em m = radiusKm×1000; exige lat/lng), `maxAgeS` (inteiro positivo).
+- Sem `lat/lng`: lista tudo sem `distanceKm` (contrato explícito com o cliente — a UI mostra "sem distâncias"). Sem dados → `[]` (os dois campos sempre presentes).
+
 ### Motorista (`driver-*`, Worker `routes/drivers`)
 Vínculo por telefone: `driver_register`, `driver_set_pin`, `driver_login`, `driver_logout`, `driver_verify_session`, `driver_list_for_business`, `driver_review_document`, `driver_add_document`, `driver_get_document_path` (+ `business_generate_invite`, `business_logo_by_id` usados pela classe). Frontend em `app/motorista` com lógica pura testada em `motorista/logic.js`.
 
@@ -106,11 +114,11 @@ Vínculo por telefone: `driver_register`, `driver_set_pin`, `driver_login`, `dri
 
 ## RPCs existentes apenas em produção (sem `.sql` no repo)
 
-`admin_billing_panel`, `admin_create_business`, `admin_list_businesses`, `admin_list_customers`, `admin_request_password_reset`, `admin_set_billing`, `admin_toggle_business`, `admin_update_business`, `admin_update_customer`, `auth_login`, `auth_pin_reset_required`, `auth_verify_session`, `business_coupon_stats`, `business_delete_template`, `business_set_pin`, `business_toggle_template`, `business_update_template`, `create_campaign`, `create_coupon_template`, `empresa_dashboard`, `identify_customer`, `list_customer_coupons`, `validate_and_redeem_coupon`.
+`admin_billing_panel`, `admin_create_business`, `admin_list_businesses`, `admin_list_customers`, `admin_request_password_reset`, `admin_set_billing`, `admin_toggle_business`, `admin_update_business`, `admin_update_customer`, `auth_login`, `auth_pin_reset_required`, `auth_verify_session`, `business_coupon_stats`, `business_delete_template`, `business_set_pin`, `business_toggle_template`, `business_update_template`, `create_campaign`, `create_coupon_template`, `empresa_dashboard`, `identify_customer`, `list_customer_coupons`, `validate_and_redeem_coupon`, `list_shuttle_services`, `list_live_vehicles` (as duas últimas do Módulo 1 têm `.sql` versionado em `supabase/modulo1-motoristas-translado-proximity.sql`, já aplicado).
 
 ## Frontend (roteamento do app)
 
-`/` (captura `?ref=` → `localStorage.pyv_ref`), `/cliente` (filtros cidade/atividade/raio + "Perto de mim" + badge ⭐ + repasse de `ref` no identify/claim), `/empresa` (categoria em Meus dados + destaque por período + aba Instagram com gerador de card 1080×1080 em canvas), `/admin` (seção Afiliados: relatório + config de rewards), `/afiliado` (cadastro, link com QR, WhatsApp/Instagram, painel), `/motorista`.
+`/` (captura `?ref=` → `localStorage.pyv_ref`), `/cliente` (filtros cidade/atividade/raio + "Perto de mim" + badge ⭐ + repasse de `ref` no identify/claim, mapa Leaflet, **Translado e proximidade**: serviços de translado + veículos ao vivo com geolocalização e empty state honesto), `/empresa` (categoria em Meus dados + destaque por período + aba Instagram com gerador de card 1080×1080 em canvas), `/admin` (seção Afiliados: relatório + config de rewards), `/afiliado` (cadastro, link com QR, WhatsApp/Instagram, painel), `/motorista`.
 
 ## Migrações a aplicar (após aprovação)
 
