@@ -264,6 +264,7 @@ export default function EmpresaPage() {
     const title = igForm.title.trim() || (tpl && tpl.title) || '';
     const value = String(igForm.value).trim();
     const biz = igForm.businessName.trim() || (dash && (dash.businessName || dash.business_name)) || myData.name || '';
+    const handle = igForm.handle.trim().replace(/^@/, '');
     const parts = [title];
     if (value) parts.push(`${value}% OFF`);
     parts.push('Aproveite enquanto dura!');
