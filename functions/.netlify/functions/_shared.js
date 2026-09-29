@@ -58,6 +58,7 @@ const RPC_ERROR_STATUS = {
   BUSINESS_NOT_FOUND: 404,
   INVITE_INVALID: 404,
   DOCUMENT_NOT_FOUND: 404,
+  SHUTTLE_NOT_FOUND: 404,
 };
 
 export function rpcErrorStatus(error) {

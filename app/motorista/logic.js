@@ -49,6 +49,8 @@ const FRIENDLY = {
   RATE_LIMITED: 'Muitas tentativas. Aguarde alguns minutos.',
   FILE_UNREADABLE: 'Nao foi possivel ler o arquivo.',
   LOGIN_FAILED: 'Nao foi possivel entrar.',
+  INVALID_COORDS: 'Informe uma localizacao valida.',
+  SHUTTLE_NOT_FOUND: 'Servico de translado nao encontrado.',
   'arquivo excede o limite de 6 MB': 'O arquivo passa de 6 MB.',
   'tipo de documento nao permitido (use PDF, JPEG ou PNG)': 'Use PDF, JPEG ou PNG.',
   'conteudo nao corresponde ao tipo informado': 'O conteudo do arquivo nao bate com o tipo escolhido.',
@@ -188,4 +190,41 @@ export function sessionFromStorage(raw) {
 export function pendingFromStorage(raw) {
   const p = parseJson(raw);
   return p && p.uploadToken ? p : null;
+}
+
+// Monta o corpo do reporte de posicao (driver-position).
+//
+// So motorista aprovado reporta: a RPC no servidor tambem confere, mas sem
+// a confirmacao aqui a tela prometeria envio a quem ainda nao esta na frota.
+// A credencial e SEMPRE a sessao — driver-position nao aceita uploadToken, e
+// mandar as duas juntas e erro.
+export function buildPositionRequest({ session, lat, lng, heading, speedKmh, shuttleId } = {}) {
+  if (!canDrive(session && session.status)) {
+    if (!session || !session.sessionToken) throw new Error(friendlyMessage('AUTH_REQUIRED'));
+    throw new Error(friendlyMessage('NOT_APPROVED'));
+  }
+  const nLat = Number(lat);
+  const nLng = Number(lng);
+  if (lat === null || lat === undefined || lng === null || lng === undefined
+      || !Number.isFinite(nLat) || !Number.isFinite(nLng)
+      || nLat < -90 || nLat > 90 || nLng < -180 || nLng > 180) {
+    throw new Error(friendlyMessage('INVALID_COORDS'));
+  }
+  return {
+    body: {
+      lat: nLat,
+      lng: nLng,
+      heading: heading === null || heading === undefined || heading === '' ? null : Number(heading),
+      speedKmh: speedKmh === null || speedKmh === undefined || speedKmh === '' ? null : Number(speedKmh),
+      shuttleId: shuttleId || null,
+    },
+    headerToken: session.sessionToken,
+  };
+}
+
+// Rotulo dos dias ativos de um servico de translado (0=domingo).
+export function daysLabel(activeDays) {
+  const D = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];
+  if (!Array.isArray(activeDays) || !activeDays.length) return 'todos os dias';
+  return activeDays.map((d) => D[d] || d).join(', ');
 }

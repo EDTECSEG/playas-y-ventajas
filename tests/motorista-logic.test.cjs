@@ -275,3 +275,69 @@ test('entrar e dirigir sao decisiones separadas: pendente entra, nao dirige', ()
   assert.strictEqual(r.ok, true, 'pendente precisa entrar no app');
   assert.strictEqual(L.canDrive(r.session.status), false, 'mas nao pode dirigir');
 });
+
+// ------------------------------------------------------------
+// Transmissao de posicao (driver-position)
+// ------------------------------------------------------------
+
+test('buildPositionRequest envia coords, campos opcionais e sessao no header', () => {
+  const r = L.buildPositionRequest({
+    session: SESSION,
+    lat: -22.9068, lng: -43.1729, heading: 90, speedKmh: 40.2, shuttleId: 's-1',
+  });
+  assert.strictEqual(r.headerToken, 'sess-abc');
+  assert.strictEqual(r.body.lat, -22.9068);
+  assert.strictEqual(r.body.lng, -43.1729);
+  assert.strictEqual(r.body.heading, 90);
+  assert.strictEqual(r.body.speedKmh, 40.2);
+  assert.strictEqual(r.body.shuttleId, 's-1');
+  assert.strictEqual('driverSessionToken' in r.body, false, 'a sessao vai no header, nunca no corpo');
+  assert.strictEqual('uploadToken' in r.body, false, 'driver-position nao aceita uploadToken');
+});
+
+test('buildPositionRequest aceita posicao sem rumo e sem velocidade', () => {
+  const r = L.buildPositionRequest({ session: SESSION, lat: '1.5', lng: '2.5' });
+  assert.strictEqual(typeof r.body.lat, 'number', 'coords viram numero antes de ir para a rede');
+  assert.strictEqual(r.body.heading, null);
+  assert.strictEqual(r.body.speedKmh, null);
+  assert.strictEqual(r.body.shuttleId, null);
+});
+
+test('buildPositionRequest recusa coords invalidas antes da rede', () => {
+  for (const ruim of [
+    { lat: null, lng: null },
+    { lat: 'abc', lng: 2 },
+    { lat: 91, lng: 0 },
+    { lat: 0, lng: -181 },
+    { },
+  ]) {
+    assert.throws(() => L.buildPositionRequest({ session: SESSION, ...ruim }), /localizacao valida/, JSON.stringify(ruim));
+  }
+});
+
+test('buildPositionRequest so deixa aprovado enviar', () => {
+  assert.throws(
+    () => L.buildPositionRequest({ session: { sessionToken: 'x', status: 'pending' }, lat: 1, lng: 2 }),
+    /ainda nao foi aprovado/,
+  );
+  assert.throws(
+    () => L.buildPositionRequest({ session: { sessionToken: 'x', status: 'suspended' }, lat: 1, lng: 2 }),
+    /ainda nao foi aprovado/,
+  );
+  assert.throws(
+    () => L.buildPositionRequest({ session: null, lat: 1, lng: 2 }),
+    /Faca login/,
+  );
+});
+
+test('friendlyMessage cobre os codigos novos de posicao', () => {
+  assert.strictEqual(L.friendlyMessage('INVALID_COORDS'), 'Informe uma localizacao valida.');
+  assert.strictEqual(L.friendlyMessage('SHUTTLE_NOT_FOUND'), 'Servico de translado nao encontrado.');
+});
+
+test('daysLabel traduz 0..6 e vazio vira todos os dias', () => {
+  assert.strictEqual(L.daysLabel([1, 2, 3, 4, 5, 6]), 'Seg, Ter, Qua, Qui, Sex, Sab');
+  assert.strictEqual(L.daysLabel([0]), 'Dom');
+  assert.strictEqual(L.daysLabel([]), 'todos os dias');
+  assert.strictEqual(L.daysLabel(null), 'todos os dias');
+});

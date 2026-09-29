@@ -23,6 +23,7 @@ import {
   checkPin,
   pinConsumed,
   buildDocumentRequest,
+  buildPositionRequest,
   situationFor,
   sessionFromStorage,
   pendingFromStorage,
@@ -86,6 +87,11 @@ export default function MotoristaPage() {
   const [doc, setDoc] = useState({ docType: 'cnh', docNumber: '', docExpiresAt: '' });
   const [docEnviado, setDocEnviado] = useState(null);
   const fileRef = useRef(null);
+  // Transmissao de posicao (translado ao vivo). `servicos` vem do endpoint
+  // publico shuttle (so GET), para o motorista rotular em qual rota esta.
+  const [servicos, setServicos] = useState([]);
+  const [servicoSel, setServicoSel] = useState('');
+  const [ultimaPos, setUltimaPos] = useState(null);
 
   // Sessao e cadastro pela metade sao reidratados do navegador. O guarda de
   // cada um esta em ./logic: o cadastro pela metade e conferido por
@@ -97,15 +103,67 @@ export default function MotoristaPage() {
     setPending(pendingFromStorage(localStorage.getItem('pyv_driver_pending')));
   }, []);
 
+  // Carrega os servicos de translado do tenant quando o motorista esta
+  // habilitado (approved), para o bloco de posicao. Sem isso a lista so se
+  // encheria no click, e a tela abriria vazia apos o login.
+  useEffect(() => {
+    if (canDrive(session && session.status)) carregarServicos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
   function limparTudo() {
     setSession(null);
     setPending(null);
     setDocEnviado(null);
+    setUltimaPos(null);
+    setServicos([]);
     setLogin({ phone: '', pin: '' });
     setPinForm({ pin: '', pin2: '' });
     localStorage.removeItem('pyv_driver');
     localStorage.removeItem('pyv_driver_pending');
   }
+
+  // Lista de ofertas de translado (sao publicas no mapa do cliente; aqui
+  // servem so para o motorista escolher em qual rota esta).
+  async function carregarServicos() {
+    try {
+      const res = await fetch(`/.netlify/functions/shuttle?tenantId=${TENANT_ID}`);
+      const data = await res.json();
+      if (res.ok) {
+        setServicos(data && data.services ? data.services : []);
+        // Se a rota escolhida sumiu (desativada/apagada), volta para "sem rotulo".
+        setServicoSel((atual) => {
+          const valido = (data.services || []).some((s) => String(s.shuttleId) === String(atual));
+          return valido ? atual : '';
+        });
+      }
+    } catch (e) {
+      setServicos([]);
+    }
+  }
+
+  // So aprovado envia posicao. O telefone/mapa pede permissao de localizacao:
+  // recusada diz exatamente isso, e nao "erro interno".
+  const enviarPosicao = () => run(async () => {
+    if (!navigator.geolocation) throw new Error(friendlyMessage('INVALID_COORDS'));
+    const pos = await new Promise((res, rej) => {
+      navigator.geolocation.getCurrentPosition(
+        (p) => res(p),
+        () => rej(new Error(friendlyMessage('INVALID_COORDS'))),
+        { enableHighAccuracy: true, timeout: 12000 },
+      );
+    });
+    const { body, headerToken } = buildPositionRequest({
+      session,
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude,
+      heading: pos.coords.heading,
+      speedKmh: pos.coords.speed,
+      shuttleId: servicoSel,
+    });
+    const data = await call('driver-position', { body, token: headerToken });
+    setUltimaPos(data.recordedAt);
+  }, 'Posicao enviada. Quem procura o translado ja ve seu veiculo no mapa.');
 
   async function run(fn, ok) {
     setOcupado(true);
@@ -258,6 +316,30 @@ export default function MotoristaPage() {
               <p style={{ color: theme.textMuted, marginBottom: 0 }}>
                 Voce entrou, mas ainda nao pode dirigir. Assim que a empresa aprovar seus
                 documentos, voce passa a aparecer na lista de veiculos.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {session && canDrive(session.status) ? (
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>Transmissao de posicao</h3>
+            <p style={{ color: theme.textMuted, marginTop: 0 }}>
+              Envie sua posicao atual para aparecer no translado ao vivo. O cliente ve seu
+              veiculo enquanto a posicao tiver menos de 5 minutos.
+            </p>
+            <label style={label} htmlFor="servico">Servico em execucao (opcional)</label>
+            <select id="servico" style={input} value={servicoSel} onChange={(e) => setServicoSel(e.target.value)}>
+              <option value="">Em viagem (sem rotulo)</option>
+              {servicos.map((s) => <option key={s.shuttleId} value={s.shuttleId}>{s.name}</option>)}
+            </select>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <button style={btn} onClick={enviarPosicao} disabled={ocupado}>Enviar posicao</button>
+              <button style={ghostBtn} onClick={carregarServicos} disabled={ocupado}>Recarregar servicos</button>
+            </div>
+            {ultimaPos ? (
+              <p style={{ color: theme.textMuted, marginBottom: 0 }}>
+                Ultima posicao registrada as {new Date(ultimaPos).toLocaleTimeString()}.
               </p>
             ) : null}
           </div>

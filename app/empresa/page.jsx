@@ -75,6 +75,18 @@ export default function EmpresaPage() {
   const [driversBusy, setDriversBusy] = useState(false);
   const [rejeitando, setRejeitando] = useState(null);
   const [motivo, setMotivo] = useState('');
+  // Servicos de translado do proprio negocio (painel). `shuttleForm` vira o
+  // corpo de save_shuttle_service; `stopsText` e uma linha por parada no
+  // formato "Rotulo|lat|lng".
+  const [shuttles, setShuttles] = useState([]);
+  const [shuttleMsg, setShuttleMsg] = useState('');
+  const [shuttleBusy, setShuttleBusy] = useState(false);
+  const [shuttleForm, setShuttleForm] = useState({
+    serviceId: '', name: '', description: '', serviceType: 'shuttle',
+    originLat: '', originLng: '', destLat: '', destLng: '',
+    priceCents: '', opensAt: '', closesAt: '', activeDays: '1,2,3,4,5,6', stopsText: '',
+  });
+  const [editingShuttle, setEditingShuttle] = useState(null);
   const [regForm, setRegForm] = useState({
     tenantSlug: 'playas-y-ventajas', name: '', category: 'passeio', city: '', phone: '', email: '',
     cnpj: '', website: '', logoUrl: '', lat: '', lng: '', internalCode: '', pin: '', pin2: '',
@@ -170,6 +182,139 @@ export default function EmpresaPage() {
     });
     const data = await res.json();
     setMsg(res.ok ? 'Dados atualizados.' : `Erro: ${data.error}`);
+  }
+
+  // --- Servicos de translado ------------------------------------------
+  // Escrita do modulo 1: a empresa cadastra a oferta de translado e o
+  // motorista (aprovado) reporta a posicao do veiculo. /cliente consome via
+  // shuttle.js. Este painel lista inclusive os inativos (mode=shuttles).
+  async function loadShuttles(s) {
+    const sess = s || session;
+    setShuttleBusy(true);
+    setShuttleMsg('');
+    try {
+      const res = await fetch('/.netlify/functions/empresa?mode=shuttles', {
+        headers: { Authorization: `Bearer ${sess.sessionToken}` },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setShuttleMsg('Não foi possível carregar os serviços de translado.');
+        setShuttles([]);
+        return;
+      }
+      setShuttles(data || []);
+      if (!(data || []).length) setShuttleMsg('Nenhum serviço de translado cadastrado ainda.');
+    } catch (e) {
+      setShuttleMsg('Não foi possível carregar os serviços.');
+    } finally {
+      setShuttleBusy(false);
+    }
+  }
+
+  function newShuttle() {
+    setEditingShuttle('new');
+    setShuttleForm({
+      serviceId: '', name: '', description: '', serviceType: 'shuttle',
+      originLat: '', originLng: '', destLat: '', destLng: '',
+      priceCents: '', opensAt: '', closesAt: '', activeDays: '1,2,3,4,5,6', stopsText: '',
+    });
+  }
+
+  function startEditShuttle(s) {
+    setEditingShuttle(s);
+    setShuttleForm({
+      serviceId: s.shuttleId || '',
+      name: s.name || '',
+      description: s.description || '',
+      serviceType: s.serviceType || 'shuttle',
+      originLat: s.origin ? s.origin.lat : '',
+      originLng: s.origin ? s.origin.lng : '',
+      destLat: s.destination ? s.destination.lat : '',
+      destLng: s.destination ? s.destination.lng : '',
+      priceCents: s.priceCents != null ? s.priceCents : '',
+      opensAt: s.opensAt || '',
+      closesAt: s.closesAt || '',
+      activeDays: Array.isArray(s.activeDays) ? s.activeDays.join(',') : '',
+      stopsText: Array.isArray(s.stops)
+        ? s.stops.map((st) => (st.label ? `${st.label}|${st.lat}|${st.lng}` : `${st.lat}|${st.lng}`)).join('\n')
+        : '',
+    });
+  }
+
+  function cancelEditShuttle() {
+    setEditingShuttle(null);
+    setShuttleMsg('');
+  }
+
+  function useShuttleOrigin() {
+    if (!navigator.geolocation) { setShuttleMsg('Seu navegador não suporta geolocalização.'); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setShuttleForm({ ...shuttleForm, originLat: pos.coords.latitude.toFixed(6), originLng: pos.coords.longitude.toFixed(6) }),
+      (err) => setShuttleMsg(`Não foi possível obter a localização (${err.message}).`),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
+
+  async function saveShuttle() {
+    if (!String(shuttleForm.name || '').trim()) { setShuttleMsg('Informe o nome do serviço.'); return; }
+    if (!shuttleForm.originLat || !shuttleForm.originLng || !shuttleForm.destLat || !shuttleForm.destLng) {
+      setShuttleMsg('Preencha a origem e o destino (lat/lng).');
+      return;
+    }
+    const stops = String(shuttleForm.stopsText || '')
+      .split('\n').map((l) => l.trim()).filter(Boolean)
+      .map((line) => {
+        const parts = line.split('|').map((x) => (x || '').trim());
+        return { label: parts.length >= 3 ? (parts[0] || null) : null, lat: Number(parts[parts.length - 2]), lng: Number(parts[parts.length - 1]) };
+      });
+    const activeDays = String(shuttleForm.activeDays || '')
+      .split(',').map((x) => Number((x || '').trim())).filter((n) => !Number.isNaN(n));
+    try {
+      const res = await fetch('/.netlify/functions/empresa', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.sessionToken}` },
+        body: JSON.stringify({ action: 'save_shuttle_service', ...shuttleForm, stops, activeDays }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setShuttleMsg(`Erro: ${data.error}`); return; }
+      setEditingShuttle(null);
+      setShuttleMsg('Serviço salvo com sucesso.');
+      await loadShuttles();
+    } catch (e) {
+      setShuttleMsg('Não foi possível salvar o serviço.');
+    }
+  }
+
+  async function toggleShuttle(s) {
+    try {
+      const res = await fetch('/.netlify/functions/empresa', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.sessionToken}` },
+        body: JSON.stringify({ action: 'toggle_shuttle_service', serviceId: s.shuttleId, isActive: !s.isActive }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setShuttleMsg(`Erro: ${data.error}`); return; }
+      await loadShuttles();
+    } catch (e) {
+      setShuttleMsg('Não foi possível atualizar o serviço.');
+    }
+  }
+
+  async function deleteShuttle(s) {
+    if (!window.confirm(`Apagar o serviço "${s.name}"?`)) return;
+    try {
+      const res = await fetch('/.netlify/functions/empresa', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.sessionToken}` },
+        body: JSON.stringify({ action: 'delete_shuttle_service', serviceId: s.shuttleId }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setShuttleMsg(`Erro: ${data.error}`); return; }
+      setShuttleMsg('Serviço apagado.');
+      await loadShuttles();
+    } catch (e) {
+      setShuttleMsg('Não foi possível apagar o serviço.');
+    }
   }
 
   // --- Destaque de cupom ------------------------------------------------
@@ -626,6 +771,7 @@ export default function EmpresaPage() {
             <button style={tab === 'validar' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('validar')}>{t.tabValidate}</button>
             <button style={tab === 'dados' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setTab('dados'); loadMyData(); }}>{t.tabMyData}</button>
             <button style={tab === 'ig' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('ig')}>{t.igTab ?? '📣 Instagram'}</button>
+            <button style={tab === 'translado' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setTab('translado'); loadShuttles(); }}>{t.tabShuttles ?? '🚐 Translado'}</button>
             <button style={tab === 'motoristas' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setTab('motoristas'); loadDrivers(); }}>{t.tabDrivers ?? 'Motoristas'}</button>
           </div>
 
@@ -920,6 +1066,79 @@ export default function EmpresaPage() {
                 }}
               >{igCaptionText()}</pre>
             </div>
+          </div>
+          )}
+
+          {tab === 'translado' && (
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>{t.shuttlesTitle ?? '🚐 Serviços de translado'}</h3>
+            <p style={{ fontSize: 13, opacity: 0.75, marginTop: 0 }}>
+              {t.shuttlesHint ?? 'Cadastre o translado do seu negócio. Ele aparece para o cliente no mapa de "Translado e proximidade"; o motorista aprovado reporta a posição do veículo.'}
+            </p>
+
+            {shuttleMsg && <p style={{ fontSize: 13, color: '#c0392b', fontWeight: 600 }}>{shuttleMsg}</p>}
+            {shuttleBusy && <p style={{ fontSize: 13, opacity: 0.7 }}>{t.loading ?? 'Carregando...'}</p>}
+
+            <button style={btn} onClick={newShuttle}>{t.shuttleNew ?? '➕ Novo serviço'}</button>
+
+            {editingShuttle && (
+              <div style={{ marginTop: 12, padding: 12, background: theme.bg, borderRadius: 8, border: `1px solid ${theme.border}` }}>
+                <input style={input} placeholder={t.shuttleName ?? 'Nome do serviço'} value={shuttleForm.name} onChange={(e) => setShuttleForm({ ...shuttleForm, name: e.target.value })} />
+                <input style={input} placeholder={t.shuttleDescription ?? 'Descrição (opcional)'} value={shuttleForm.description} onChange={(e) => setShuttleForm({ ...shuttleForm, description: e.target.value })} />
+                <select style={input} value={shuttleForm.serviceType} onChange={(e) => setShuttleForm({ ...shuttleForm, serviceType: e.target.value })}>
+                  <option value="shuttle">{t.shuttleTypeShuttle ?? 'Translado compartilhado'}</option>
+                  <option value="transfer">{t.shuttleTypeTransfer ?? 'Privativo'}</option>
+                  <option value="tour">{t.shuttleTypeTour ?? 'Tour'}</option>
+                </select>
+                <input style={input} placeholder={t.shuttlePrice ?? 'Preço em reais (ex.: 25)'} value={shuttleForm.priceCents} onChange={(e) => setShuttleForm({ ...shuttleForm, priceCents: e.target.value })} />
+                <br />
+                <input style={input} placeholder={t.latField} value={shuttleForm.originLat} onChange={(e) => setShuttleForm({ ...shuttleForm, originLat: e.target.value })} />
+                <input style={input} placeholder={t.lngField} value={shuttleForm.originLng} onChange={(e) => setShuttleForm({ ...shuttleForm, originLng: e.target.value })} />
+                <span style={{ fontSize: 12, opacity: 0.75 }}>{t.shuttleOrigin ?? 'Origem'}</span>
+                <button style={smallBtn} onClick={useShuttleOrigin}>{t.useMyLocation}</button>
+                <br />
+                <input style={input} placeholder={t.latField} value={shuttleForm.destLat} onChange={(e) => setShuttleForm({ ...shuttleForm, destLat: e.target.value })} />
+                <input style={input} placeholder={t.lngField} value={shuttleForm.destLng} onChange={(e) => setShuttleForm({ ...shuttleForm, destLng: e.target.value })} />
+                <span style={{ fontSize: 12, opacity: 0.75 }}>{t.shuttleDest ?? 'Destino'}</span>
+                <br />
+                <input style={input} placeholder={t.shuttleOpens ?? 'Abre (ex.: 08:00)'} value={shuttleForm.opensAt} onChange={(e) => setShuttleForm({ ...shuttleForm, opensAt: e.target.value })} />
+                <input style={input} placeholder={t.shuttleCloses ?? 'Fecha (ex.: 22:00)'} value={shuttleForm.closesAt} onChange={(e) => setShuttleForm({ ...shuttleForm, closesAt: e.target.value })} />
+                <input style={input} placeholder={t.shuttleDays ?? 'Dias 0-6 separados por vírgula (0=domingo)'} value={shuttleForm.activeDays} onChange={(e) => setShuttleForm({ ...shuttleForm, activeDays: e.target.value })} />
+                <br />
+                <textarea
+                  style={{ ...input, display: 'block', width: '100%', minHeight: 56, fontFamily: 'inherit' }}
+                  placeholder={t.shuttleStops ?? 'Paradas (opcional), uma por linha: Rótulo|lat|lng'}
+                  value={shuttleForm.stopsText}
+                  onChange={(e) => setShuttleForm({ ...shuttleForm, stopsText: e.target.value })}
+                />
+                <br />
+                <button style={{ ...btn, marginTop: 8 }} onClick={saveShuttle}>{t.saveShuttle ?? 'Salvar serviço'}</button>
+                <button style={{ ...smallBtn, background: theme.border, color: theme.text }} onClick={cancelEditShuttle}>{t.cancel}</button>
+              </div>
+            )}
+
+            {!shuttleBusy && shuttles.map((s) => (
+              <div key={s.shuttleId} style={{ borderTop: `1px solid ${theme.border}`, paddingTop: 12, marginTop: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <strong>{s.name}</strong>
+                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 999, background: s.isActive === false ? '#fdf3d0' : theme.greenLight, color: s.isActive === false ? '#8a6d1f' : theme.greenDark }}>
+                    {s.isActive === false ? (t.disabledLabel ?? 'inativo') : (t.active ?? 'ativo')}
+                  </span>
+                  <span style={{ fontSize: 12, opacity: 0.75 }}>
+                    {s.serviceType} · R$ {s.priceCents != null ? (s.priceCents / 100).toFixed(2) : (t.toCombine ?? 'a combinar')}
+                    {(s.opensAt || s.closesAt) ? ` · ${s.opensAt || '?'}–${s.closesAt || '?'}` : ''}
+                  </span>
+                </div>
+                {s.description && <p style={{ fontSize: 13, opacity: 0.75, margin: '4px 0' }}>{s.description}</p>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <button style={{ ...smallBtn, background: s.isActive === false ? '#0B6E4F' : '#c0392b', color: '#fff' }} onClick={() => toggleShuttle(s)}>
+                    {s.isActive === false ? (t.active ?? 'Ativar') : (t.deactivate ?? 'Desativar')}
+                  </button>
+                  <button style={smallBtn} onClick={() => startEditShuttle(s)}>{t.edit ?? 'Editar'}</button>
+                  <button style={{ ...smallBtn, background: '#c0392b', color: '#fff' }} onClick={() => deleteShuttle(s)}>🗑️ {t.delete ?? 'Apagar'}</button>
+                </div>
+              </div>
+            ))}
           </div>
           )}
         </>

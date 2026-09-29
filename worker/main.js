@@ -64,6 +64,7 @@ import driverReviewDocument from '../netlify/functions/driver-review-document.js
 import driverAddDocument from '../netlify/functions/driver-add-document.js';
 import driverListForBusiness from '../netlify/functions/driver-list-for-business.js';
 import driverDocumentUrl from '../netlify/functions/driver-document-url.js';
+import driverPosition from '../netlify/functions/driver-position.js';
 
 // driver-list-for-business e driver-document-url entraram na whitelist juntos
 // porque um sem o outro nao serve: a lista diz que existe um documento pendente,
@@ -113,6 +114,10 @@ const ROUTES = {
   // Revisao pela empresa: pendencias e o arquivo sob demanda.
   'driver-list-for-business': driverListForBusiness,
   'driver-document-url': driverDocumentUrl,
+  // Escrita do translado: motorista aprovado grava a posicao do veiculo
+  // (fonte de list_live_vehicles no mapa de /cliente). Seu par de leitura,
+  // shuttle, ja esta acima.
+  'driver-position': driverPosition,
 };
 
 const CORS_HEADERS = {

@@ -1,4 +1,4 @@
-const { getSupabaseAdminClient, resolveSession, extractSessionToken } = require('./_supabaseAdmin');
+const { getSupabaseAdminClient, resolveSession, extractSessionToken, rpcErrorCode, rpcErrorStatus } = require('./_supabaseAdmin');
 
 exports.handler = async (event) => {
   const supabase = getSupabaseAdminClient();
@@ -15,6 +15,11 @@ exports.handler = async (event) => {
       if (mode === 'my-data') {
         const { data, error } = await supabase.rpc('business_get_own', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
         if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+        return { statusCode: 200, body: JSON.stringify(data) };
+      }
+      if (mode === 'shuttles') {
+        const { data, error } = await supabase.rpc('business_list_shuttle_services', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
+        if (error) return { statusCode: rpcErrorStatus(error), body: JSON.stringify({ error: rpcErrorCode(error) }) };
         return { statusCode: 200, body: JSON.stringify(data) };
       }
       const { data, error } = await supabase.rpc('empresa_dashboard', { p_tenant_id: actor.tenantId, p_business_id: actor.businessId });
@@ -110,6 +115,39 @@ exports.handler = async (event) => {
         if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
         return { statusCode: 200, body: JSON.stringify({ ok: true, changed: !!data }) };
       }
+
+      // ---- Translado/proximidade: gestao dos servicos de translado ----
+      if (body.action === 'save_shuttle_service') {
+        const toCoord = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+        const { data, error } = await supabase.rpc('business_save_shuttle_service', {
+          p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_service_id: body.serviceId || null,
+          p_name: body.name || null, p_description: body.description || null, p_service_type: body.serviceType || 'shuttle',
+          p_origin_lat: toCoord(body.originLat), p_origin_lng: toCoord(body.originLng),
+          p_dest_lat: toCoord(body.destLat), p_dest_lng: toCoord(body.destLng),
+          p_stops: Array.isArray(body.stops) ? body.stops : (body.stops ? [body.stops] : []),
+          p_price_cents: body.priceCents === '' || body.priceCents === null || body.priceCents === undefined ? null : Number(body.priceCents),
+          p_opens_at: body.opensAt || null, p_closes_at: body.closesAt || null,
+          p_active_days: Array.isArray(body.activeDays) ? body.activeDays.map(Number) : null,
+        });
+        if (error) return { statusCode: rpcErrorStatus(error), body: JSON.stringify({ error: rpcErrorCode(error) }) };
+        return { statusCode: 200, body: JSON.stringify(data) };
+      }
+      if (body.action === 'toggle_shuttle_service') {
+        const { data, error } = await supabase.rpc('business_toggle_shuttle_service', {
+          p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId,
+          p_service_id: body.serviceId, p_is_active: !!body.isActive,
+        });
+        if (error) return { statusCode: rpcErrorStatus(error), body: JSON.stringify({ error: rpcErrorCode(error) }) };
+        return { statusCode: 200, body: JSON.stringify({ ok: true, changed: !!data }) };
+      }
+      if (body.action === 'delete_shuttle_service') {
+        const { data, error } = await supabase.rpc('business_delete_shuttle_service', {
+          p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_service_id: body.serviceId,
+        });
+        if (error) return { statusCode: rpcErrorStatus(error), body: JSON.stringify({ error: rpcErrorCode(error) }) };
+        return { statusCode: 200, body: JSON.stringify({ ok: true, deleted: !!data }) };
+      }
+
       return { statusCode: 400, body: JSON.stringify({ error: 'action inválida' }) };
     }
 

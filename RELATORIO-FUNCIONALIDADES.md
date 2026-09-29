@@ -8,8 +8,8 @@
 | Camada | Tecnologia |
 |---|---|
 | Front (5 rotas, App Router) | Next.js 14 + React, i18n PT/EN/ES, tema próprio |
-| Servidor | Cloudflare Pages — Worker em modo avançado, bundle self-contained (`_worker.js`, 275,2 kB) |
-| API | handlers em `netlify/functions` (CJS, canon) com espelhos ESM (`functions/.netlify/functions`), 23 rotas na whitelist (`worker/main.js` ROUTES; fora dela → 404) |
+| Servidor | Cloudflare Pages — Worker em modo avançado, bundle self-contained (`_worker.js`, 277,8 kB) |
+| API | handlers em `netlify/functions` (CJS, canon) com espelhos ESM (`functions/.netlify/functions`), 24 rotas na whitelist (`worker/main.js` ROUTES; fora dela → 404) |
 | Banco | Supabase (Postgres), regras de negócio em RPC, Storage de imagens/documentos, RLS ativa |
 | Comunicação | WhatsApp (`wa.me`), QR code (qrcodejs), mapa Leaflet + OpenStreetMap/Overpass |
 
@@ -38,6 +38,7 @@
 - **Gestão de motoristas**: convite (código `business-driver-invite`), lista de cadastros/detalhes, análise de documentos (`driver-review-document`), abertura do arquivo por **URL assinada de 5 min** (`driver-document-url`, storage privado), aprovação/recusa/suspensão.
 - **Validação de cupom** na tela e **troca de PIN** (`business_set_pin`).
 - **Upload de imagem** (`upload-image`): valida base64, MIME e tamanho; storage com path montado no servidor.
+- **Translado (self-service, escrita)**: aba "🚐 Translado" com CRUD dos próprios serviços (`business_save_shuttle_service`, `business_toggle_shuttle_service`, `business_delete_shuttle_service`, `business_list_shuttle_services`) — nome, descrição, tipo (shuttle/transfer/tour), origem/destino com "usar minha localização", preço em reais, horários, dias ativos e paradas (`Rótulo|lat|lng` por linha).
 
 ## 5. Módulo Motorista (`/motorista`)
 
@@ -49,6 +50,7 @@ Fluxo completo com lógica pura testada em `app/motorista/logic.js`:
 - **Documentos** (`driver-add-document`): upload de CNH/RG/CRV para storage privado, validação de MIME/conteúdo e limite de 6 MB; recusa exige novo envio.
 - **Situação**: `pending / approved / rejected / suspended`; só `approved` dirige (`canDrive`) e só `approved` aparece em `list_live_vehicles` (módulo 1).
 - **Sessão e reidratação**: token de sessão OU token de cadastro (exatamente um por request); logout explícito.
+- **Transmissão de posição** (`driver-position`): só `approved` envia; a posição é upsert em `vehicle_positions` (1 por motorista) com `shuttleId` opcional vinculado a um serviço ativo do próprio tenant; a UI "Transmissao de posicao" dá o botão Enviar (geolocalização), recarrega a lista de serviços e mostra a última posição registrada.
 
 ## 6. Módulo Admin (`/admin`)
 
@@ -71,7 +73,8 @@ Grupos por domínio (56 funções com `search_path` fixado):
 - **Admin**: gestão de negócios/faturamento/clientes/destaques/delete.
 - **Faturamento fase 2**: `billing_record_coupon_tax` (taxa por resgate em `PER_COUPON`, dedupe por `coupon_id`), `billing_mp_prepare/register/cancel` e webhooks MP recusam/ignoram `PER_COUPON`.
 - **Afiliados/indicação**: RPCs (`affiliate_register`, `affiliate_report`, `referral_track`, `referral_convert`, `try_referral_convert`, `get_referral_bonus`) consumidas pelas telas `/afiliado` (cadastro, link com QR, painel) e pela seção Afiliados do `/admin`.
-- **Translado/proximidade**: RPCs `list_shuttle_services` e `list_live_vehicles` (Módulo 1) com UI dedicada em `/cliente` (card "Translado e proximidade"). Sem caminho de escrita: posições e serviços ainda não têm fluxo de cadastro.
+- **Translado/proximidade (Módulo 1, leitura)**: RPCs `list_shuttle_services` e `list_live_vehicles` com UI dedicada em `/cliente` (card "Translado e proximidade").
+- **Translado/proximidade (Módulo 1, escrita)**: `business_save_shuttle_service`, `business_toggle_shuttle_service`, `business_delete_shuttle_service`, `business_list_shuttle_services` e `driver_report_position` (`supabase/translado-write-flow.sql`, aplicado) — SECURITY DEFINER com autorização dentro da função (ator da empresa via `users.business_id`; motorista via sessão `driver_sessions`, `status='approved'`, `driver_id` nunca vem do cliente), EXECUTE só `service_role`.
 
 ## 8. Segurança (estado atual)
 
@@ -84,6 +87,6 @@ Grupos por domínio (56 funções com `search_path` fixado):
 
 ## 9. Qualidade
 
-- **212 testes passando / 0 falhas / 6 pulados** (`node:test`) — cobrem handlers, lógica pura, consistência CJS/ESM, headers e asset routing do Worker (incluindo `shuttle.test.cjs`, 10 casos de contrato/erro do endpoint de translado).
+- **233 testes / 227 passando / 0 falhas / 6 pulados** (`node:test`) — cobrem handlers, lógica pura, consistência CJS/ESM, headers e asset routing do Worker (incluindo `shuttle.test.cjs`, 10 casos de contrato/erro do endpoint de translado, e `shuttle-manage.test.cjs` com 15 casos do fluxo de escrita: `mode=shuttles`, `save/toggle/delete_shuttle_service` e `driver-position`).
 - Testes **live opcionais** (smoke + aprovação de motorista) rodam com `RUN_LIVE=1` contra produção.
 - Build gera Worker autocontido; rotas fora da whitelist → 404.
