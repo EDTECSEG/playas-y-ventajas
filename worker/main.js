@@ -52,6 +52,7 @@ import login from '../netlify/functions/login.js';
 import mapPlaces from '../netlify/functions/map-places.js';
 import offers from '../netlify/functions/offers.js';
 import radar from '../netlify/functions/radar.js';
+import shuttle from '../netlify/functions/shuttle.js';
 import uploadImage from '../netlify/functions/upload-image.js';
 import validateCoupon from '../netlify/functions/validate-coupon.js';
 import driverRegister from '../netlify/functions/driver-register.js';
@@ -94,8 +95,11 @@ const ROUTES = {
   // Complemento do mapa com dados abertos do OSM, buscado no servidor porque o
   // Overpass bloqueia o browser por CORS. Nao traz dado de cliente.
   'map-places': mapPlaces,
+  // Translado/proximidade (leitura): servicos de translado e posicoes de
+  // veiculos ao vivo do tenant, via RPCs STABLE do modulo 1. So GET.
   offers,
   radar,
+  shuttle,
   'upload-image': uploadImage,
   'validate-coupon': validateCoupon,
   // Fluxo do motorista: registro, PIN, sessao, aprovacao, convite.

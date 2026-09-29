@@ -50,6 +50,20 @@ function loadLeaflet() {
   });
 }
 
+function shuttleTypeLabel(type) {
+  const labels = { shuttle: 'Translado compartilhado', transfer: 'Transfer privativo', tour: 'Tour / passeio' };
+  return labels[type] || type || 'Translado';
+}
+
+function timeAgo(iso) {
+  if (!iso) return '';
+  const secs = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (secs < 60) return 'agora';
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `há ${mins} min`;
+  return `há ${Math.round(mins / 60)} h`;
+}
+
 export default function ClientePage() {
   const { t } = useLanguage();
   const [phone, setPhone] = useState('');
@@ -86,6 +100,7 @@ export default function ClientePage() {
   const qrDivRef = useRef(null);
   const myCouponQrDivRef = useRef(null);
   const [openCoupon, setOpenCoupon] = useState(null);
+  const [shuttle, setShuttle] = useState({ status: 'idle', lat: null, lng: null, services: [], vehicles: [], err: '' });
 
   useEffect(() => {
     // Guarda o ?ref= do link de afiliado antes de qualquer fluxo de resgate.
@@ -127,6 +142,43 @@ export default function ClientePage() {
     setGeoStatus('idle');
     setFilterMsg('');
     loadOffers();
+  }
+
+  // Translado/proximidade: buscas servicos de translado e veiculos ao vivo do
+  // tenant. A geolocalizacao e opcional — negada ou indisponivel, listamos tudo
+  // sem distancia, em vez de esconder o recurso.
+  async function loadShuttle() {
+    if (!('geolocation' in navigator)) {
+      setShuttle((s) => ({ ...s, status: 'done', lat: null, lng: null, err: '' }));
+      await fetchShuttle(null, null);
+      return;
+    }
+    setShuttle((s) => ({ ...s, status: 'locating', err: '' }));
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => { setShuttle((s) => ({ ...s, lat: pos.coords.latitude, lng: pos.coords.longitude })); await fetchShuttle(pos.coords.latitude, pos.coords.longitude); },
+      async () => { setShuttle((s) => ({ ...s, lat: null, lng: null })); await fetchShuttle(null, null); },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+    );
+  }
+
+  async function fetchShuttle(lat, lng) {
+    try {
+      const params = new URLSearchParams({ tenantId: TENANT_ID });
+      if (lat != null && lng != null) { params.set('lat', lat); params.set('lng', lng); params.set('radiusKm', '16'); }
+      const res = await fetchComTimeout(`/.netlify/functions/shuttle?${params.toString()}`);
+      if (!res.ok) {
+        setShuttle((s) => ({ ...s, status: 'done', services: [], vehicles: [], err: (t.transladoFail ?? 'Não foi possível carregar o translado. Tente de novo em instantes.') }));
+        return;
+      }
+      const data = await res.json();
+      if (!data || !Array.isArray(data.services) || !Array.isArray(data.vehicles)) {
+        setShuttle((s) => ({ ...s, status: 'done', services: [], vehicles: [], err: (t.transladoFail ?? 'Não foi possível carregar o translado. Tente de novo em instantes.') }));
+        return;
+      }
+      setShuttle((s) => ({ ...s, status: 'done', services: data.services, vehicles: data.vehicles, err: '' }));
+    } catch (err) {
+      setShuttle((s) => ({ ...s, status: 'done', services: [], vehicles: [], err: (t.transladoConn ?? 'Não foi possível carregar o translado. Verifique sua conexão.') }));
+    }
   }
 
   function changeRadius(radiusKm) {
@@ -733,6 +785,66 @@ export default function ClientePage() {
         <button style={btn} onClick={showMap}>{mapStatus === 'idle' ? t.showMap : t.updateMap}</button>
         {mapStatus === 'denied' && <p style={{ fontSize: 13 }}>{t.locationDenied}</p>}
         <div ref={mapRef} style={{ height: 320, marginTop: 12, borderRadius: 8, display: mapStatus === 'idle' ? 'none' : 'block' }} />
+      </div>
+
+      <div style={card}>
+        <h3 style={{ marginTop: 0 }}>{t.transladoTitle ?? '🚐 Translado e proximidade'}</h3>
+        <p style={{ fontSize: 12, marginTop: 0 }}>
+          {t.transladoSub ?? 'Serviços de translado e veículos disponíveis agora na região.'}
+        </p>
+        <button style={btn} onClick={loadShuttle}>
+          {shuttle.status === 'locating' ? (t.checking ?? 'Localizando...') : (t.transladoNear ?? 'Ver perto de mim')}
+        </button>
+        {shuttle.status === 'done' && (
+          <>
+            {shuttle.lat == null && !shuttle.err && (
+              <p style={{ fontSize: 12, color: theme.textMuted, marginBottom: 0 }}>
+                {t.transladoNoLoc ?? 'Listando tudo sem distâncias (localização não disponível).'}
+              </p>
+            )}
+            {shuttle.err && <p style={{ color: '#B42318', margin: '10px 0 0' }}>{shuttle.err}</p>}
+            {!shuttle.err && shuttle.services.length === 0 && shuttle.vehicles.length === 0 && (
+              <p style={{ margin: '10px 0 0' }}>{t.transladoNone ?? 'Nenhum translado ativo por aqui no momento.'}</p>
+            )}
+            {!shuttle.err && shuttle.services.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <strong>{t.transladoServices ?? 'Serviços de translado'}</strong>
+                {shuttle.services.map((s) => (
+                  <div key={s.shuttleId} style={{
+                    border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12, marginTop: 8, background: theme.bg,
+                  }}>
+                    <strong>{s.name}</strong>
+                    {s.distanceKm != null && <span style={{ fontSize: 12, color: theme.textMuted }}> · {Number(s.distanceKm).toFixed(1)} km</span>}
+                    <div style={{ fontSize: 12, color: theme.textMuted }}>{s.businessName} · {shuttleTypeLabel(s.serviceType)}</div>
+                    {s.description && <div style={{ fontSize: 12, marginTop: 4 }}>{s.description}</div>}
+                    <div style={{ fontSize: 12, marginTop: 4 }}>
+                      {s.priceCents != null ? `R$ ${(s.priceCents / 100).toFixed(2)}` : (t.transladoPrice ?? 'Preço a combinar')}
+                      {s.opensAt && s.closesAt && ` · ${s.opensAt}–${s.closesAt}`}
+                      {Array.isArray(s.activeDays) && s.activeDays.length > 0 && ` · ${s.activeDays.join(', ')}`}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!shuttle.err && shuttle.vehicles.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <strong>{t.transladoVehicles ?? 'Veículos ao vivo'}</strong>
+                {shuttle.vehicles.map((v) => (
+                  <div key={v.driverId} style={{
+                    border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12, marginTop: 8, background: theme.bg,
+                  }}>
+                    <strong>{v.driverName}</strong>
+                    <div style={{ fontSize: 12, color: theme.textMuted }}>
+                      {v.distanceKm != null && `${Number(v.distanceKm).toFixed(1)} km`}
+                      {v.speedKmh != null && ` · ${Number(v.speedKmh)} km/h`}
+                      {` · atualizado ${timeAgo(v.recordedAt)}`}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {customerId && (
