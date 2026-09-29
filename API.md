@@ -58,6 +58,21 @@ Mapa de referência: rota pública → handler Netlify → RPC do Supabase → S
 ### `validate-coupon` — validação pelo estabelecimento
 `POST` → `validate_and_redeem_coupon` (produção) — fluxo do dono, intocada.
 
+### `billing` — assinatura mensal Mercado Pago (sessão; MERCHANT dono da empresa ou ADMIN/SUPER_ADMIN)
+- `POST` (Bearer) `{ action, businessId }`:
+  - `status` → `billing_mp_prepare` → `{ subscriptionId, subscriptionUrl }`.
+  - `create` → `billing_mp_prepare` (valida plano/valor/ator) → `POST /preapproval` do MP (`status:"pending"`, `auto_recurring` 1x/mês, `notification_url` → `billing-webhook`) → `billing_mp_register` grava `billing_subscription_id/url`. Devolve `{ initPoint, subscriptionId, already }`; se já existe assinatura, reabre o mesmo `init_point` (não duplica). Rollback: cancela a preapproval no MP se o registro falhar.
+  - `cancel` → cancela no MP (best-effort) → `billing_mp_cancel`.
+- Envs: `MP_ACCESS_TOKEN`, `MP_NOTIFICATION_URL` (ou `NEXT_PUBLIC_SITE_URL` + sufixo webhook), `MP_API_BASE` (teste).
+- Segredos (`MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`) ficam só no servidor; o browser só vê `initPoint`.
+
+### `billing-webhook` — webhook de Assinatura do MP (PÚBLICO, sem sessão)
+- `POST /.netlify/functions/billing-webhook` (query `data.id`/`type` + headers `x-signature`, `ts`, `x-request-id`).
+- Autenticação: manifest `id:...;request-id:...;ts:...;` → HMAC-SHA256(`MP_WEBHOOK_SECRET`) hex, comparação *timing-safe*, tolerância de relógio de 10 min. Falha → 403, sem detalhe.
+- `subscription_authorized_payment` → `GET /authorized_payments/{data.id}` → `billing_mp_webhook_charge` (dedupe por `provider_payment_id`; `coupon_id` NULL).
+- `subscription_preapproval` → `GET /preapproval/{data.id}` → `billing_mp_webhook_preapproval` (`authorized`→ACTIVE, `cancelled`→CANCELLED).
+- Tipos desconhecidos → 200. RPCs de webhook são inalcançáveis ao cliente (EXECUTE só `service_role`).
+
 ### Mapas / infra
 - `map-places` → Overpass (OSM, sem dado de cliente). · `radar` → `find_nearby_businesses`. · `upload-image` → storage (sem RPC).
 
@@ -77,6 +92,11 @@ Vínculo por telefone: `driver_register`, `driver_set_pin`, `driver_login`, `dri
 | `affiliate_dashboard` | `supabase/affiliates-wiring.sql` | Perfil + números + lista de indicações (validado por telefone) |
 | `admin_affiliate_report` | idem | Relatório geral (plpgsql, checa role) |
 | `admin_get/set_affiliate_rewards` | idem | Config de cupons-prêmio (fail-open sem config) |
+| `billing_mp_prepare` | `supabase/billing-mercadopago-subscriptions.sql` | Valida ator/empresa/plano; devolve payload da preapproval (ou o url já existente) |
+| `billing_mp_register` | idem | Grava `billing_subscription_id/url` após criar no MP |
+| `billing_mp_cancel` | idem | Limpa assinatura locaç e marca `CANCELLED` |
+| `billing_mp_webhook_preapproval` | idem | Evento `subscription_preapproval` → status do negócio |
+| `billing_mp_webhook_charge` | idem | `subscription_authorized_payment` → insere `billing_charges` (dedupe) + ACTIVE |
 
 **Nota**: as funções de produção (linha "produção" acima) não têm arquivo `.sql` no repo — vivem apenas no Supabase remoto. Não edite produção sem passar pelo `supabase` (migração versionada + advisors).
 

@@ -43,6 +43,8 @@
 
 import admin from '../netlify/functions/admin.js';
 import affiliates from '../netlify/functions/affiliates.js';
+import billing from '../netlify/functions/billing.js';
+import billingWebhook from '../netlify/functions/billing-webhook.js';
 import claimCoupon from '../netlify/functions/claim-coupon.js';
 import empresa from '../netlify/functions/empresa.js';
 import identify from '../netlify/functions/identify.js';
@@ -80,6 +82,11 @@ const ROUTES = {
   // Endpoints de negocio.
   admin,
   affiliates,
+  // Assinatura mensal via Mercado Pago: criar/consultar/cancelar a preapproval e
+  // receber os webhooks de cobrança recorrente (billing-webhook é PÚBLICO; a
+  // autenticação é o HMAC do x-signature no próprio handler).
+  billing,
+  'billing-webhook': billingWebhook,
   'claim-coupon': claimCoupon,
   empresa,
   identify,
