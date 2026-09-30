@@ -1,6 +1,6 @@
 const { getSupabaseAdminClient, resolveSession, extractSessionToken, rpcErrorCode, rpcErrorStatus } = require('./_supabaseAdmin');
 
-// Canon CJS. Espelho ESM: functions/.netlify/functions/driver-list-for-business.js
+// Canonico CJS, fonte unica: e o netlify.toml que publica esta pasta e o que o scripts/bundle-worker.mjs inlina. O espelho ESM que existia em functions/.netlify/functions foi removido em 2026-09-30 (divergia em silencio, sem teste que percebesse).
 //
 // A empresa ve os motoristas que cadastraram contra ela. Era a peça que faltava
 // para o caminho da aprovacao ter interface: sem esta rota, o painel da empresa

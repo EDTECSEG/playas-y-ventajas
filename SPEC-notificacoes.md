@@ -1,7 +1,7 @@
 # Spec: Notificações
 
 > Especificação de módulo (nada de código implementado aqui). Data: 29/09/2026.
-> Padrões vigentes: dialetos CJS (`netlify/functions`) + espelho ESM (`functions/.netlify/functions`) mantidos em sincronia por `tests/consistency.test.cjs`; handlers publicam rota pela whitelist `ROUTES` de `worker/main.js`; regras de negócio em RPC `SECURITY DEFINER` com `search_path` fixo e `EXECUTE` só para `service_role`.
+> Padrões vigentes: handlers CJS em `netlify/functions` como fonte única (o espelho ESM `functions/.netlify/functions` foi removido em 2026-09-30, junto com o `tests/consistency.test.cjs`; o contrato do diretório está em `tests/function-contract.test.cjs`); handlers publicam rota pela whitelist `ROUTES` de `worker/main.js`; regras de negócio em RPC `SECURITY DEFINER` com `search_path` fixo e `EXECUTE` só para `service_role`.
 
 ## Objetivo
 
@@ -14,14 +14,14 @@ Critérios de aceite mensuráveis:
 3. Com env ausente (padrão de fábrica), 100% dos eventos geram exatamente uma linha em `outbound_messages` com `provider='none'` e `status='noop'`, mais uma linha de log em `console` no formato `notificacoes: noop <canal> <evento> <id>` — sem texto de mensagem nem PII do cliente além de identificadores já presentes no banco.
 4. Latência adicionada ao `claim-coupon` ≤ 150 ms no caminho sem provedor (gravação best-effort já é padrão do handler) e ≤ 2 s com provedor configurado, sob timeout total de 3 s.
 5. Nenhum segredo novo (`WA_*`, `SMTP_*`, `RESEND_*`) aparece em resposta HTTP, log de cliente ou bundle do navegador — apenas no servidor (mesma regra de `MP_ACCESS_TOKEN` do módulo `billing`).
-6. `tests/consistency.test.cjs` continua verde sem alteração manual: qualquer módulo novo importado por handler precisa entrar em `HELPERS` no teste, com o mesmo nome nos dois dialetos.
+6. `tests/function-contract.test.cjs` continua verde sem alteração manual: qualquer módulo novo importado por handler precisa entrar em `HELPERS` no teste.
 7. Cobertura: novos testes unitários com adaptador fake, sem chamada de rede; `npm test` e `npm run build` verdes.
 
 ## Integrações existentes a tocar
 
 | Ponto | Arquivo | O que muda |
 | --- | --- | --- |
-| Resgate de cupom | `netlify/functions/claim-coupon.js` **e** `functions/.netlify/functions/claim-coupon.js` | Após o bloco best-effort de `billing_record_coupon_tax` (já fora do caminho crítico), dispara `notifyOutbound(...)` em `try/catch`. `publicId`, `customerId`, `couponId`, `shortCode` e o contexto do banco (`loadOfferContext`) são a entrada; nada vem do corpo do request além do que a RPC já validou. |
+| Resgate de cupom | `netlify/functions/claim-coupon.js` | Após o bloco best-effort de `billing_record_coupon_tax` (já fora do caminho crítico), dispara `notifyOutbound(...)` em `try/catch`. `publicId`, `customerId`, `couponId` e o contexto do banco (`loadOfferContext`) são a entrada; nada vem do corpo do request além do que a RPC já validou. O `shortCode` deixou de ser enviado ao texto em 2026-09-30 (o balcão não tem campo para digitá-lo e o código longo já autoriza sozinho), mas a coluna e o `p_short_code` continuam existindo para material antigo. |
 | Contexto do cliente | `netlify/functions/identify.js`, RPC `identify_customer` | Não muda. Fonte de verdade para `email`/`instagram`/`phone` do cliente é `users` (via `identify_customer`/tabela), com o telefone como identidade válida; `email` segue dado **não verificado** (decisão de segurança registrada) — email não é canal confiável por padrão. |
 | Módulo de translado | `netlify/functions/empresa.js`, `shuttle.js`, `app/empresa`, `app/cliente` | Somente quando existir o evento "reserva confirmada". Hoje **não existe reserva/booking no repo** (nenhuma tabela `*_bookings*`/`reservas` e nenhuma RPC de reserva — só CRUD de serviço e leitura pública). Ver "Perguntas em aberto" P1. |
 | Ponto de conferência de cupom | `netlify/functions/validate-coupon.js` | Fora do escopo desta fase (fluxo do dono, intocado). Fica listado como candidato futuro, não como alteração. |
@@ -72,7 +72,7 @@ Ainda sem endpoint, mas previsto: `POST /.netlify/functions/outbound-dispatch` p
 
 **Integração com provedor real: 1) depende de credenciais do dono, 2) é fase separada deste módulo, 3) o padrão é no-op logado.**
 
-Interface única em `netlify/functions/_notify.js` (espelho ESM com o mesmo nome), registrada em `HELPERS` no `tests/consistency.test.cjs`:
+Interface única em `netlify/functions/_notify.js`, registrada em `HELPERS` no `tests/function-contract.test.cjs`:
 
 - `notifyOutbound(supabase, { event, channel, customerId, couponId, bookingRef, vars })` → `{ status, id, provider }`, **nunca lança**.
 - Seletor de provedor por env, avaliado na chamada:
@@ -87,7 +87,7 @@ Limites obrigatórios do adaptador: timeout por tentativa (2 s), máximo de 2 te
 
 ## Comandos (build/test verdes)
 
-1. `npm test` — `node --test "tests/*.test.cjs"` (padrão do repo; inclui `consistency.test.cjs`, que barra helper/rota fora de lugar).
+1. `npm test` — `node --test "tests/*.test.cjs"` (padrão do repo; inclui `function-contract.test.cjs`, que barra helper/rota fora de lugar).
 2. `npm run build` — `next build` + `postbuild` (`scripts/bundle-worker.mjs`), o que prova que o Worker continua autocontido com o novo módulo.
 3. Aplicação da migração via MCP/SQL versionada e, ao fim do módulo, `supabase/close-function-exec.sql` com verificação `app_ainda_abertas = 0` por `aclexplode` (Regra 4/5 do `AGENTS.md`).
 4. Bateria de segurança da `AGENTS.md` Regra 3 antes de qualquer deploy; deploy só com "SIM" explícito do dono.
@@ -102,9 +102,9 @@ Unitário, com adaptador fake (mesmo padrão de `tests/claim-coupon-tax.test.cjs
   - falha da RPC de auditoria (`throw` e `error`) não altera o 200 nem o corpo do resgate — espelha o teste existente de `billing_record_coupon_tax`.
   - envio com provedor fake (`WHATSAPP_TOKEN` presente no `process.env` do teste + `fetch` injetado) marca `sent` e carrega `provider_message_id`; erro do provedor marca `failed` com `error_code`, sem mensagem crua.
   - dedupe: dois enfileiramentos do mesmo evento/canal → uma linha; `outbound_enqueue` devolvendo `false` não gera envio.
-  - sanitização: resposta de `claim-coupon` nunca contém token/senha/segredo novo (complementa o teste de segredos do `consistency.test.cjs`).
+  - sanitização: resposta de `claim-coupon` nunca contém token/senha/segredo novo (complementa o teste de segredos do `function-contract.test.cjs`).
   - normalização de telefone: entrada com `+`, espaços e zeros à esquerda → dígitos com DDI; telefone ausente ⇒ canal `EMAIL` ou `noop`, sem exceção.
-- `tests/consistency.test.cjs`: PASS **sem edição** para este conjunto; se o nome do helper mudar, o conjunto `HELPERS` precisa ser atualizado junto (decisão consciente, não efeito colateral).
+- `tests/function-contract.test.cjs`: PASS **sem edição** para este conjunto; se o nome do helper mudar, o conjunto `HELPERS` precisa ser atualizado junto (decisão consciente, não efeito colateral).
 - Live opcional: `tests/live.outbound.test.cjs` sob `RUN_LIVE=1`, apenas leitura (`outbound_list`) e apenas para conferir `noop`/`queued` — **sem envio a cliente real**, sem provedor configurado, sem `test:live` no caminho obrigatório. Estender o `package.json` é Ask first.
 
 ## Fronteiras
@@ -113,7 +113,7 @@ Unitário, com adaptador fake (mesmo padrão de `tests/claim-coupon-tax.test.cjs
 - Manter `claim_coupon`/`validate_and_redeem_coupon` intocadas e antes de qualquer hook.
 - Envolver todo hook em `try/catch`; nenhuma promessa rejeitada sai do handler.
 - Contexto da mensagem sempre do banco; o corpo do request não escreve conteúdo em nome do estabelecimento.
-- Espelho CJS/ESM idêntico; helper registrado em `HELPERS`.
+- Helper registrado em `HELPERS` (não há mais espelho a manter em sincronia).
 - Env ausente = no-op logado em `console` + `outbound_messages`; não é erro.
 - Mensagens de erro de terceiros reduzidas a `error_code`.
 
@@ -133,7 +133,7 @@ Unitário, com adaptador fake (mesmo padrão de `tests/claim-coupon-tax.test.cjs
 
 ## Critérios de sucesso
 
-- `npm test` e `npm run build` verdes; `consistency.test.cjs` sem alteração manual.
+- `npm test` e `npm run build` verdes; `function-contract.test.cjs` sem alteração manual.
 - `claim-coupon` com e sem notificação devolve byte a byte o mesmo contrato (exceto o campo opcional de status da notificação, se o dono aprovar).
 - 100% dos eventos de resgate-hook deixam rastro em `outbound_messages`, mesmo sem provedor.
 - Env ausente ⇒ zero chamadas de rede, zero exceções, zero impacto em latência mensurável (< 150 ms).

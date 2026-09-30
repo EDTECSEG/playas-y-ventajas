@@ -1,6 +1,6 @@
 const { getSupabaseAdminClient, extractSessionToken, rpcErrorCode, rpcErrorStatus } = require('./_supabaseAdmin');
 
-// Canon CJS. Espelho ESM: functions/.netlify/functions/driver-shuttle-runs.js
+// Canonico CJS, fonte unica: e o netlify.toml que publica esta pasta e o que o scripts/bundle-worker.mjs inlina. O espelho ESM que existia em functions/.netlify/functions foi removido em 2026-09-30 (divergia em silencio, sem teste que percebesse).
 //
 // Corridas do dia do motorista aprovado. GET lista; POST conclui a corrida.
 //

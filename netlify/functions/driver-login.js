@@ -1,6 +1,6 @@
 const { getSupabaseAdminClient, rpcErrorCode, rpcErrorStatus } = require('./_supabaseAdmin');
 
-// Canon CJS. Espelho ESM: functions/.netlify/functions/driver-login.js
+// Canonico CJS, fonte unica: e o netlify.toml que publica esta pasta e o que o scripts/bundle-worker.mjs inlina. O espelho ESM que existia em functions/.netlify/functions foi removido em 2026-09-30 (divergia em silencio, sem teste que percebesse).
 //
 // Login do motorista por telefone + PIN, igual ao das demais categorias: o
 // motorista entra assim que define o PIN e ve dentro do app o aviso de

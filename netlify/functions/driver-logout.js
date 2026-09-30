@@ -1,6 +1,6 @@
 const { getSupabaseAdminClient, extractSessionToken, rpcErrorCode, rpcErrorStatus } = require('./_supabaseAdmin');
 
-// Canon CJS. Espelho ESM: functions/.netlify/functions/driver-logout.js
+// Canonico CJS, fonte unica: e o netlify.toml que publica esta pasta e o que o scripts/bundle-worker.mjs inlina. O espelho ESM que existia em functions/.netlify/functions foi removido em 2026-09-30 (divergia em silencio, sem teste que percebesse).
 //
 // Encerra a sessao do motorista. Revogacao e do lado do banco (a RPC apaga a
 // linha em driver_sessions), e nao daqui: se o logout so limpasse cookie, a

@@ -28,7 +28,7 @@ cliente (nome/telefone/e-mail) no payload, sem IDOR e sem inventar agregação q
 6. Erros de regra do banco voltam como **código**, nunca como `error.message` cru:
    `rpcErrorCode`/`rpcErrorStatus` (`FORBIDDEN` → 403).
 7. `worker/main.js` `ROUTES` **não muda** (o modo novo nasce dentro do endpoint `empresa`
-   já roteado) e `tests/consistency.test.cjs` continua verde.
+   já roteado) e `tests/function-contract.test.cjs` continua verde.
 8. `npm run build` e `npm test` verdes; nenhuma suite existente quebra
    (baseline: 233 testes / 227 passando / 0 falhas / 6 pulados).
 
@@ -37,8 +37,7 @@ cliente (nome/telefone/e-mail) no payload, sem IDOR e sem inventar agregação q
 | Camada | Arquivo | O que já existe | O que este módulo faz |
 | --- | --- | --- | --- |
 | Endpoint (CJS, canônico) | `netlify/functions/empresa.js` | `GET` com `mode=stats` / `my-data` / `shuttles` e default `empresa_dashboard`; guarda `if (!actor.businessId) → 400` antes dos modes | Novo ramo `mode === 'report'` depois de `shuttles`, com o mesmo padrão de erro (`rpcErrorCode`/`rpcErrorStatus`) |
-| Endpoint (ESM, espelho) | `functions/.netlify/functions/empresa.js` | `onRequestGet` espelhado | Mesmo ramo, em `onRequestGet`, lendo `url.searchParams` |
-| Sessão | `netlify/functions/_supabaseAdmin.js` / `_shared.js` | `resolveSession`, `extractSessionToken`, `rpcErrorCode`, `rpcErrorStatus` | Reusar sem alterar (o par precisa ficar idêntico — `consistency.test.cjs`) |
+| Sessão | `netlify/functions/_supabaseAdmin.js` | `resolveSession`, `extractSessionToken`, `rpcErrorCode`, `rpcErrorStatus` | Reusar sem alterar (é o único helper de sessão; o par CJS/ESM foi eliminado em 2026-09-30) |
 | Painel | `app/empresa/page.jsx` | Abas por `useState('tab')` com carregamento preguiçoso (`loadShuttles`, `loadDrivers`), `card`/`btn`/`smallBtn`/`input` do tema, i18n com fallback `t.x ?? 'texto'` | Nova aba `'relatorio'` + `loadReport(s, days)` seguindo exatamente o padrão das abas existentes |
 | i18n | `lib/i18n.js` | Blocos pt/en/es | Chaves novas (mínimo: fallback `t.reportTab ?? '📈 Relatório'`, como `tabShuttles`/`tabDrivers`) |
 | Banco (já aplicada, **sem `.sql` no repo**) | `business_report(p_tenant_id, p_actor_user_id, p_de, p_ate)` | Já devolve `period`, `totals` (issued/validated/available/conversionPct/newCustomers/totalCustomers/returningCustomers), `daily`, `byCampaign`, `byTemplate`. Está no `fix-business-report-v2.sql` e listada no `RELATORIO-FUNCIONALIDADES.md` §7, **mas nenhum handler a chama hoje** | Passa a ser a fonte do relatório — sem reescrever agregação de resgate |
@@ -79,7 +78,7 @@ Sequência do ramo (sem código aqui, apenas a ordem de decisões):
 7. Devolver 200 com o objeto do relatório, acrescentando `period.days`.
 
 Sem `POST` novo. Sem rota nova em `ROUTES`. Sem helper novo (helper em `netlify/functions/`
-viraria rota — ver `consistency.test.cjs`).
+viraria rota — ver `function-contract.test.cjs`).
 
 ### Banco — RPCs previstas (a criar; **não criadas nesta leva**)
 
@@ -232,9 +231,9 @@ Casos (mínimo):
 10. Modos existentes (`stats`, `my-data`, `shuttles`, default) continuam idênticos — os testes
     de `empresa.test.cjs` e `shuttle-manage.test.cjs` já cobrem isso e devem seguir verdes.
 
-`tests/consistency.test.cjs` não precisa de mudança (nenhum arquivo novo em
-`netlify/functions/` nem `functions/.netlify/functions/`), e é ele que garante que os dois
-dialetos continuem espelhados — o ramo novo precisa existir **nos dois**.
+`tests/function-contract.test.cjs` não precisa de mudança (nenhum arquivo novo em
+`netlify/functions/`), e ele é o que garante que todo handler novo exporte
+`exports.handler` e que nenhum helper vire rota.
 
 Suíte opcional: nada de `live.smoke` para este módulo; se quiser, um caso `RUN_LIVE=1`
 chamando `mode=report` com sessão de produção (somente leitura).
@@ -266,7 +265,7 @@ chamando `mode=report` com sessão de produção (somente leitura).
   listada não entra no escopo.
 - `p_actor_user_id` e `p_tenant_id` sempre vindos de `resolveSession`; nunca do cliente.
 - Mesma guarda, mesmo `try/catch`, mesmo `rpcErrorCode`/`rpcErrorStatus` do arquivo.
-- Alterar `netlify/functions/*.js` e `functions/.netlify/functions/*.js` juntos.
+- Alterar `netlify/functions/*.js` (fonte única; o espelho `functions/.netlify/functions/` foi removido em 2026-09-30).
 - Zero PII de cliente no payload; erro = código, nunca `error.message` cru.
 - Backup antes (Regra 1), `close-function-exec.sql` ao final (Regra 4), deploy só com
   "SIM" explícito (Regra 2), `npm test` + `npm run build` verdes.
@@ -298,7 +297,7 @@ chamando `mode=report` com sessão de produção (somente leitura).
   batendo com a aba "Criar e gerenciar ofertas" para o mesmo intervalo (mesma agregação).
 - Números de motoristas batem com a aba Motoristas (mesmo escopo).
 - 401 sem sessão, 400 em período inválido, 403 em ator não autorizado, sem 500 em RPC ausente.
-- `npm test` e `npm run build` verdes; `consistency.test.cjs` confirma os dois dialetos.
+- `npm test` e `npm run build` verdes; `function-contract.test.cjs` confirma o contrato do diretório.
 - `close-function-exec.sql` com `app_ainda_abertas = 0` depois da migração.
 - `API.md` e `RELATORIO-FUNCIONALIDADES.md` atualizados (rota `mode=report` na seção `/empresa`).
 

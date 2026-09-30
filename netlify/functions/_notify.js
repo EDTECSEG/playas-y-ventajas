@@ -1,7 +1,7 @@
 const { normalizePhone } = require('./_wa');
 
 // Base de notificacoes (fila + auditoria) do cliente. Canon CJS.
-// Espelho ESM: functions/.netlify/functions/_notify.js
+// Canonico CJS, fonte unica: functions/.netlify/functions/ foi removido em 2026-09-30.
 //
 // O QUE ESTE MODULO E': o gancho best-effort que registra/encaminha o aviso
 // ao cliente quando ele resgata um cupom (e, no futuro, quando uma reserva de

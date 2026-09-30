@@ -5,11 +5,13 @@
 //
 // ESTE ARQUIVO NAO E EXECUTADO NESTA ENTREGA.
 //
-// app/empresa/page.jsx, netlify/functions/empresa.js e
-// functions/.netlify/functions/empresa.js estao em alteracao por outro
-// trabalho e nao podem ser tocados aqui. O que existe hoje nesses arquivos e o
-// catalogo de translado (mode=shuttles) e a gestao de motoristas; nao existe
-// nenhuma das duas rotas testadas abaixo.
+// app/empresa/page.jsx e netlify/functions/empresa.js estao em alteracao por
+// outro trabalho e nao podem ser tocados aqui. (O espelho
+// functions/.netlify/functions/empresa.js que este comentario tambem citava foi
+// removido em 2026-09-30; hoje a fonte unica e netlify/functions.)
+// O que existe hoje nesses arquivos e o catalogo de translado
+// (mode=shuttles) e a gestao de motoristas; nao existe nenhuma das duas rotas
+// testadas abaixo.
 //
 // A suite esta escrita e pronta para rodar depois que o bloco
 // INTEGRACAO EMPRESA for aplicado. Rodar antes disso daria falso vermelho: os

@@ -1,5 +1,5 @@
 // Link de WhatsApp GRATUITO (sem API do WhatsApp Business, sem custo).
-// Canon CJS. Espelho ESM: functions/.netlify/functions/_wa.js
+// Canonico CJS, fonte unica: functions/.netlify/functions/ foi removido em 2026-09-30.
 //
 // wa.me apenas ABRE o app/WhatsApp Web com destinatario e mensagem ja
 // preenchidos. Nao ha envio automatico nem custo: o usuario toca em "Enviar".

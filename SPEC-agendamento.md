@@ -67,7 +67,6 @@ reagendamento automático, multi-tenant real (hoje o `TENANT_ID` é fixo) e aval
 | --- | --- |
 | `netlify/functions/identify.js` | Fornece `customerId` + `customerToken` (HMAC). **Não muda.** |
 | `netlify/functions/_supabaseAdmin.js` | `verifyCustomerToken:51`, `buildCustomerToken`, `resolveSession:25`, `extractSessionToken:34`, `rpcErrorCode:63`, `rpcErrorStatus:89`, mapa `RPC_ERROR_STATUS:69`. Único ponto a **acrescentar** códigos novos no mapa. |
-| `functions/.netlify/functions/_shared.js` | Espelho ESM do mesmo mapa (`:44`) — **tem de mudar junto** (senão os status divergem entre Netlify e Worker). |
 | `netlify/functions/shuttle.js` | Catálogo público de serviços. **Não muda** — a reserva é fluxo separado, com sessão própria. |
 | `netlify/functions/empresa.js` | `mode === 'shuttles'` em `:20`; bloco de escrita de serviço em `:120-149` (`save_shuttle_service:122`, `toggle_shuttle_service:136`, `delete_shuttle_service:144`). |
 | `netlify/functions/driver-position.js` | Referência de credencial: `p_session_token` vai para a RPC e o `driver_id` é derivado no banco (`translado-write-flow.sql:273`, join em `:294`). O novo `driver-shuttle-runs` copia esse desenho. |
@@ -82,7 +81,7 @@ A regex de rota (`:155`) só aceita `[a-z0-9-]`: os nomes novos já nascem nesse
 ### Testes
 
 - `tests/helpers.cjs` — `makeFakeSupabase`, `makeEvent`, `loadFunction`, `parseBody`, `VALID_ACTORS`, `customerTokenFor`. Reusar **sem alteração**.
-- `tests/consistency.test.cjs` — exige que CJS e ESM tenham **exatamente o mesmo conjunto de arquivos** e que todo CJS não-helper exporte `exports.handler` e o ESM `onRequestGet/onRequestPost`. Criar handler sem espelho = teste vermelho.
+- `tests/function-contract.test.cjs` — exige que todo handler não-helper em `netlify/functions` exporte `exports.handler`, que helper não exporte handler, que `HELPERS` bata com o grafo de imports e que nenhum arquivo carregue segredo. Substituiu o `consistency.test.cjs` em 2026-09-30, quando o espelho ESM foi removido.
 - `tests/shuttle-manage.test.cjs` (15 casos) e `tests/shuttle.test.cjs` (10 casos) — moldes mais próximos: `mode=shuttles`, `save/toggle/delete_shuttle_service`, `driver-position`, contrato/erro do catálogo.
 - `tests/cliente-offers-guard.test.cjs` — molde para guarda de página (não dá para renderizar JSX neste runner; o teste trava o padrão no fonte).
 - Convenção de live: `tests/live.<nome>.test.cjs`, com `RUN_LIVE=1` (`package.json` → `test:live`, `test:live:approval`, `test:live:position`).
@@ -186,8 +185,8 @@ Não existe acesso direto: `shuttle_reservations` fica inacessível pelo PostgRE
 
 ## API
 
-Três endpoints novos + `empresa` estendido. Todos com o par **CJS (`netlify/functions/`) + espelho
-ESM (`functions/.netlify/functions/`)** e entrada no `ROUTES` de `worker/main.js`.
+Três endpoints novos + `empresa` estendido. Todos em `netlify/functions` (CJS, fonte única
+desde 2026-09-30) e com entrada no `ROUTES` de `worker/main.js`.
 
 ### 1) `GET|POST /.netlify/functions/shuttle-reservation` — cliente
 
@@ -343,7 +342,7 @@ npm test                                    # node --test "tests/*.test.cjs"
 node --test "tests/shuttle-reservation.test.cjs"
 node --test "tests/empresa-reservations.test.cjs"
 node --test "tests/driver-shuttle-runs.test.cjs"
-node --test "tests/consistency.test.cjs"
+node --test "tests/function-contract.test.cjs"
 
 # 2) Build (o postbuild roda scripts/bundle-worker.mjs e gera out/_worker.js)
 npm run build
@@ -360,8 +359,9 @@ node --test tests/live.shuttle-reservation.test.cjs
 # 5) Deploy: perguntar "posso fazer o deploy?" e esperar SIM explícito (Regra 2)
 ```
 
-**Invariantes que quebram o build se violadas:** `tests/consistency.test.cjs` (par CJS/ESM +
-`exports.handler`/`onRequestGet` + nenhum segredo no fonte), `worker-assets.test.cjs`
+**Invariantes que quebram o build se violadas:** `tests/function-contract.test.cjs` (`exports.handler`
+em todo handler, helper sem handler, `HELPERS` coerente com o grafo de imports, nenhum segredo no
+fonte), `worker-assets.test.cjs`
 (rota fora da whitelist = 404, delegate para `ASSETS`), `worker-headers.test.cjs`
 (`no-store` em toda resposta do adaptador; 500 sem detalhe interno).
 
@@ -479,7 +479,7 @@ feita à mão, guarda automatizada travando o padrão no fonte.
 ## Critérios de sucesso (testáveis)
 
 1. `npm test` verde e `npm run build` sem erro, com `out/_worker.js` gerado.
-2. `tests/consistency.test.cjs` verde: os dois handlers novos existem nos dois dialetos e estão no `ROUTES`.
+2. `tests/function-contract.test.cjs` verde: os handlers novos exportam `exports.handler` e estão no `ROUTES`.
 3. `POST /shuttle-reservation` com `customerToken` válido cria reserva `pending` e responde 200 com
    `businessPhone` e `status: 'pending'`.
 4. Mesmo pedido sem token, ou com token de outro `customerId` → `401 CUSTOMER_TOKEN_INVALID`, **sem** gravação.

@@ -26,7 +26,7 @@ async function findReferralCodeOfAffiliate(supabase, tenantId, phone) {
   }
 }
 
-// Canon CJS. Espelho ESM: functions/.netlify/functions/claim-coupon.js
+// Canonico CJS, fonte unica: functions/.netlify/functions/ foi removido em 2026-09-30.
 //
 // DECISAO DO DONO (setembro/2026): a comunicacao com o cliente e por WHATSAPP,
 // nao por email. Motivo: o Resend esta em modo de teste — o remetente

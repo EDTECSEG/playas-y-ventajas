@@ -1,6 +1,6 @@
 const { getSupabaseAdminClient, verifyCustomerToken, rpcErrorCode, rpcErrorStatus } = require('./_supabaseAdmin');
 
-// Canon CJS. Espelho ESM: functions/.netlify/functions/shuttle-reservation.js
+// Canonico CJS, fonte unica: e o netlify.toml que publica esta pasta e o que o scripts/bundle-worker.mjs inlina. O espelho ESM que existia em functions/.netlify/functions foi removido em 2026-09-30 (divergia em silencio, sem teste que percebesse).
 //
 // Reserva de translado do cliente identificado. GET lista as reservas do
 // proprio cliente; POST cria (padrao) ou cancela.

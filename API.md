@@ -4,9 +4,9 @@ Mapa de referência: rota pública → handler Netlify → RPC do Supabase → S
 
 ## Arquitetura
 
-- **Dois dialetos obrigatórios e idênticos** (mantidos em sincronia pelos testes `tests/consistency.test.cjs`):
-  - `netlify/functions/*.js` — CommonJS, roda na Netlify, importa `./_supabaseAdmin`.
-  - `functions/.netlify/functions/*.js` — ESM, espelho usado pelo Worker/Pages, importa `./_shared.js` (`json()`, `getSupabaseAdminClient(env)`).
+- **Um dialeto só, em CommonJS** (`netlify/functions/*.js`, importa `./_supabaseAdmin`). É a fonte única: o `netlify.toml` publica essa pasta e o `scripts/bundle-worker.mjs` inlina os mesmos arquivos no bundle do Worker.
+  - Até 2026-09-30 existia um espelho ESM em `functions/.netlify/functions/*.js` (importava `./_shared.js`), para uso em Cloudflare Pages Functions. Foi removido: não havia consumidor em runtime (não existe `wrangler.toml`; o único alvo de deploy é o `netlify.toml`) e o `tests/consistency.test.cjs` que o vigiava comparava só a *forma* dos arquivos, nunca o comportamento — a `_wa.js` do espelho ficou com a mensagem antiga por meses sem nenhum teste reclamar. Ver `SECURITY-DECISIONS.md`.
+  - Contrato do diretório agora em `tests/function-contract.test.cjs`.
 - **`worker/main.js`**: whitelist `ROUTES`. Tudo que não está em `ROUTES` retorna 404; a regex da rota só aceita `[a-z0-9-]`. Chamadas são convertidas para o formato de `event` da Netlify (httpMethod, queryStringParameters, headers, body).
 - **Banco**: todas as RPCs são chamadas com a chave service_role (admin client). Autenticação de cliente usa token HMAC (`buildCustomerToken` / `verifyCustomerToken`); sessões de empresa/admin/motorista usam `auth_verify_session` / `driver_verify_session`.
 - **`TENANT_ID` fixo**: `0dc57eeb-46c8-47ac-aad4-640d9d59e7b9` (hardcoded em `identify.js`, `affiliates.js` e testes; demais handlers trazem o tenant da sessão/query).

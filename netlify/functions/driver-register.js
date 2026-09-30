@@ -1,6 +1,6 @@
 const { getSupabaseAdminClient, rpcErrorCode, rpcErrorStatus } = require('./_supabaseAdmin');
 
-// Canon CJS. Espelho ESM: functions/.netlify/functions/driver-register.js
+// Canonico CJS, fonte unica: e o netlify.toml que publica esta pasta e o que o scripts/bundle-worker.mjs inlina. O espelho ESM que existia em functions/.netlify/functions foi removido em 2026-09-30 (divergia em silencio, sem teste que percebesse).
 //
 // Cadastro PUBLICO de motorista. Nao exige sessao: e o unico ponto de entrada
 // de quem ainda nao tem conta. A RPC devolve os tokens de posse UMA vez, e o

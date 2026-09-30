@@ -489,3 +489,54 @@ Reabrir se:
 Responsável pela decisão: usuário do projeto (escolheu "aceitar e documentar"
 após o bloqueio `42501` ser verificado no MCP e no dashboard).
 
+
+# Decisão registrada — espelho ESM de functions removido, fonte única em CJS (2026-09-30)
+
+## Contexto
+`netlify/functions/` (CJS) tinha um espelho byte-a-byte em
+`functions/.netlify/functions/` (ESM, `onRequestGet`/`onRequestPost`), criado para
+Cloudflare Pages Functions. O padrão era declarado obrigatório em 6 documentos
+(`API.md`, `RELATORIO-FUNCIONALIDADES.md`, `SPEC-relatorio.md`,
+`SPEC-notificacoes.md`, `SPEC-agendamento.md`, este arquivo) e vigiado por
+`tests/consistency.test.cjs`.
+
+O espelho nao tinha mais consumidor em runtime:
+- o unico alvo de deploy e `netlify.toml`, com `[functions] directory =
+  "netlify/functions"`;
+- `scripts/bundle-worker.mjs` inlina os handlers **CJS** no bundle do Worker;
+- nao existe `wrangler.toml` nem script de deploy para Pages Functions.
+
+E a garantia de sincronia era ilusoria. `consistency.test.cjs` comparava a FORMA
+dos dois lados — mesmo conjunto de nomes de arquivo, `exports.handler` de um lado,
+`onRequestGet`/`onRequestPost` do outro, `HELPERS` coerente, nenhum segredo no
+fonte — e nunca o comportamento. O resultado foi silencioso: a
+`functions/.netlify/functions/_wa.js` continuava com a saudacao "Ola! Vim pelo
+...", o "Codigo curto" e a pergunta "Podem me informar como utilizo?", e sem o
+site/link de indicacao, meses depois de o CJS canonico ter mudado, sem um unico
+teste reclamar.
+
+Risco adicional do espelho: 30 arquivos com regras de negocio duplicadas, em
+`SECURITY DEFINER` e com acesso `service_role`, que um dia alguem editaria
+achando que era o arquivo que sobe. Como os dois lados nao eram executados no
+CI, a edicao errada nao falhava no build.
+
+## Decisão
+Apagar `functions/.netlify/` inteiro e passar a ter uma fonte unica: `netlify/functions`
+(CJS). O `tests/consistency.test.cjs` foi substituido por
+`tests/function-contract.test.cjs`, que mantem as verificacoes que nao dependiam
+do espelho (todo handler exporta `exports.handler`; helper nao exporta handler;
+`HELPERS` bate com o grafo de imports; `_supabaseAdmin` expoe os nomes canonicos;
+nenhum segredo no fonte) e ganha duas novas: o `netlify.toml` precisa apontar
+para `netlify/functions`, e a pasta `functions/` nao pode reaparecer.
+
+O que NAO foi removido: o backend continua aceitando `p_short_code` em
+`validate_and_redeem_coupon`. Tirar o codigo curto das telas e da mensagem e uma
+decisao de produto; quebrar material antigo do balcao seria outra coisa.
+
+## Consequencia aceita
+Perde-se a portabilidade para Cloudflare Pages Functions. Se essa plataforma
+voltar a ser alvo, os handlers precisam ser convertidos para ESM de novo (ou
+bundleados), e nao reaproveitados do espelho apagado.
+
+Responsável pela decisão: usuario do projeto (escolheu "apagar de vez, com teste
+e docs" apos saber que o espelho era so de forma, e nao de conteudo).

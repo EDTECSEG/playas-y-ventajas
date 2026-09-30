@@ -1,7 +1,7 @@
 const { getSupabaseAdminClient, extractSessionToken, rpcErrorCode, rpcErrorStatus } = require('./_supabaseAdmin');
 const { randomUUID } = require('crypto');
 
-// Canon CJS. Espelho ESM: functions/.netlify/functions/driver-add-document.js
+// Canonico CJS, fonte unica: e o netlify.toml que publica esta pasta e o que o scripts/bundle-worker.mjs inlina. O espelho ESM que existia em functions/.netlify/functions foi removido em 2026-09-30 (divergia em silencio, sem teste que percebesse).
 //
 // Anexa documento de motorista. Aceita DOIS caminhos de autenticacao, e nunca
 // os dois ao mesmo tempo:
