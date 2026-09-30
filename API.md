@@ -38,7 +38,7 @@ Mapa de referência: rota pública → handler Netlify → RPC do Supabase → S
 - `auth_login` (+ `auth_pin_reset_required` no caso de senha resetada). Retorna sessão com role/tenantId; admin valida role no frontend.
 
 ### `empresa` — painel da empresa (sessão `Authorization: Bearer <token>`)
-- `GET` (default) → `empresa_dashboard` (produção). `GET ?mode=stats` → `business_coupon_stats`. `GET ?mode=my-data` → `business_get_own`. `GET ?mode=shuttles` → `business_list_shuttle_services` (serviços de translado do próprio negócio, inclusive inativos).
+- `GET` (default) → `empresa_dashboard` (produção). `GET ?mode=stats` → `business_coupon_stats`. `GET ?mode=my-data` → `business_get_own`. `GET ?mode=shuttles` → `business_list_shuttle_services` (serviços de translado do próprio negócio, inclusive inativos). `GET ?mode=reservations` (`&status=&date=`) → **`business_list_shuttle_reservations`** (Módulo A; escopo por negócio do ator, `SUPER_ADMIN` vê tudo; lista ordenada por `scheduledFor`, `Cache-Control: no-store`, devolve `{ reservations, count }`). `GET ?mode=report` (`&days=`) → relatório de performance (dias: 7/30/90).
 - `POST` `{ action }`:
   - `update_my_data` → `business_update_own` v10 (inclui `category`).
   - `create_template` / `update_template` / `toggle_template` / `delete_template` → `create_coupon_template` (produção) / `business_update_template` / `business_toggle_template` / `business_delete_template`.
@@ -48,6 +48,7 @@ Mapa de referência: rota pública → handler Netlify → RPC do Supabase → S
   - `save_shuttle_service` `{ name, description, serviceType, originLat/lng, destLat/lng, stops, priceCents, opensAt, closesAt, activeDays, serviceId? }` → **`business_save_shuttle_service`** (cria se sem `serviceId`, edita se com; `priceCents` convertido de reais pelo handler; `activeDays` CSV → array).
   - `toggle_shuttle_service` `{ serviceId, isActive }` → **`business_toggle_shuttle_service`**.
   - `delete_shuttle_service` `{ serviceId }` → **`business_delete_shuttle_service`**.
+  - `review_reservation` `{ reservationId, action, reason? }` → **`business_review_shuttle_reservation`**; `action` ∈ `confirm|reject|cancel` (recusa exige `reason` — RPC devolve `REASON_REQUIRED`). 400 `ACTION_INVALID`/`RESERVATION_ID_REQUIRED` antes da RPC; devolve `{ reservationId, status }`.
 
 ### `admin` — painel admin (sessão; role ADMIN/SUPER_ADMIN)
 - `GET` (default) → `admin_list_businesses` (produção). Modes:
@@ -90,6 +91,19 @@ Mapa de referência: rota pública → handler Netlify → RPC do Supabase → S
 - Parâmetros opcionais: `lat` + `lng` (juntos, numéricos), `radiusKm` (aplica o raio nos serviços em km e nos veículos em m = radiusKm×1000; exige lat/lng), `maxAgeS` (inteiro positivo).
 - Sem `lat/lng`: lista tudo sem `distanceKm` (contrato explícito com o cliente — a UI mostra "sem distâncias"). Sem dados → `[]` (os dois campos sempre presentes).
 
+### `shuttle-reservation` — reserva de translado do cliente (Módulo A)
+`GET|POST /.netlify/functions/shuttle-reservation` — **não** é o catálogo público (`shuttle.js`): fluxo próprio, com credencial de cliente (HMAC) e `Cache-Control: no-store` em toda resposta (devolve nome/telefone da empresa e horário de terceiro).
+- Credencial IDOR (Regra 3): `tenantId` + `customerId` + `customerToken` (corpo no POST, query no GET); o `customerToken` **bate com o `customerId`** antes de qualquer RPC — par de A com id de B → 401 `CUSTOMER_TOKEN_INVALID` e nenhuma RPC é chamada.
+- `GET` (`&status=` opcional, filtro de tela) → `shuttle_list_customer_reservations` → `{ reservations, count }` (sem email/Instagram do cliente; sempre no-store).
+- `POST` `action=create` (padrão) `{ shuttleId, scheduledFor, passengers, notes?, contactPhone? }` → `shuttle_create_reservation` → objeto da reserva (`status: 'pending'`). 400: `TENANT_ID_REQUIRED`, `SHUTTLE_ID_REQUIRED`, `SCHEDULED_FOR_REQUIRED`, `INVALID_PASSENGERS`.
+- `POST` `action=cancel` `{ reservationId, reason? }` → `shuttle_cancel_reservation` (só `pending`/`confirmed`) → `{ reservationId, status: 'cancelled' }`. 400 `RESERVATION_ID_REQUIRED`; `ACTION_INVALID` para qualquer outra ação.
+- Regras de negócio (dia ativo, janela `opensAt/closesAt`, sobreposição com `tstzrange`, escopo do serviço ativo da empresa) vivem **dentro das RPCs** (service_role), não no handler.
+
+### `driver-shuttle-runs` — corridas do dia (Módulo A)
+`GET|POST /.netlify/functions/driver-shuttle-runs` — sessão de motorista (`driver_sessions` + `status='approved'`, mesma credencial de `driver-position`; **não** usa `users.sessions`). `driver_id`/`tenant_id`/`business_id` derivados no banco; nada disso vem do corpo. `Cache-Control: no-store`.
+- `GET` (`&date=YYYY-MM-DD` opcional; sem ele o dia corrente no fuso do banco) → `driver_list_shuttle_runs` → `{ date, runs, count }`. Não devolve nome nem telefone do cliente (agenda da rota, não folha de contato). Erros: `SESSION_EXPIRED` 401, `NOT_APPROVED` 403.
+- `POST` `{ reservationId }` → `driver_complete_shuttle_reservation` (só `confirmed` → `completed`; escopo da frota do motorista) → `{ reservationId, status: 'completed', completedAt }`. 400 `RESERVATION_ID_REQUIRED`.
+
 ### Motorista (`driver-*`, Worker `routes/drivers`)
 Vínculo por telefone: `driver_register`, `driver_set_pin`, `driver_login`, `driver_logout`, `driver_verify_session`, `driver_list_for_business`, `driver_review_document`, `driver_add_document`, `driver_get_document_path` (+ `business_generate_invite`, `business_logo_by_id` usados pela classe). Frontend em `app/motorista` com lógica pura testada em `motorista/logic.js`.
 
@@ -99,7 +113,7 @@ Vínculo por telefone: `driver_register`, `driver_set_pin`, `driver_login`, `dri
 - `driver_id` **nunca** vem do cliente — é derivado da sessão no banco (um motorista não grava posição em nome de outro).
 - Upsert em `vehicle_positions` (1 posição por motorista); resposta `{ driverId, recordedAt }` com `Cache-Control: no-store`.
 
-## RPCs novas (neste pacote — aguardando migração)
+## RPCs novas (neste pacote — aplicadas via MCP; pendem apenas deploy do front)
 
 | RPC | Arquivo SQL | O que faz |
 | --- | --- | --- |
@@ -123,6 +137,19 @@ Vínculo por telefone: `driver_register`, `driver_set_pin`, `driver_login`, `dri
 | `business_delete_shuttle_service` | idem | Apaga serviço próprio (posições ficam com `shuttle_id` NULL) |
 | `business_list_shuttle_services` | idem | Lista serviços do próprio negócio (com inativos, para o painel) |
 | `driver_report_position` | idem | Upsert da posição do veículo a partir da sessão do motorista (só `approved`; `driver_id` derivado no banco) |
+| `shuttle_create_reservation` | `supabase/agendamento.sql` | **Módulo 3 (A) — agendamento** — cria reserva `pending` (lock do serviço ativo por `FOR UPDATE`; `INVALID_PASSENGERS`, `SHUTTLE_NOT_FOUND`, `INVALID_SCHEDULE`, `DAY_NOT_ACTIVE`, `OUTSIDE_HOURS`, `SLOT_CONFLICT` por `tstzrange`) |
+| `shuttle_cancel_reservation` | idem | Cliente cancela `pending`/`confirmed` → `cancelled` (com `reason`) |
+| `shuttle_list_customer_reservations` | idem | Reservas do cliente (filtro `p_status`) |
+| `business_list_shuttle_reservations` | idem | Reservas da empresa (filtráveis por `p_status`/`p_date` no fuso `America/Sao_Paulo`) |
+| `business_review_shuttle_reservation` | idem | Empresa decide `confirm`/`reject`/`cancel` (transições validas; `REASON_REQUIRED` para recusa; `decided_by`/`decided_at`) |
+| `driver_list_shuttle_runs` | idem | Corridas do dia do motorista (sessão `driver_sessions`; sem nome/telefone do cliente) |
+| `driver_complete_shuttle_reservation` | idem | `confirmed` → `completed` (escopo da frota do motorista) |
+| `business_save_shuttle_service` (nova assinatura) | idem | + `p_duration_minutes` (15..720, DEFAULT NULL mantém atual); DROP+CREATE (assinatura mudou) — por isso ACL re-fechado no `close-function-exec` |
+| `business_delete_shuttle_service` (recriada) | idem | Volta a recusar com `SHUTTLE_HAS_RESERVATIONS` quando há `pending`/`confirmed` |
+| `outbound_enqueue` | `supabase/notificacoes.sql` | **Módulo B — notificações (fase 1: fila/auditoria)** — grava 1 linha por (evento, canal); dedupe por `coupon_id`/`booking_ref`; default `provider='none'`/`status='noop'` (no-op observável) |
+| `outbound_mark_sent` / `outbound_mark_failed` | idem | Idempotentes; `error_code` passa por filtro de caracteres (nunca a mensagem crua do provedor) |
+| `outbound_list` | idem | Auditoria para `ADMIN`/`SUPER_ADMIN` (nunca devolve `body`/`destination`) |
+| `business_report_v3` | `supabase/business-report-v3.sql` | **Módulo C — relatório v3** — `totals`/`daily`/`byCampaign`/`byTemplate` (mesmas agregações da v2) + `drivers` (memo escopo), `billing` (`chargedCents`), `shuttle`, `rides: null`; nasce fechada e aditiva (a v2 `business_report` segue intacta; handler degrada com fallback)
 
 **Nota**: as funções de produção (linha "produção" acima) não têm arquivo `.sql` no repo — vivem apenas no Supabase remoto. Não edite produção sem passar pelo `supabase` (migração versionada + advisors).
 
@@ -132,11 +159,17 @@ Vínculo por telefone: `driver_register`, `driver_set_pin`, `driver_login`, `dri
 
 ## Frontend (roteamento do app)
 
-`/` (captura `?ref=` → `localStorage.pyv_ref`), `/cliente` (filtros cidade/atividade/raio + "Perto de mim" + badge ⭐ + repasse de `ref` no identify/claim, mapa Leaflet, **Translado e proximidade**: serviços de translado + veículos ao vivo com geolocalização e empty state honesto), `/empresa` (categoria em Meus dados + destaque por período + aba Instagram com gerador de card 1080×1080 em canvas + **aba Translado** com CRUD de serviços), `/admin` (seção Afiliados: relatório + config de rewards), `/afiliado` (cadastro, link com QR, WhatsApp/Instagram, painel), `/motorista` (cadastro/documentos + **Transmissão de posição**).
+`/` (captura `?ref=` → `localStorage.pyv_ref`), `/cliente` (filtros cidade/atividade/raio + "Perto de mim" + badge ⭐ + repasse de `ref` no identify/claim, mapa Leaflet, **Translado e proximidade**: serviços de translado + veículos ao vivo com geolocalização e empty state honesto + **Reservar translado / Minhas reservas**: agenda por serviço, cancelamento com motivo e link wa.me para a empresa), `/empresa` (categoria em Meus dados + destaque por período + aba Instagram com gerador de card 1080×1080 em canvas + **aba Translado** com CRUD de serviços + **aba Reservas** com filtros por status e confirmar/recusar/cancelar + **Relatório** com períodos 7/30/90), `/admin` (seção Afiliados: relatório + config de rewards), `/afiliado` (cadastro, link com QR, WhatsApp/Instagram, painel), `/motorista` (cadastro/documentos + **Transmissão de posição** + **Minhas corridas de hoje** com concluir corrida).
 
-## Migrações a aplicar (após aprovação)
+## Migrações versionadas (estado)
+
+Todas aplicadas via MCP (`apply_migration`) após aprovação do dono; advisors security+performance pós-cada com `app_ainda_abertas = 0` (96 funções de app, 0 abertas ao cliente). Ordem de aplicação e nomes:
 
 1. `supabase/offers-v3-filters-and-coupon-featured.sql` — coluna `featured_until`, `norm_categoria`, `list_categories`, `list_offers` v3, `business_set_coupon_featured`, `admin_set_coupon_featured`, `business_update_own` v10, e DROPs das assinaturas antigas (`list_offers(uuid)`, `business_update_own` 9-arg).
 2. `supabase/affiliates-wiring.sql` — `affiliate_dashboard`, `admin_affiliate_report`, `admin_get/set_affiliate_rewards` (dependem do Módulo 3/3b já aplicado).
-3. `supabase/p2-taxa-por-cupom.sql` — **fase 2** (aplacada em 3 migrations via MCP: `p2_taxa_por_cupom`, `p2_billing_plan_check_per_coupon`, `p2_fix_billing_record_coupon_tax_null`): coluna `businesses.billing_fee_cents`, índice parcial `idx_billing_charges_coupon_id`, plano `PER_COUPON` no check, RPC `billing_record_coupon_tax` (SECURITY DEFINER, `search_path` fixo, EXECUTE só `service_role`) e ajustes de `admin_set_billing`/`admin_list_businesses`/`billing_mp_prepare`.
-4. `supabase/translado-write-flow.sql` — **APLICADA em 2026-09-29 (esta sessão)** via MCP (`translado_write_flow`): 5 RPCs de escrita do Módulo 1; advisors pós-registro sem achados novos.
+3. `supabase/p2-taxa-por-cupom.sql` — fase 2 (aplicada em 3 migrations via MCP: `p2_taxa_por_cupom`, `p2_billing_plan_check_per_coupon`, `p2_fix_billing_record_coupon_tax_null`): coluna `businesses.billing_fee_cents`, índice parcial `idx_billing_charges_coupon_id`, plano `PER_COUPON` no check, RPC `billing_record_coupon_tax` e ajustes de `admin_set_billing`/`admin_list_businesses`/`billing_mp_prepare`.
+4. `supabase/translado-write-flow.sql` — APLICADA em 2026-09-29 via MCP (`translado_write_flow`): 5 RPCs de escrita do Módulo 1; advisors pós-registro sem achados novos.
+5. `supabase/agendamento.sql` — APLICADA em 2026-09-29 via MCP (`agendamento_translado`): tabela `shuttle_reservations`, coluna `shuttle_services.duration_minutes`, 7 RPCs do Módulo A + redefinição de `business_save_shuttle_service`/`business_delete_shuttle_service` (DROP antes de CREATE porque a assinatura muda — evita sobrecarga e ACL antigo aberto).
+6. `supabase/notificacoes.sql` — APLICADA em 2026-09-29 (`notificacoes_outbound_messages`): `outbound_messages` + 4 RPCs de fila/auditoria (fase 1; o despacho agendado fica para quando houver provedor real).
+7. `supabase/business-report-v3.sql` — APLICADA em 2026-09-29 (`relatorio_empresa_v3`): `business_report_v3` + índice `billing_charges_business_created_idx`.
+8. `supabase/close-function-exec.sql` + índices de FK — APLICADAS em 2026-09-29 (`close_function_exec_acls` e `indexes_fk_reservas_avisos`): re-fecha EXECUTE de todo `public` (as DROP+CREATE da seção 10 do agendamento reabrem ACL) e cobre `business_id`/`decided_by` de `shuttle_reservations` + `customer_id` de `outbound_messages` (delta de `unindexed_foreign_keys` zerado).
