@@ -250,13 +250,16 @@ export function localDateIso(date) {
 }
 
 // 'dd/mm as HH:MM' no fuso do navegador. Devolve '' para data ausente, em vez
-// de 'Invalid Date' aparecendo na tela.
-export function formatRunWhen(iso) {
+// de 'Invalid Date' aparecendo na tela. `lang` e o idioma do app ('pt'|'en'|
+// 'es'); sem argumento mantem o pt-BR, para os testes antigos continuarem
+// fixando o mesmo formato.
+export function formatRunWhen(iso, lang) {
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
+  const bcp = { pt: 'pt-BR', en: 'en-US', es: 'es-ES' }[lang] || 'pt-BR';
   try {
-    return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    return d.toLocaleString(bcp, { dateStyle: 'short', timeStyle: 'short' });
   } catch (e) {
     return '';
   }

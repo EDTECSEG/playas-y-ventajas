@@ -2,16 +2,14 @@
 
 // Modulo do motorista: cadastro, PIN, documentos e situacao da habilitacao.
 //
-// Os textos ficam em portugues literal, e nao em t.*, porque lib/i18n.js nao tem
-// chave de motorista e o arquivo esta em alteracao por outro trabalho. Quando
-// esse arquivo voltar a ser editavel, estas strings migram para la.
-//
 // A parte que decide credencial e resposta esta em ./logic, que e puro e
-// testado sem DOM. Este arquivo cuida de estado, fetch e render.
+// testado sem DOM. Este arquivo cuida de estado, fetch e render. Os textos
+// de apresentacao usam t.* de lib/i18n, como as demais telas.
 
 import { useEffect, useRef, useState } from 'react';
 import Header from '../components/Header';
 import ModuleSplash from '../components/ModuleSplash';
+import { useLanguage } from '../../lib/LanguageContext';
 import { theme } from '../../lib/theme';
 import {
   TENANT_ID,
@@ -29,21 +27,15 @@ import {
   localDateIso,
   sortRunsByTime,
   formatRunWhen,
-  RUN_STATUS_LABEL,
   situationFor,
   sessionFromStorage,
   pendingFromStorage,
 } from './logic';
 
 // Rotulo e cor da situacao sao apresentacao, e ficam aqui com o theme. A
-// logica de credencial, PIN e resposta vive em ./logic.
-const STATUS_LABEL = {
-  pending: { text: 'Aguardando aprovacao da empresa', color: theme.goldDark, bg: '#FEF6E0' },
-  approved: { text: 'Habilitado a dirigir', color: theme.green, bg: theme.greenLight },
-  rejected: { text: 'Recusado - envie o documento de novo', color: '#B42318', bg: '#FEF3F2' },
-  suspended: { text: 'Conta suspensa', color: '#B42318', bg: '#FEF3F2' },
-};
-
+// logica de credencial, PIN e resposta vive em ./logic. O rotulo traduzido
+// vem do dict i18n (driverStatus*), montado dentro do componente por causa
+// do hook useLanguage.
 const wrap = { maxWidth: 720, margin: '0 auto', padding: '20px 20px 80px', color: theme.text };
 const card = { background: theme.card, color: theme.text, borderRadius: 14, padding: 20, marginBottom: 16, border: `1px solid ${theme.border}`, boxShadow: '0 2px 8px rgba(11,110,79,0.06)' };
 const input = { padding: 9, borderRadius: 8, border: `1px solid ${theme.border}`, marginRight: 8, marginBottom: 8, width: '100%', boxSizing: 'border-box' };
@@ -73,12 +65,20 @@ function readAsBase64(file) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(String(r.result).split(',')[1] || '');
-    r.onerror = () => reject(new Error('Nao foi possivel ler o arquivo.'));
+    r.onerror = () => reject(new Error(friendlyMessage('FILE_UNREADABLE')));
     r.readAsDataURL(file);
   });
 }
 
 export default function MotoristaPage() {
+  const { lang, t } = useLanguage();
+  const STATUS_LABEL = {
+    pending: { text: t.driverStatusPending, color: theme.goldDark, bg: '#FEF6E0' },
+    approved: { text: t.driverStatusApproved, color: theme.green, bg: theme.greenLight },
+    rejected: { text: t.driverStatusRejected, color: '#B42318', bg: '#FEF3F2' },
+    suspended: { text: t.driverStatusSuspended, color: '#B42318', bg: '#FEF3F2' },
+  };
+  const fmt = (s, params) => s.replace(/\{(\w+)\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(params, k) ? params[k] : m));
   const [splashDone, setSplashDone] = useState(false);
   const [session, setSession] = useState(null);
   // Cadastro pela metade: guarda pinToken e uploadToken ate o PIN ser definido.
@@ -208,7 +208,7 @@ export default function MotoristaPage() {
     });
     const data = await call('driver-position', { body, token: headerToken });
     setUltimaPos(data.recordedAt);
-  }, 'Posicao enviada. Quem procura o translado ja ve seu veiculo no mapa.');
+  }, t.posSentOk);
 
   async function run(fn, ok) {
     setOcupado(true);
@@ -272,7 +272,7 @@ export default function MotoristaPage() {
     localStorage.setItem('pyv_driver_pending', JSON.stringify(p));
     setPending(p);
     setReg({ name: '', phone: '', email: '', inviteCode: '' });
-  }, 'Cadastro criado. Defina seu PIN para continuar.');
+  }, t.regCreatedOk);
 
   const definirPin = () => run(async () => {
     checkPin(pinForm.pin, pinForm.pin2);
@@ -289,12 +289,12 @@ export default function MotoristaPage() {
     // O login nao depende mais de aprovacao, entao entra na hora, sem o
     // motorista digitar telefone e PIN de novo.
     await autenticar(p.phone, pinForm.pin);
-  }, 'PIN definido e voce ja entrou. Envie seus documentos abaixo.');
+  }, t.pinDoneOk);
 
   const enviarDoc = () => run(async () => {
     const file = fileRef.current && fileRef.current.files && fileRef.current.files[0];
     if (!file) throw new Error(friendlyMessage('FILE_REQUIRED'));
-    if (file.size > MAX_BYTES) throw new Error('O arquivo passa de 6 MB.');
+    if (file.size > MAX_BYTES) throw new Error(friendlyMessage('FILE_TOO_LARGE'));
     const fileBase64 = await readAsBase64(file);
 
     // buildDocumentRequest decide a credencial: com sessao vai no header, sem
@@ -312,7 +312,7 @@ export default function MotoristaPage() {
     const data = await call('driver-add-document', { body, token: headerToken });
     setDocEnviado(data);
     if (fileRef.current) fileRef.current.value = '';
-  }, 'Documento enviado. A empresa vai revisar.');
+  }, t.docSentOk);
 
   const sair = () => run(async () => {
     if (session && session.sessionToken) {
@@ -330,8 +330,8 @@ export default function MotoristaPage() {
   return (
     <>
       <ModuleSplash visible={!splashDone} onDone={() => setSplashDone(true)} />
-      <Header title="Motorista" right={session ? (
-        <button style={smallBtn} onClick={sair} disabled={ocupado}>Sair</button>
+      <Header title={t.motoristaTitle} right={session ? (
+        <button style={smallBtn} onClick={sair} disabled={ocupado}>{t.logout}</button>
       ) : null} />
 
       <div style={wrap}>
@@ -350,17 +350,16 @@ export default function MotoristaPage() {
 
         {session ? (
           <div style={card}>
-            <h3 style={{ marginTop: 0 }}>Ola, {session.name}</h3>
+            <h3 style={{ marginTop: 0 }}>{fmt(t.helloName, { name: session.name })}</h3>
             <p style={{ color: theme.textMuted, marginTop: 0 }}>
-              Telefone {session.phone} · documento {docEnviado ? 'enviado' : 'pendente'}
+              {fmt(t.driverHeaderDoc, { phone: session.phone, status: docEnviado ? t.docSent : t.docPending })}
             </p>
             {/* Entrar no app e dirigir sao coisas separadas. Sem esta frase o
                 motorista aprovado em documentos acha que ja esta na frota,
                 e o que nao esta aprovado nao entende por que nao aparece. */}
             {!canDrive(session.status) ? (
               <p style={{ color: theme.textMuted, marginBottom: 0 }}>
-                Voce entrou, mas ainda nao pode dirigir. Assim que a empresa aprovar seus
-                documentos, voce passa a aparecer na lista de veiculos.
+                {t.notApprovedNote}
               </p>
             ) : null}
           </div>
@@ -368,23 +367,22 @@ export default function MotoristaPage() {
 
         {session && canDrive(session.status) ? (
           <div style={card}>
-            <h3 style={{ marginTop: 0 }}>Transmissao de posicao</h3>
+            <h3 style={{ marginTop: 0 }}>{t.posTitle}</h3>
             <p style={{ color: theme.textMuted, marginTop: 0 }}>
-              Envie sua posicao atual para aparecer no translado ao vivo. O cliente ve seu
-              veiculo enquanto a posicao tiver menos de 5 minutos.
+              {t.posHint}
             </p>
-            <label style={label} htmlFor="servico">Servico em execucao (opcional)</label>
+            <label style={label} htmlFor="servico">{t.posServiceLabel}</label>
             <select id="servico" style={input} value={servicoSel} onChange={(e) => setServicoSel(e.target.value)}>
-              <option value="">Em viagem (sem rotulo)</option>
+              <option value="">{t.posNoLabel}</option>
               {servicos.map((s) => <option key={s.shuttleId} value={s.shuttleId}>{s.name}</option>)}
             </select>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              <button style={btn} onClick={enviarPosicao} disabled={ocupado}>Enviar posicao</button>
-              <button style={ghostBtn} onClick={carregarServicos} disabled={ocupado}>Recarregar servicos</button>
+              <button style={btn} onClick={enviarPosicao} disabled={ocupado}>{t.posSend}</button>
+              <button style={ghostBtn} onClick={carregarServicos} disabled={ocupado}>{t.posReloadServices}</button>
             </div>
             {ultimaPos ? (
               <p style={{ color: theme.textMuted, marginBottom: 0 }}>
-                Ultima posicao registrada as {new Date(ultimaPos).toLocaleTimeString()}.
+                {fmt(t.posLast, { time: new Date(ultimaPos).toLocaleTimeString(lang === 'en' ? 'en-US' : lang === 'es' ? 'es-ES' : 'pt-BR') })}
               </p>
             ) : null}
           </div>
@@ -392,15 +390,14 @@ export default function MotoristaPage() {
 
         {session && canDrive(session.status) ? (
           <div style={card}>
-            <h3 style={{ marginTop: 0 }}>Minhas corridas de hoje</h3>
+            <h3 style={{ marginTop: 0 }}>{t.runsTitle}</h3>
             <p style={{ color: theme.textMuted, marginTop: 0 }}>
-              Reservas confirmadas da sua empresa em {localDateIso()}. Nao mostramos nome nem
-              telefone do cliente: aqui e a agenda da rota.
+              {fmt(t.runsHint, { date: localDateIso() })}
             </p>
             {corridasErro ? (
               <p style={{ color: '#B42318', margin: 0 }}>{corridasErro}</p>
             ) : corridas.length === 0 ? (
-              <p style={{ marginBottom: 0 }}>Nenhuma corrida confirmada para hoje.</p>
+              <p style={{ marginBottom: 0 }}>{t.runsEmpty}</p>
             ) : (
               corridas.map((c) => (
                 <div key={c.reservationId} style={{
@@ -408,52 +405,51 @@ export default function MotoristaPage() {
                   marginTop: 8, background: theme.bg,
                 }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <strong style={{ flex: 1, minWidth: 120 }}>{formatRunWhen(c.scheduledFor)}</strong>
+                    <strong style={{ flex: 1, minWidth: 120 }}>{formatRunWhen(c.scheduledFor, lang)}</strong>
                     <span style={{
                       fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999,
                       background: c.status === 'completed' ? theme.greenLight : theme.gold,
                       color: c.status === 'completed' ? theme.green : theme.greenDark,
-                    }}>{RUN_STATUS_LABEL[c.status] || c.status}</span>
+                    }}>{c.status === 'confirmed' ? t.runStatusConfirmed : c.status === 'completed' ? t.runStatusCompleted : (c.status || '')}</span>
                   </div>
                   <div style={{ fontSize: 13, marginTop: 4 }}>{c.serviceName}</div>
                   <div style={{ fontSize: 12, color: theme.textMuted }}>
-                    {c.passengers} passageiro(s)
+                    {c.passengers} {t.runPassengers}
                     {c.durationMinutes ? ` · ${c.durationMinutes} min` : ''}
                   </div>
                   {c.status === 'confirmed' ? (
                     <button style={{ ...smallBtn, marginTop: 8 }} onClick={() => concluirCorrida(c)} disabled={ocupado}>
-                      Concluir corrida
+                      {t.completeRun}
                     </button>
                   ) : null}
                 </div>
               ))
             )}
             <div style={{ marginTop: 12 }}>
-              <button style={ghostBtn} onClick={carregarCorridas} disabled={ocupado}>Recarregar corridas</button>
+              <button style={ghostBtn} onClick={carregarCorridas} disabled={ocupado}>{t.reloadRuns}</button>
             </div>
           </div>
         ) : null}
 
         {pending && !session ? (
           <div style={card}>
-            <h3 style={{ marginTop: 0 }}>Falta pouco: defina seu PIN</h3>
+            <h3 style={{ marginTop: 0 }}>{t.pinTitle}</h3>
             {pending.pinToken ? (
               <>
-                <label style={label} htmlFor="pin">PIN de 4 ou mais digitos</label>
+                <label style={label} htmlFor="pin">{t.pinLabel}</label>
                 <input id="pin" style={input} type="password" inputMode="numeric" value={pinForm.pin}
                   onChange={(e) => setPinForm({ ...pinForm, pin: e.target.value })} />
-                <label style={label} htmlFor="pin2">Repita o PIN</label>
+                <label style={label} htmlFor="pin2">{t.pinConfirm}</label>
                 <input id="pin2" style={input} type="password" inputMode="numeric" value={pinForm.pin2}
                   onChange={(e) => setPinForm({ ...pinForm, pin2: e.target.value })} />
-                <button style={btn} onClick={definirPin} disabled={ocupado}>Salvar PIN</button>
+                <button style={btn} onClick={definirPin} disabled={ocupado}>{t.pinSave}</button>
               </>
             ) : (
               /* pinToken ja foi consumido, entao este estado so aparece se o
                  login automatico apos salvar o PIN nao completou. Da para
                  enviar documento por aqui mesmo, e o login fica na aba Entrar. */
               <p style={{ color: theme.textMuted, margin: 0 }}>
-                PIN ja definido. Envie os documentos abaixo e entre pela aba Entrar com seu
-                telefone e PIN.
+                {t.pinAlreadySet}
               </p>
             )}
           </div>
@@ -461,23 +457,23 @@ export default function MotoristaPage() {
 
         {(session || pending) ? (
           <div style={card}>
-            <h3 style={{ marginTop: 0 }}>Documentos</h3>
-            <label style={label} htmlFor="doctype">Tipo</label>
+            <h3 style={{ marginTop: 0 }}>{t.docTitle}</h3>
+            <label style={label} htmlFor="doctype">{t.docType}</label>
             <select id="doctype" style={input} value={doc.docType} onChange={(e) => setDoc({ ...doc, docType: e.target.value })}>
-              {DOC_TYPES.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+              {DOC_TYPES.map((d) => <option key={d.value} value={d.value}>{t[d.value === 'cnh' ? 'docCnh' : d.value === 'rg' ? 'docRg' : 'docCrv']}</option>)}
             </select>
-            <label style={label} htmlFor="docnum">Numero (opcional)</label>
+            <label style={label} htmlFor="docnum">{t.docNumber}</label>
             <input id="docnum" style={input} value={doc.docNumber}
               onChange={(e) => setDoc({ ...doc, docNumber: e.target.value })} />
-            <label style={label} htmlFor="docexp">Validade (opcional)</label>
+            <label style={label} htmlFor="docexp">{t.docExpiry}</label>
             <input id="docexp" style={input} type="date" value={doc.docExpiresAt}
               onChange={(e) => setDoc({ ...doc, docExpiresAt: e.target.value })} />
-            <label style={label} htmlFor="docfile">Arquivo (PDF, JPEG ou PNG, ate 6 MB)</label>
+            <label style={label} htmlFor="docfile">{t.docFile}</label>
             <input id="docfile" ref={fileRef} style={input} type="file" accept="application/pdf,image/jpeg,image/png" />
-            <button style={btn} onClick={enviarDoc} disabled={ocupado}>Enviar documento</button>
+            <button style={btn} onClick={enviarDoc} disabled={ocupado}>{t.docSend}</button>
             {situacao === 'rejected' ? (
               <p style={{ color: theme.textMuted, marginBottom: 0 }}>
-                Seu cadastro foi recusado. Envie o documento corrigido para nova analise.
+                {t.docRejected}
               </p>
             ) : null}
           </div>
@@ -486,35 +482,35 @@ export default function MotoristaPage() {
         {!session && !pending ? (
           <div style={card}>
             <button style={{ ...smallBtn, background: tab === 'entrar' ? theme.green : theme.greenLight, color: tab === 'entrar' ? '#FFF' : theme.greenDark }}
-              onClick={() => setTab('entrar')}>Entrar</button>
+              onClick={() => setTab('entrar')}>{t.driverEnter}</button>
             <button style={{ ...smallBtn, background: tab === 'cadastrar' ? theme.green : theme.greenLight, color: tab === 'cadastrar' ? '#FFF' : theme.greenDark }}
-              onClick={() => setTab('cadastrar')}>Cadastrar</button>
+              onClick={() => setTab('cadastrar')}>{t.driverRegisterTab}</button>
 
             {tab === 'entrar' ? (
               <div style={{ marginTop: 16 }}>
-                <label style={label} htmlFor="lphone">Telefone</label>
+                <label style={label} htmlFor="lphone">{t.driverPhoneLabel}</label>
                 <input id="lphone" style={input} value={login.phone}
                   onChange={(e) => setLogin({ ...login, phone: e.target.value })} />
-                <label style={label} htmlFor="lpin">PIN</label>
+                <label style={label} htmlFor="lpin">{t.driverPinLabel}</label>
                 <input id="lpin" style={input} type="password" inputMode="numeric" value={login.pin}
                   onChange={(e) => setLogin({ ...login, pin: e.target.value })} />
-                <button style={btn} onClick={entrar} disabled={ocupado}>Entrar</button>
+                <button style={btn} onClick={entrar} disabled={ocupado}>{t.driverEnter}</button>
               </div>
             ) : (
               <div style={{ marginTop: 16 }}>
-                <label style={label} htmlFor="rname">Nome completo</label>
+                <label style={label} htmlFor="rname">{t.driverFullName}</label>
                 <input id="rname" style={input} value={reg.name}
                   onChange={(e) => setReg({ ...reg, name: e.target.value })} />
-                <label style={label} htmlFor="rphone">Telefone</label>
+                <label style={label} htmlFor="rphone">{t.driverPhoneLabel}</label>
                 <input id="rphone" style={input} value={reg.phone}
                   onChange={(e) => setReg({ ...reg, phone: e.target.value })} />
-                <label style={label} htmlFor="remail">Email</label>
+                <label style={label} htmlFor="remail">{t.driverEmail}</label>
                 <input id="remail" style={input} type="email" value={reg.email}
                   onChange={(e) => setReg({ ...reg, email: e.target.value })} />
-                <label style={label} htmlFor="rcode">Codigo de convite (opcional)</label>
+                <label style={label} htmlFor="rcode">{t.driverInviteCode}</label>
                 <input id="rcode" style={input} value={reg.inviteCode}
                   onChange={(e) => setReg({ ...reg, inviteCode: e.target.value })} />
-                <button style={btn} onClick={cadastrar} disabled={ocupado}>Criar cadastro</button>
+                <button style={btn} onClick={cadastrar} disabled={ocupado}>{t.driverCreate}</button>
               </div>
             )}
           </div>

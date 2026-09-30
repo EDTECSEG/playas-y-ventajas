@@ -218,14 +218,14 @@ export default function EmpresaPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setShuttleMsg('Não foi possível carregar os serviços de translado.');
+        setShuttleMsg(t.shuttleLoadError);
         setShuttles([]);
         return;
       }
       setShuttles(data || []);
-      if (!(data || []).length) setShuttleMsg('Nenhum serviço de translado cadastrado ainda.');
+      if (!(data || []).length) setShuttleMsg(t.shuttlesEmpty);
     } catch (e) {
-      setShuttleMsg('Não foi possível carregar os serviços.');
+      setShuttleMsg(t.shuttleLoadErrorGeneric);
     } finally {
       setShuttleBusy(false);
     }
@@ -267,18 +267,18 @@ export default function EmpresaPage() {
   }
 
   function useShuttleOrigin() {
-    if (!navigator.geolocation) { setShuttleMsg('Seu navegador não suporta geolocalização.'); return; }
+    if (!navigator.geolocation) { setShuttleMsg(t.shuttleNoGeo); return; }
     navigator.geolocation.getCurrentPosition(
       (pos) => setShuttleForm({ ...shuttleForm, originLat: pos.coords.latitude.toFixed(6), originLng: pos.coords.longitude.toFixed(6) }),
-      (err) => setShuttleMsg(`Não foi possível obter a localização (${err.message}).`),
+      (err) => setShuttleMsg(t.shuttleNoLoc.replace('{err}', err.message)),
       { enableHighAccuracy: true, timeout: 10000 },
     );
   }
 
   async function saveShuttle() {
-    if (!String(shuttleForm.name || '').trim()) { setShuttleMsg('Informe o nome do serviço.'); return; }
+    if (!String(shuttleForm.name || '').trim()) { setShuttleMsg(t.shuttleNameRequired); return; }
     if (!shuttleForm.originLat || !shuttleForm.originLng || !shuttleForm.destLat || !shuttleForm.destLng) {
-      setShuttleMsg('Preencha a origem e o destino (lat/lng).');
+      setShuttleMsg(t.shuttleOriginDestRequired);
       return;
     }
     const stops = String(shuttleForm.stopsText || '')
@@ -298,10 +298,10 @@ export default function EmpresaPage() {
       const data = await res.json();
       if (!res.ok) { setShuttleMsg(`Erro: ${data.error}`); return; }
       setEditingShuttle(null);
-      setShuttleMsg('Serviço salvo com sucesso.');
+      setShuttleMsg(t.shuttleSaved);
       await loadShuttles();
     } catch (e) {
-      setShuttleMsg('Não foi possível salvar o serviço.');
+      setShuttleMsg(t.shuttleSaveError);
     }
   }
 
@@ -316,12 +316,12 @@ export default function EmpresaPage() {
       if (!res.ok) { setShuttleMsg(`Erro: ${data.error}`); return; }
       await loadShuttles();
     } catch (e) {
-      setShuttleMsg('Não foi possível atualizar o serviço.');
+      setShuttleMsg(t.shuttleUpdateError);
     }
   }
 
   async function deleteShuttle(s) {
-    if (!window.confirm(`Apagar o serviço "${s.name}"?`)) return;
+    if (!window.confirm(t.shuttleDeleteConfirm.replace('{name}', s.name))) return;
     try {
       const res = await fetch('/.netlify/functions/empresa', {
         method: 'POST',
@@ -330,10 +330,10 @@ export default function EmpresaPage() {
       });
       const data = await res.json();
       if (!res.ok) { setShuttleMsg(`Erro: ${data.error}`); return; }
-      setShuttleMsg('Serviço apagado.');
+      setShuttleMsg(t.shuttleDeleted);
       await loadShuttles();
     } catch (e) {
-      setShuttleMsg('Não foi possível apagar o serviço.');
+      setShuttleMsg(t.shuttleDeleteError);
     }
   }
 
@@ -437,12 +437,12 @@ export default function EmpresaPage() {
   }
 
   function downloadIgCard() {
-    try { drawIgCard(); } catch (err) { setMsg(`Não foi possível gerar o card (${err.message}).`); return; }
+    try { drawIgCard(); } catch (err) { setMsg(t.igGenerateError.replace('{err}', err.message)); return; }
     const a = document.createElement('a');
     a.download = `pyv-card-${igForm.templateId || 'oferta'}.png`;
     a.href = igCanvasRef.current.toDataURL('image/png');
     a.click();
-    setMsg('Card baixado. Publique no Instagram ou toque em "Abrir Instagram".');
+    setMsg(t.igDownloaded);
   }
 
   const [validateForm, setValidateForm] = useState({ publicId: '', rawToken: '', shortCode: '' });
@@ -1194,7 +1194,7 @@ export default function EmpresaPage() {
             <br />
             <canvas
               ref={igCanvasRef}
-              onClick={() => { try { drawIgCard(); } catch (err) { setMsg(`Erro ao gerar: ${err.message}`); } }}
+              onClick={() => { try { drawIgCard(); } catch (err) { setMsg(t.igGenerateError.replace('{err}', err.message)); } }}
               style={{ width: '100%', maxWidth: 360, height: 360, borderRadius: 12, border: `1px solid ${theme.border}`, background: '#0B6E4F', cursor: 'pointer' }}
             />
             <p style={{ fontSize: 11, color: theme.textMuted }}>{t.igPreviewHint ?? 'Prévia (clique para atualizar). O arquivo baixado tem 1080×1080.'}</p>
@@ -1207,7 +1207,7 @@ export default function EmpresaPage() {
             <div style={{ marginTop: 12 }}>
               <strong style={{ fontSize: 13 }}>{t.igCaption ?? 'Legenda sugerida (toque para copiar):'}</strong>
               <pre
-                onClick={() => { navigator.clipboard?.writeText(igCaptionText()); setMsg('Legenda copiada.'); }}
+                onClick={() => { navigator.clipboard?.writeText(igCaptionText()); setMsg(t.igCaptionCopied); }}
                 style={{
                   whiteSpace: 'pre-wrap', fontSize: 13, background: theme.bg, border: `1px solid ${theme.border}`,
                   borderRadius: 8, padding: 10, cursor: 'pointer', margin: '6px 0 0',

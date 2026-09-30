@@ -50,9 +50,13 @@ function loadLeaflet() {
   });
 }
 
-function shuttleTypeLabel(type) {
-  const labels = { shuttle: 'Translado compartilhado', transfer: 'Transfer privativo', tour: 'Tour / passeio' };
-  return labels[type] || type || 'Translado';
+function shuttleTypeLabel(type, t) {
+  const labels = {
+    shuttle: t.shuttleTypeShuttle ?? 'Translado compartilhado',
+    transfer: t.shuttleTypeTransfer ?? 'Privativo',
+    tour: t.shuttleTypeTour ?? 'Tour',
+  };
+  return labels[type] || type || (t.shuttleTypeShuttle ?? 'Translado');
 }
 
 // --- Agendamento de translado (helpers puros, no mesmo estilo de shuttleTypeLabel)
@@ -107,22 +111,26 @@ function formatPrice(cents) {
   return cents === null || cents === undefined ? null : `R$ ${(Number(cents) / 100).toFixed(2)}`;
 }
 
-function formatWhen(iso) {
+function formatWhen(iso, lang) {
   if (!iso) return '';
+  const bcp = { pt: 'pt-BR', en: 'en-US', es: 'es-ES' }[lang] || 'pt-BR';
   try {
-    return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    return new Date(iso).toLocaleString(bcp, { dateStyle: 'short', timeStyle: 'short' });
   } catch (e) {
     return String(iso);
   }
 }
 
-const RESERVATION_STATUS_LABELS = {
-  pending: 'Aguardando empresa',
-  confirmed: 'Confirmada',
-  cancelled: 'Cancelada',
-  rejected: 'Recusada',
-  completed: 'Concluída',
-};
+function reservationStatusLabel(status, t) {
+  const map = {
+    pending: t.resStatusPending,
+    confirmed: t.resStatusConfirmed,
+    cancelled: t.resStatusCancelled,
+    rejected: t.resStatusRejected,
+    completed: t.resStatusCompleted,
+  };
+  return map[status] || status;
+}
 
 // Link de WhatsApp no mesmo formato de netlify/functions/_wa.js (wa.me, sem API,
 // sem custo). O telefone vem SEMPRE da RPC (businessPhone), nunca digitado
@@ -172,17 +180,17 @@ function reservationWaMessage(res) {
   return linhas.join('\n');
 }
 
-function timeAgo(iso) {
+function timeAgo(iso, t) {
   if (!iso) return '';
   const secs = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
-  if (secs < 60) return 'agora';
+  if (secs < 60) return t.timeAgoNow ?? 'agora';
   const mins = Math.round(secs / 60);
-  if (mins < 60) return `há ${mins} min`;
-  return `há ${Math.round(mins / 60)} h`;
+  if (mins < 60) return (t.timeAgoMin ?? 'há {n} min').replace('{n}', mins);
+  return (t.timeAgoHour ?? 'há {n} h').replace('{n}', Math.round(mins / 60));
 }
 
 export default function ClientePage() {
-  const { t } = useLanguage();
+  const { lang, t } = useLanguage();
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [instagram, setInstagram] = useState('');
@@ -1069,7 +1077,7 @@ export default function ClientePage() {
                   }}>
                     <strong>{s.name}</strong>
                     {s.distanceKm != null && <span style={{ fontSize: 12, color: theme.textMuted }}> · {Number(s.distanceKm).toFixed(1)} km</span>}
-                    <div style={{ fontSize: 12, color: theme.textMuted }}>{s.businessName} · {shuttleTypeLabel(s.serviceType)}</div>
+                    <div style={{ fontSize: 12, color: theme.textMuted }}>{s.businessName} · {shuttleTypeLabel(s.serviceType, t)}</div>
                     {s.description && <div style={{ fontSize: 12, marginTop: 4 }}>{s.description}</div>}
                     <div style={{ fontSize: 12, marginTop: 4 }}>
                       {s.priceCents != null ? `R$ ${(s.priceCents / 100).toFixed(2)}` : (t.transladoPrice ?? 'Preço a combinar')}
@@ -1180,7 +1188,7 @@ export default function ClientePage() {
                     <div style={{ fontSize: 12, color: theme.textMuted }}>
                       {v.distanceKm != null && `${Number(v.distanceKm).toFixed(1)} km`}
                       {v.speedKmh != null && ` · ${Number(v.speedKmh)} km/h`}
-                      {` · atualizado ${timeAgo(v.recordedAt)}`}
+                      {` · ${(t.vehicleUpdated ?? 'atualizado {time}').replace('{time}', timeAgo(v.recordedAt, t))}`}
                     </div>
                   </div>
                 ))}
@@ -1198,7 +1206,7 @@ export default function ClientePage() {
             {justBooked.businessName ? ` · ${justBooked.businessName}` : ''}
           </p>
           <p style={{ fontSize: 13, margin: 0 }}>
-            {formatWhen(justBooked.scheduledFor)} · {justBooked.passengers} {t.reservePassengers ?? 'passageiros'}
+            {formatWhen(justBooked.scheduledFor, lang)} · {justBooked.passengers} {t.reservePassengers ?? 'passageiros'}
             {formatPrice(justBooked.priceCents)
               ? ` · ${formatPrice(justBooked.priceCents)}`
               : ` · ${t.transladoPrice ?? 'Preço a combinar'}`}
@@ -1265,10 +1273,10 @@ export default function ClientePage() {
                     fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999,
                     background: r.status === 'confirmed' ? theme.greenLight : (r.status === 'cancelled' || r.status === 'rejected' ? '#FDECEC' : theme.gold),
                     color: r.status === 'confirmed' ? theme.green : (r.status === 'cancelled' || r.status === 'rejected' ? '#B42318' : theme.greenDark),
-                  }}>{RESERVATION_STATUS_LABELS[r.status] || r.status}</span>
+                  }}>{reservationStatusLabel(r.status, t)}</span>
                 </div>
                 <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 4 }}>
-                  {formatWhen(r.scheduledFor)} · {r.passengers} {t.reservePassengers ?? 'passageiros'}
+                  {formatWhen(r.scheduledFor, lang)} · {r.passengers} {t.reservePassengers ?? 'passageiros'}
                   {r.businessName ? ` · ${r.businessName}` : ''}
                 </div>
                 {r.reason && <div style={{ fontSize: 12, marginTop: 4 }}>{t.reserveReason ?? 'Motivo:'} {r.reason}</div>}
