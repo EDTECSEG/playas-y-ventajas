@@ -36,6 +36,56 @@ const smallBtn = { ...btn, padding: '5px 12px', fontSize: 12 };
 // nao acontecia. O texto da opcao continua em portugues para o usuario.
 const KIND_LABEL = { customer: 'Cliente', driver: 'Motorista', business: 'Empresa' };
 
+// O extrato mostra DUAS datas e nao as junta numa so, porque nao sao o
+// mesmo evento:
+//   - converted_at e quando a indicacao converteu, que dispara no CLAIM (a
+//     pessoa pegou o cupom). E quando o afiliado ganha a recompensa.
+//   - resgatadoEm vem de coupons.validated_at, que e quando o cupom foi
+//     validado no caixa, e pode ser muito depois ou nunca acontecer.
+// Chamar o cupom de "resgatado" quando ele so foi pego faz o afiliado contar
+// uma recompensa que ainda nao existe, que e exatamente o numero que ele usa
+// para decidir se vale continuar divulgando.
+function dataCurta(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString('pt-BR');
+}
+
+// benefit_type vem do banco como texto livre ('percent' e o caso usual, mas o
+// CHECK nao obliga). Traduzir por igualdade seria chutar: qualquer valor
+// desconhecido e repassado como veio, em vez de virar "undefined%" na tela.
+function beneficioLabel(tipo, valor) {
+  if (valor === null || valor === undefined || valor === '') return null;
+  // A variavel nao se chama "t" de proposito: em app/ esse prefixo de uma
+  // letra identifica a funcao de traducao, e o teste de i18n le qualquer
+  // chamada com esse prefixo como chave usada. Com o nome "t", o
+  // String.prototype.includes desta funcao entrava na lista de chaves
+  // faltando e quebrava a suite sem ter nada a ver com traducao.
+  const tipoNorm = String(tipo || '').toLowerCase();
+  if (tipoNorm.includes('percent')) return `${valor}%`;
+  if (tipoNorm.includes('fixed') || tipoNorm.includes('money') || tipoNorm.includes('cash')) {
+    return `R$ ${Number(valor).toFixed(2).replace('.', ',')}`;
+  }
+  return `${tipo ? tipo + ' ' : ''}${valor}`;
+}
+
+// O rotulo precisa dizer qual dos dois eventos aconteceu, senao o afiliado
+// le "12/09" e nao sabe se e a data em que o premio caiu ou a data em que o
+// cliente usou o cupom.
+function statusResgate(r) {
+  if (r.status !== 'converted') return { rotulo: 'Aguardando a pessoa pegar um cupom', cor: theme.textMuted };
+  if (r.resgatadoEm) return { rotulo: 'Resgatado no caixa', cor: theme.greenDark };
+  if (r.cupomCodigo) return { rotulo: 'Cupom em mãos, ainda não usado', cor: theme.textMuted };
+  return { rotulo: 'Convertida, cupom não localizado', cor: theme.textMuted };
+}
+
+function quandoResgate(r) {
+  if (r.resgatadoEm) return { data: dataCurta(r.resgatadoEm), de: 'usou o cupom' };
+  if (r.cupomEm) return { data: dataCurta(r.cupomEm), de: 'pegou o cupom' };
+  if (r.indicadoEm) return { data: dataCurta(r.indicadoEm), de: 'entrou pelo link' };
+  return { data: '—', de: '' };
+}
+
 export default function AfiliadoPage() {
   const [affiliate, setAffiliate] = useState(null); // { affiliateId, referralCode, name, phone, kind }
   const [form, setForm] = useState({ name: '', phone: '', email: '', kind: 'customer' });
@@ -248,6 +298,8 @@ export default function AfiliadoPage() {
                   ['Convertidas', dash.converted ?? 0],
                   ['Pendentes', dash.pending ?? 0],
                   ['Premiadas', dash.rewardCoupons ?? 0],
+                  ['Cupons na mão', dash.cuponsPegos ?? 0],
+                  ['Cupons no caixa', dash.cuponsResgatados ?? 0],
                 ].map(([label, value]) => (
                   <div key={label} style={{ flex: '1 1 90px', background: theme.bg, borderRadius: 10, padding: 10, textAlign: 'center', border: `1px solid ${theme.border}` }}>
                     <div style={{ fontSize: 22, fontWeight: 900, color: theme.greenDark }}>{value}</div>
@@ -258,16 +310,51 @@ export default function AfiliadoPage() {
               <p style={{ fontSize: 12, color: theme.textMuted, marginTop: 0 }}>
                 Recompensa: {dash.rewardStatus === 'active' ? 'ativa' : dash.rewardStatus || '—'} · Afiliado desde {new Date(dash.createdAt).toLocaleDateString('pt-BR')}
               </p>
-              {(dash.referrals || []).length === 0 ? (
-                <p style={{ fontSize: 13 }}>Nenhuma indicação ainda. Compartilhe seu link para começar!</p>
+
+              {/* Extrato. A lista antiga mostrava so nome + status e nao dizia
+                  qual cupom a pessoa pegou nem se chegou a usar, que e o
+                  numero que o afiliado precisa para calcular ganho. */}
+              <h4 style={{ margin: '18px 0 8px' }}>Extrato de resgates</h4>
+              {(dash.resgates || []).length === 0 ? (
+                <p style={{ fontSize: 13 }}>
+                  Nenhum resgate ainda. Assim que alguém entrar pelo seu link e
+                  pegar um cupom, ele aparece aqui.
+                </p>
               ) : (
-                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.9 }}>
-                  {(dash.referrals || []).map((r) => (
-                    <li key={r.id}>
-                      {r.referredName || r.referredPhone || 'Anônimo'} — {r.status === 'converted' ? '✅ convertido' : r.status === 'pending' ? '⏳ pendente' : r.status}
-                      {r.convertedAt ? ` · ${new Date(r.convertedAt).toLocaleDateString('pt-BR')}` : ''}
-                    </li>
-                  ))}
+                <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                  {(dash.resgates || []).map((r) => {
+                    const st = statusResgate(r);
+                    const quando = quandoResgate(r);
+                    const beneficio = beneficioLabel(r.beneficioTipo, r.beneficioValor);
+                    return (
+                      <li
+                        key={r.id}
+                        style={{ borderTop: `1px solid ${theme.border}`, padding: '10px 0', fontSize: 13 }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                          <strong>{r.indicado || r.telefone || 'Anônimo'}</strong>
+                          <span style={{ color: st.cor, fontWeight: 700 }}>{st.rotulo}</span>
+                        </div>
+                        <div style={{ color: theme.textMuted, marginTop: 2 }}>
+                          {quando.de ? `${quando.data} · ${quando.de}` : quando.data}
+                        </div>
+                        {r.cupomCodigo && (
+                          <div style={{ marginTop: 4 }}>
+                            {r.cupom || 'Cupom'}
+                            {beneficio ? ` · ${beneficio}` : ''}
+                            {r.estabelecimento ? ` · ${r.estabelecimento}` : ''}
+                            {' · '}
+                            <code style={{ fontSize: 12 }}>{r.cupomCodigo}</code>
+                          </div>
+                        )}
+                        {r.premioCodigo && (
+                          <div style={{ color: theme.textMuted, marginTop: 2, fontSize: 12 }}>
+                            Sua recompensa: <code>{r.premioCodigo}</code>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>

@@ -17,6 +17,26 @@
 -- Publico + seguro: exige p_affiliate_id E p_phone iguais ao banco.
 -- Sem telefone certo nao devolve nada. Usa STABLE e leitura direta
 -- (chamada com a chave service_role nos handlers).
+--
+-- Devolve duas visoes do MESMO conjunto de linhas, montadas na mesma
+-- agregacao:
+--   referrals -> a lista simples de sempre (quem indicou, status, data)
+--   resgates   -> o extrato: qual cupom a pessoa pegou, em qual
+--                estabelecimento, com quanto de desconto e se chegou a
+--                ser usado no balcao
+--
+-- Duas semanticas que confundem quem le isso:
+--   - converted_at e a conversao da indicacao, que dispara no CLAIM
+--     (a pessoa pegou o cupom), nao na validacao no caixa. A recompensa do
+--     afiliado e creditada nesse momento.
+--   - o resgate no balcao e coupons.validated_at, que pode ser muito depois
+--     ou nunca acontecer. Por isso o extrato mostra as duas datas e o status
+--     do cupom, em vez de chamar o cupom de "resgatado" quando so foi pego.
+--
+-- O cupom da pessoa e o PRIMEIRO emitido depois da indicacao: e o que
+-- disparou a conversao. Filtrar por status = 'VALIDATED' daria a resposta
+-- errada, porque mostraria o cupom de outra visita e esconderia o cupom
+-- pego e nunca usado.
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.affiliate_dashboard(
   p_tenant_id uuid,
@@ -30,6 +50,45 @@ CREATE OR REPLACE FUNCTION public.affiliate_dashboard(
  STABLE
  SET search_path = public, extensions
 AS $function$
+  -- Uma unica CTE monta a linha, ja com o cupom da pessoa. As contagens e os
+  -- dois jsonb_agg sao lidos DEPOIS, no mesmo nivel: nada de contagem dentro
+  -- de agregacao, que e o que fez admin_affiliate_report estourar com 42803.
+  with indicacoes as (
+    select r.id,
+           r.status,
+           r.created_at,
+           r.converted_at,
+           r.reward_coupon_id,
+           u.name as referred_name,
+           u.phone as referred_phone,
+           c.public_id,
+           c.status as coupon_status,
+           c.issued_at,
+           c.validated_at,
+           t.title,
+           t.benefit_type,
+           t.benefit_value,
+           biz.name as business_name,
+           premio.public_id as reward_public_id
+    from public.referrals r
+    left join public.users u on u.id = r.referred_user_id
+    left join lateral (
+      select co.public_id, co.status, co.issued_at, co.validated_at,
+             co.template_id, co.business_id
+      from public.coupons co
+      where co.customer_id = r.referred_user_id
+        and co.issued_at >= r.created_at
+      order by co.issued_at asc
+      limit 1
+    ) c on true
+    left join public.coupon_templates t on t.id = c.template_id
+    left join public.businesses biz on biz.id = c.business_id
+    left join public.coupons premio on premio.id = r.reward_coupon_id
+    where r.tenant_id = p_tenant_id
+      and r.affiliate_id = p_affiliate_id
+      and (p_de is null or r.created_at >= p_de)
+      and (p_ate is null or r.created_at < p_ate)
+  )
   select jsonb_build_object(
     'affiliateId', a.id,
     'name', a.name,
@@ -38,27 +97,44 @@ AS $function$
     'kind', a.kind,
     'rewardStatus', a.reward_status,
     'createdAt', a.created_at,
-    'totalReferrals', count(r.id),
-    'converted', count(r.id) filter (where r.status = 'converted'),
-    'pending', count(r.id) filter (where r.status = 'pending'),
-    'rewardCoupons', count(r.id) filter (where r.reward_coupon_id is not null),
+    'totalReferrals', count(i.id),
+    'converted', count(i.id) filter (where i.status = 'converted'),
+    'pending', count(i.id) filter (where i.status = 'pending'),
+    'rewardCoupons', count(i.id) filter (where i.reward_coupon_id is not null),
+    'cuponsPegos', count(i.id) filter (where i.public_id is not null),
+    'cuponsResgatados', count(i.id) filter (where i.validated_at is not null),
     'referrals', coalesce(jsonb_agg(
       jsonb_build_object(
-        'id', r.id,
-        'status', r.status,
-        'convertedAt', r.converted_at,
-        'createdAt', r.created_at,
-        'referredName', u.name,
-        'referredPhone', u.phone
-      ) order by r.created_at desc
-    ) filter (where r.id is not null), '[]'::jsonb)
+        'id', i.id,
+        'status', i.status,
+        'convertedAt', i.converted_at,
+        'createdAt', i.created_at,
+        'referredName', i.referred_name,
+        'referredPhone', i.referred_phone
+      ) order by i.created_at desc
+    ) filter (where i.id is not null), '[]'::jsonb),
+    'resgates', coalesce(jsonb_agg(
+      jsonb_build_object(
+        'id', i.id,
+        'status', i.status,
+        'indicado', i.referred_name,
+        'telefone', i.referred_phone,
+        'indicadoEm', i.created_at,
+        'convertidoEm', i.converted_at,
+        'cupom', i.title,
+        'cupomCodigo', i.public_id,
+        'cupomStatus', i.coupon_status,
+        'beneficioTipo', i.benefit_type,
+        'beneficioValor', i.benefit_value,
+        'estabelecimento', i.business_name,
+        'cupomEm', i.issued_at,
+        'resgatadoEm', i.validated_at,
+        'premioCodigo', i.reward_public_id
+      ) order by coalesce(i.validated_at, i.issued_at, i.created_at) desc
+    ) filter (where i.id is not null), '[]'::jsonb)
   )
   from public.affiliates a
-  left join public.referrals r
-         on r.affiliate_id = a.id
-        and (p_de is null or r.created_at >= p_de)
-        and (p_ate is null or r.created_at < p_ate)
-  left join public.users u on u.id = r.referred_user_id
+  left join indicacoes i on true
   where a.id = p_affiliate_id
     and a.tenant_id = p_tenant_id
     -- Compara os DIGITOS, nao o texto: o telefone volta do navegador como a
