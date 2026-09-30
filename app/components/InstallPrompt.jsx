@@ -44,7 +44,10 @@ export default function InstallPrompt() {
     : t.installClient;
 
   return (
-    <div style={{ background: '#F2C14E', color: '#0B6E4F', padding: '8px 16px', textAlign: 'center', fontSize: 13, fontWeight: 600 }}>
+    <div
+      className="app-install-prompt"
+      style={{ background: '#F2C14E', color: '#0B6E4F', padding: '8px 16px', textAlign: 'center', fontSize: 13, fontWeight: 600 }}
+    >
       📲 <button onClick={handleClick} style={{ background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', color: '#0B6E4F', fontWeight: 700, fontSize: 13 }}>
         {moduleLabel}
       </button>

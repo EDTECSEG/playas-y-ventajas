@@ -27,7 +27,9 @@ const path = require('node:path');
 const PAGE = path.join(__dirname, '..', 'app', 'afiliado', 'page.jsx');
 const src = readFileSync(PAGE, 'utf8');
 
-const ESTILO = src.slice(src.indexOf('<style>'), src.indexOf('</style>'));
+// So o conteudo do bloco de estilo, sem as tags: assim o teste de chevron
+// nao casa com a propria tag de abertura.
+const ESTILO = src.slice(src.indexOf('<style>') + '<style>'.length, src.indexOf('</style>'));
 
 test('a folha fica escondida na tela e e a unica coisa que sai na impressora', () => {
   assert.match(ESTILO, /\.pyv-sheet\s*\{\s*display:\s*none/, 'a folha precisa sumir na tela');
@@ -68,6 +70,38 @@ test('o cartaz e montado dentro de .pyv-sheet, fora do wrapper de tela', () => {
   // A folha so existe para quem ja tem cadastro: antes disso nao ha link nem
   // codigo para imprimir.
   assert.match(src, /\{affiliate && \(\s*<div className="pyv-sheet"/);
+});
+
+test('nada fora da folha entra no papel', () => {
+  // O InstallPrompt vem do layout, antes do main e fora do .pyv-screen: sem
+  // esta regra a faixa amarela de instalar o app sai impressa no topo do
+  // cartaz. Esconder por classe, e nao por seletor de filho.
+  assert.match(ESTILO, /@media print[\s\S]*\.app-install-prompt\s*\{\s*display:\s*none\s*!important/);
+  assert.match(ESTILO, /@media print[\s\S]*\.pyv-screen\s*\{\s*display:\s*none\s*!important/);
+
+  // A classe precisa existir no componente que o layout renderiza.
+  const PROMPT = readFileSync(path.join(__dirname, '..', 'app', 'components', 'InstallPrompt.jsx'), 'utf8');
+  assert.match(PROMPT, /className="app-install-prompt"/, 'o InstallPrompt precisa da classe que a folha esconde');
+});
+
+test('o main para de valer a altura da tela na impressao', () => {
+  // main tem min-height:100vh para cobrir a tela. Na impressao 100vh e a altura
+  // da folha: o main ocuparia uma pagina inteira e, com a margem do @page,
+  // empurraria uma segunda folha em branco para tras do cartaz.
+  assert.match(src, /<main style=\{\{ background: theme\.bg, minHeight: '100vh' \}\}>/);
+  assert.match(ESTILO, /@media print[\s\S]*main\s*\{[\s\S]*min-height:\s*0\s*!important/);
+});
+
+test('nenhum texto com chevron de tag dentro do bloco de estilo', () => {
+  // Regressao: escrever uma tag com chevron num comentario de CSS fazia o
+  // servidor escapar para &lt; e o cliente nao, o React acusava hydration
+  // mismatch e jogava o HTML inteiro fora.
+  assert.ok(!ESTILO.includes('&lt;'), 'nao deve haver escape de HTML dentro do CSS');
+  assert.ok(!/<style|<\/style/.test(ESTILO), 'nao escrever tags com chevron dentro do CSS: quebra o hydration');
+  // O mesmo vale para o chevron de combinador: no HTML exportado ele vira
+  // &gt;, que o texto de um bloco de estilo nao decodifica, e o seletor
+  // chegaria invalido. Por isso a folha nao usa seletor de filho.
+  assert.ok(!/[a-z0-9)\]]\s+>/.test(ESTILO.replace(/&gt;/g, '')), 'evite seletor de combinador filho no CSS da folha');
 });
 
 test('o QR e desenhado nos dois pontos, com o da folha em tamanho de leitura', () => {

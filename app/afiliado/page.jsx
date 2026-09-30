@@ -139,10 +139,19 @@ export default function AfiliadoPage() {
     <main style={{ background: theme.bg, minHeight: '100vh' }}>
       <style>{`
         /* Folha de divulgacao: escondida na tela, e a unica coisa que sai na
-           impressora. O padrao e o mesmo do <style> escopado do /cliente. */
+           impressora. O padrao e o mesmo do bloco de estilo escopado que o
+           /cliente usa. Nao escrever tags com chevron aqui dentro: o servidor
+           escapa o texto do style e o React acusa hydration mismatch. */
         .pyv-sheet { display: none; }
         @media print {
           .pyv-screen { display: none !important; }
+          /* O InstallPrompt vem do layout e e renderizado antes do main, fora
+             do .pyv-screen: a faixa amarela de instalar o app sairia no topo
+             do cartaz. Esconder por classe e nao por seletor de filho
+             porque o chevron de combinador precisa virar &gt; no HTML
+             exportado, e o texto de um bloco de estilo nao e decodificado: o
+             seletor chegaria invalido e a regra seria descartada. */
+          .app-install-prompt { display: none !important; }
           .pyv-sheet {
             display: block !important;
             background: #fff;
@@ -155,6 +164,11 @@ export default function AfiliadoPage() {
              grande existe por causa do cabecalho automatico do navegador, que
              some quando a margem e 0. */
           @page { size: A4 portrait; margin: 12mm; }
+          /* O main tem min-height: 100vh para cobrir a tela. Na impressao 100vh
+             e a altura da folha: o main ocuparia uma pagina inteira e, somado
+             a margem do @page, empurraria uma segunda folha em branco para
+             tras do cartaz. */
+          main { min-height: 0 !important; background: #fff !important; }
           /* Sem isso o Chrome descarta o fundo do box e o cartaz sai sem a
              moldura verde. Vale para a folha e para tudo dentro dela. */
           .pyv-sheet, .pyv-sheet * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
