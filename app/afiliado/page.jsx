@@ -5,12 +5,12 @@
 //
 // Os textos desta tela ainda ficam em portugues literal. A nota antiga dizia
 // que era por causa de uma alteracao em lib/i18n.js que ja terminou: as
-// strings migram para t.* (pt/en/es) em um lote proprio, junto da folha
-// impressa de divulgacao.
+// strings migram para t.* (pt/en/es) em um lote proprio. A folha impressa de
+// divulgacao entrou em portugues junto com o resto da tela, para nao deixar
+// metade dela em outro idioma.
 
 import { useEffect, useRef, useState } from 'react';
 import Header from '../components/Header';
-import ModuleSplash from '../components/ModuleSplash';
 import { theme } from '../../lib/theme';
 
 function loadQrCode() {
@@ -37,7 +37,6 @@ const smallBtn = { ...btn, padding: '5px 12px', fontSize: 12 };
 const KIND_LABEL = { customer: 'Cliente', driver: 'Motorista', business: 'Empresa' };
 
 export default function AfiliadoPage() {
-  const [splashDone, setSplashDone] = useState(false);
   const [affiliate, setAffiliate] = useState(null); // { affiliateId, referralCode, name, phone, kind }
   const [form, setForm] = useState({ name: '', phone: '', email: '', kind: 'customer' });
   const [busy, setBusy] = useState(false);
@@ -45,6 +44,7 @@ export default function AfiliadoPage() {
   const [msg, setMsg] = useState('');
   const [shareUrl, setShareUrl] = useState('');
   const qrRef = useRef(null);
+  const qrSheetRef = useRef(null);
 
   useEffect(() => {
     setShareUrl(`${window.location.origin}/?ref=${encodeURIComponent((affiliate && affiliate.referralCode) || '')}`);
@@ -61,15 +61,22 @@ export default function AfiliadoPage() {
     } catch (e) { /* sem afiliado salvo */ }
   }, []);
 
+  // O mesmo QR e desenhado em dois pontos: o card de compartilhamento e a
+  // folha de divulgacao. Nao da para reaproveitar o canvas da tela, porque a
+  // folha precisa dele em tamanho de leitura (o de tela e pequeno demais
+  // para quem recebe o papel) e impressora precisa de um no proprio ponto.
   useEffect(() => {
-    if (!shareUrl || !qrRef.current) return;
+    if (!shareUrl) return;
     let cancelled = false;
     (async () => {
       try {
         const QRCode = await loadQrCode();
-        if (cancelled || !qrRef.current) return;
-        qrRef.current.innerHTML = '';
-        new QRCode(qrRef.current, { text: shareUrl, width: 180, height: 180 });
+        if (cancelled) return;
+        [qrRef, qrSheetRef].forEach((ref) => {
+          if (!ref.current) return;
+          ref.current.innerHTML = '';
+          new QRCode(ref.current, { text: shareUrl, width: 200, height: 200 });
+        });
       } catch (e) { /* QR opcional */ }
     })();
     return () => { cancelled = true; };
@@ -130,8 +137,40 @@ export default function AfiliadoPage() {
 
   return (
     <main style={{ background: theme.bg, minHeight: '100vh' }}>
-      <ModuleSplash visible={!splashDone} onDone={() => setSplashDone(true)} />
+      <style>{`
+        /* Folha de divulgacao: escondida na tela, e a unica coisa que sai na
+           impressora. O padrao e o mesmo do <style> escopado do /cliente. */
+        .pyv-sheet { display: none; }
+        @media print {
+          .pyv-screen { display: none !important; }
+          .pyv-sheet {
+            display: block !important;
+            background: #fff;
+            color: #14321F;
+            /* padding/max-width sao inline na folha, e inline ganha de regra
+               de classe: sem !important o papel sairia com a margem da tela. */
+            padding: 0 !important;
+          }
+          /* @page e respeitado pelo Chrome/Safari/Edge ao imprimir. O topo
+             grande existe por causa do cabecalho automatico do navegador, que
+             some quando a margem e 0. */
+          @page { size: A4 portrait; margin: 12mm; }
+          /* Sem isso o Chrome descarta o fundo do box e o cartaz sai sem a
+             moldura verde. Vale para a folha e para tudo dentro dela. */
+          .pyv-sheet, .pyv-sheet * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .pyv-sheet-box {
+            border: 2px solid #0B6E4F;
+            border-radius: 10px;
+            padding: 10mm 8mm;
+            page-break-inside: avoid;
+          }
+          .pyv-sheet-qr { width: 46mm; height: 46mm; }
+          .pyv-sheet-step { page-break-inside: avoid; }
+        }
+      `}</style>
+      <div className="pyv-screen">
       <Header title="🤝 Afiliados — Playas y Ventajas" />
+
       <div style={wrap}>
 
         {!affiliate ? (
@@ -168,8 +207,19 @@ export default function AfiliadoPage() {
             </div>
             <div ref={qrRef} style={{ display: 'flex', justifyContent: 'center', margin: '6px 0' }} />
             <p style={{ fontSize: 12, color: theme.textMuted, margin: '6px 0 0' }}>
-              Quem entra pelo seu link e resgata um cupom pela primeira vez também ganha um bônus de boas-vindas.
+              Quer entregar em papel? A folha sai pelo próprio navegador — em "Imprimir" escolha "Salvar em PDF" para mandar por WhatsApp.
             </p>
+            <button
+              style={{ ...smallBtn, marginTop: 8 }}
+              onClick={() => {
+                // A folha vive no DOM o tempo todo, so invisivel na tela: assim
+                // nao ha estado de "abriu a folha?" para sincronizar, e o que
+                // sai na impressora e sempre a versao atual do link.
+                window.print();
+              }}
+            >
+              🖨 Imprimir minha folha
+            </button>
             <button style={{ ...smallBtn, background: theme.border, color: theme.text }} onClick={() => { setAffiliate(null); setDash(null); try { localStorage.removeItem('pyv_affiliate'); } catch (e) { /* sem storage */ } setForm({ name: '', phone: '', email: '', kind: 'customer' }); }}>
               Sair deste perfil
             </button>
@@ -213,6 +263,81 @@ export default function AfiliadoPage() {
 
         {msg && <p style={{ fontSize: 13, color: theme.greenDark, fontWeight: 600 }}>{msg}</p>}
       </div>
+      </div>
+
+      {/* Folha de divulgacao em papel. O PDF sai daqui pelo proprio
+          navegador (Imprimir > Salvar em PDF), sem passar por servidor: nao ha
+          pagina, template ou fonta carregando, e o proprio afiliado pode
+          reimprimir quantas vezes quiser. */}
+      {affiliate && (
+        <div className="pyv-sheet" style={{ padding: '24px 20px 40px', maxWidth: 720, margin: '0 auto' }}>
+          <div className="pyv-sheet-box">
+            <p style={{ margin: 0, fontSize: 11, letterSpacing: 2, textTransform: 'uppercase', color: '#0B6E4F' }}>
+              Playas y Ventajas · Cabo Frio
+            </p>
+            <h1 style={{ margin: '4px 0 2px', fontSize: 26, lineHeight: 1.2 }}>
+              Ganhe desconto em cada indicação
+            </h1>
+            <p style={{ margin: '0 0 6mm', fontSize: 14 }}>
+              Indique um amigo, ele resgata um cupom e os dois ganham bônus. Sem cadastro e sem senha.
+            </p>
+
+            <div style={{ display: 'flex', gap: '8mm', alignItems: 'center' }}>
+              <div>
+                <div ref={qrSheetRef} className="pyv-sheet-qr" />
+                <p style={{ margin: '3mm 0 0', fontSize: 10, color: '#4A6B5B' }}>
+                  Aponte a câmera
+                </p>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 10, letterSpacing: 1, textTransform: 'uppercase', color: '#4A6B5B' }}>
+                  Seu link pessoal
+                </p>
+                <p style={{ margin: '1mm 0 4mm', fontFamily: 'monospace', fontSize: 12, wordBreak: 'break-all' }}>
+                  {shareUrl}
+                </p>
+                <p style={{ margin: 0, fontSize: 10, letterSpacing: 1, textTransform: 'uppercase', color: '#4A6B5B' }}>
+                  Ou digite o código
+                </p>
+                <p style={{ margin: '1mm 0 4mm', fontSize: 22, fontWeight: 800, letterSpacing: 2, fontFamily: 'monospace' }}>
+                  {affiliate.referralCode}
+                </p>
+                <p style={{ margin: 0, fontSize: 10, letterSpacing: 1, textTransform: 'uppercase', color: '#4A6B5B' }}>
+                  Fale com quem indicou
+                </p>
+                <p style={{ margin: '1mm 0 0', fontSize: 13, fontFamily: 'monospace' }}>
+                  {affiliate.phone}
+                </p>
+              </div>
+            </div>
+
+            <hr style={{ border: 0, borderTop: '1px solid #C9DED3', margin: '7mm 0 5mm' }} />
+
+            <div className="pyv-sheet-step" style={{ display: 'flex', gap: '5mm' }}>
+              {[
+                ['1', 'A pessoa entra pelo QR ou pelo link e se cadastra com o telefone.'],
+                ['2', 'Ela pega um cupom e mostra no caixa do estabelecimento.'],
+                ['3', 'O cupom é validado na hora e os dois recebem o bônus.'],
+              ].map(([n, texto]) => (
+                <div key={n} style={{ flex: 1, fontSize: 11.5, lineHeight: 1.5 }}>
+                  <span style={{
+                    display: 'inline-block', width: 17, height: 17, lineHeight: '17px', textAlign: 'center',
+                    borderRadius: '50%', background: '#0B6E4F', color: '#fff', fontWeight: 800, fontSize: 11, marginRight: 5,
+                  }}>{n}</span>
+                  {texto}
+                </div>
+              ))}
+            </div>
+
+            <p style={{ margin: '6mm 0 0', fontSize: 10, color: '#4A6B5B', lineHeight: 1.5 }}>
+              {dash && dash.rewardStatus === 'active'
+                ? 'Bônus de boas-vindas ativo para quem é indicado e para quem indicou.'
+                : 'Peça confirmação ao estabelecimento sobre o bônus de boas-vindas antes de distribuir.'}
+              {' '}Indicação feita por {affiliate.name}. O cupom é validado uma única vez, na data da visita.
+            </p>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
