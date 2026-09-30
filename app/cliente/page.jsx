@@ -55,6 +55,123 @@ function shuttleTypeLabel(type) {
   return labels[type] || type || 'Translado';
 }
 
+// --- Agendamento de translado (helpers puros, no mesmo estilo de shuttleTypeLabel)
+
+// 0=domingo, igual ao active_days de shuttle_services.
+function dayOfWeekIso(dateStr) {
+  const parts = String(dateStr || '').split('-').map(Number);
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return null;
+  return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2])).getUTCDay();
+}
+
+function minutesOf(hhmm) {
+  const parts = String(hhmm || '').split(':').map(Number);
+  if (parts.length < 2 || !Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) return null;
+  return parts[0] * 60 + parts[1];
+}
+
+// Slots de 30 min dentro de opens_at..closes_at, filtrados por active_days.
+// Sem janela ou sem dia escolhido a lista e vazia — o painel mostra o motivo em
+// vez de oferecer horario que o banco vai recusar com OUTSIDE_HOURS.
+// nowMinutes existe para poder filtrar o dia de hoje; null = nao filtra.
+function bookingSlots(service, dateStr, nowMinutes) {
+  if (!service || !dateStr) return [];
+  const days = Array.isArray(service.activeDays) ? service.activeDays : [];
+  const dow = dayOfWeekIso(dateStr);
+  if (dow === null) return [];
+  if (days.length > 0 && !days.map(Number).includes(dow)) return [];
+
+  const opens = minutesOf(service.opensAt);
+  const closes = minutesOf(service.closesAt);
+  if (opens === null || closes === null || closes < opens) return [];
+
+  const out = [];
+  for (let m = opens; m <= closes; m += 30) {
+    if (nowMinutes !== null && nowMinutes !== undefined && m <= nowMinutes) continue;
+    out.push(`${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`);
+  }
+  return out;
+}
+
+function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function nowMinutesLocal() {
+  const d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+function formatPrice(cents) {
+  return cents === null || cents === undefined ? null : `R$ ${(Number(cents) / 100).toFixed(2)}`;
+}
+
+function formatWhen(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  } catch (e) {
+    return String(iso);
+  }
+}
+
+const RESERVATION_STATUS_LABELS = {
+  pending: 'Aguardando empresa',
+  confirmed: 'Confirmada',
+  cancelled: 'Cancelada',
+  rejected: 'Recusada',
+  completed: 'Concluída',
+};
+
+// Link de WhatsApp no mesmo formato de netlify/functions/_wa.js (wa.me, sem API,
+// sem custo). O telefone vem SEMPRE da RPC (businessPhone), nunca digitado
+// aqui. A funcao do servidor continua sendo a copia canonica para os handlers;
+// o cliente nao importa arquivo de netlify/functions, que e CommonJS de
+// plataforma e nao pertence ao bundle do browser.
+function buildWaLink({ phone, message, fallbackMessage }) {
+  let digits = String(phone || '').replace(/\D/g, '');
+  if (digits) {
+    while (digits.length > 2 && digits.charAt(0) === '0') digits = digits.slice(1);
+    if (!(digits.indexOf('55') === 0 && digits.length >= 12)) {
+      digits = digits.length <= 11 ? `55${digits}` : digits;
+    }
+  }
+  const text = message || fallbackMessage || 'Olá!';
+  if (!digits) return `https://wa.me/?text=${encodeURIComponent(text)}`;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+}
+
+// Codigo de regra do endpoint -> frase util. O handler devolve so o codigo
+// (nunca o detail do Postgres), entao quem traduz para o cliente e a tela.
+function reservationErrorMessage(code, t) {
+  const map = {
+    CUSTOMER_TOKEN_INVALID: t?.reserveSessionExpired ?? 'Sua identificação expirou. Identifique-se novamente.',
+    RESERVATION_NOT_FOUND: t?.reserveNotFound ?? 'Reserva não encontrada.',
+    SLOT_CONFLICT: t?.reserveSlotTaken ?? 'Esse horário acabou de ser reservado. Escolha outro.',
+    OUTSIDE_HOURS: t?.reserveOutsideHours ?? 'Esse horário está fora do período de atendimento.',
+    DAY_NOT_ACTIVE: t?.reserveDayInactive ?? 'Esse dia não está disponível para este serviço.',
+    INVALID_PASSENGERS: t?.reserveBadPassengers ?? 'Número de passageiros inválido (de 1 a 20).',
+    INVALID_SCHEDULE: t?.reservePastDate ?? 'Escolha uma data futura.',
+    SHUTTLE_NOT_FOUND: t?.reserveServiceGone ?? 'Este serviço não está mais disponível.',
+    INVALID_STATUS_TRANSITION: t?.reserveNotCancellable ?? 'Esta reserva não pode mais ser cancelada.',
+  };
+  return map[code] || (t?.reserveGeneric ?? 'Não foi possível concluir a reserva. Tente de novo.');
+}
+
+// Texto da conversa de WhatsApp: mesmo formato do buildCouponMessage de
+// _wa.js, com o contexto que a RPC devolveu.
+function reservationWaMessage(res) {
+  const linhas = ['Olá! Acabei de fazer uma reserva de translado pelo Playas y Ventajas.'];
+  if (res.serviceName) linhas.push('*Serviço:* ' + res.serviceName);
+  if (res.businessName) linhas.push('*Estabelecimento:* ' + res.businessName);
+  if (res.scheduledFor) linhas.push('*Data/hora:* ' + formatWhen(res.scheduledFor));
+  if (res.passengers) linhas.push('*Passageiros:* ' + res.passengers);
+  linhas.push('');
+  linhas.push('Podem confirmar?');
+  return linhas.join('\n');
+}
+
 function timeAgo(iso) {
   if (!iso) return '';
   const secs = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
@@ -71,6 +188,10 @@ export default function ClientePage() {
   const [instagram, setInstagram] = useState('');
   const [email, setEmail] = useState('');
   const [customerId, setCustomerId] = useState(null);
+  // O customerToken (HMAC do customerId) e o que o endpoint exige. A pagina so
+  // guardava o customerId em state, o que bastava para o card de ofertas, mas
+  // nao para reservar: sem o par, o POST volta 401 CUSTOMER_TOKEN_INVALID.
+  const [customerToken, setCustomerToken] = useState(null);
   const [offers, setOffers] = useState([]);
   // Separado de msg de proposito: msg e feedback de acao (cupom resgatado,
   // cadastro feito) e e sobrescrita o tempo todo. Aqui o que importa e nao
@@ -94,6 +215,16 @@ export default function ClientePage() {
   const [mapStatus, setMapStatus] = useState('idle');
   const [invite, setInvite] = useState(null);
   const [inviteMsg, setInviteMsg] = useState('');
+  // Agendamento: lista, erro separado (mesmo motivo de offersErro — "nao ha
+  // reservas" e "nao consegui buscar" sao coisas diferentes) e o painel inline.
+  const [reservations, setReservations] = useState([]);
+  const [reservationsErro, setReservationsErro] = useState('');
+  const [resFilter, setResFilter] = useState('active');
+  const [book, setBook] = useState(null);
+  const [bookMsg, setBookMsg] = useState('');
+  const [bookErro, setBookErro] = useState('');
+  const [bookBusy, setBookBusy] = useState(false);
+  const [justBooked, setJustBooked] = useState(null);
 
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -113,7 +244,9 @@ export default function ClientePage() {
     if (saved) {
       const s = JSON.parse(saved);
       setPhone(s.phone); setName(s.name); setInstagram(s.instagram || ''); setEmail(s.email || ''); setCustomerId(s.customerId);
+      setCustomerToken(s.customerToken || null);
       loadMyCoupons(s.customerId, s.customerToken).catch(() => { /* cupons e opcional: nao derruba a tela */ });
+      loadReservations(s.customerId, s.customerToken).catch(() => { /* reservas: erro fica no proprio card */ });
     }
     loadOffers();
     loadCityAndCategoryOptions();
@@ -272,9 +405,130 @@ export default function ClientePage() {
     if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
     localStorage.setItem('pyv_customer', JSON.stringify({ phone, name, instagram, email, customerId: data.customerId, customerToken: data.customerToken }));
     setCustomerId(data.customerId);
+    setCustomerToken(data.customerToken);
     if (data.referral) { try { localStorage.removeItem('pyv_ref'); } catch (e) { /* sem referido */ } }
     setMsg('✅ Cadastro finalizado com sucesso!');
     loadMyCoupons(data.customerId, data.customerToken);
+    loadReservations(data.customerId, data.customerToken).catch(() => { /* erro fica no card de reservas */ });
+  }
+
+  // --- Agendamento: reservas do cliente ------------------------------------
+  // Mesmo desenho de loadOffers: res.ok e Array.isArray conferidos ANTES de
+  // qualquer setState, e o erro vai para um estado separado. Passar a resposta
+  // direto para o state ja quebrou esta tela uma vez (offers.map sobre um
+  // {error}), entao o caminho de erro sempre zera a lista E seta a mensagem.
+  async function loadReservations(cid, token) {
+    const id = cid || customerId;
+    const tk = token || customerToken;
+    if (!id || !tk) return;
+    try {
+      const params = new URLSearchParams({ tenantId: TENANT_ID, customerId: id, customerToken: tk });
+      const res = await fetchComTimeout(`/.netlify/functions/shuttle-reservation?${params.toString()}`);
+      if (!res.ok) {
+        setReservations([]);
+        setReservationsErro('Não foi possível carregar suas reservas. Tente de novo em instantes.');
+        return;
+      }
+      const data = await res.json();
+      if (!data || !Array.isArray(data.reservations)) {
+        setReservations([]);
+        setReservationsErro('Não foi possível carregar suas reservas. Tente de novo em instantes.');
+        return;
+      }
+      setReservations(data.reservations);
+      setReservationsErro('');
+    } catch (err) {
+      setReservations([]);
+      setReservationsErro('Não foi possível carregar suas reservas. Verifique sua conexão.');
+    }
+  }
+
+  function openBooking(service) {
+    setBookMsg('');
+    setBookErro('');
+    setJustBooked(null);
+    setBook({ service, date: '', time: '', passengers: 2, notes: '' });
+  }
+
+  function closeBooking() {
+    setBook(null);
+    setBookMsg('');
+    setBookErro('');
+  }
+
+  function setBookField(patch) {
+    setBook((b) => (b ? { ...b, ...patch } : b));
+  }
+
+  async function submitBooking() {
+    if (!book) return;
+    if (!customerId || !customerToken) {
+      setBookErro(t.reserveIdentifyFirst ?? 'Identifique-se acima para reservar.');
+      return;
+    }
+    const slots = bookingSlots(book.service, book.date, book.date === todayIso() ? nowMinutesLocal() : null);
+    if (!book.time || !slots.includes(book.time)) {
+      setBookErro(t.reservePickValidSlot ?? 'Escolha um horário disponível.');
+      return;
+    }
+    setBookBusy(true);
+    setBookErro('');
+    setBookMsg('');
+    try {
+      // ISO com offset, como pede o contrato: o banco valida dia e hora no fuso
+      // de referencia, e a string sem offset seria interpretada como UTC.
+      const when = new Date(`${book.date}T${book.time}:00`);
+      const res = await fetchComTimeout('/.netlify/functions/shuttle-reservation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: TENANT_ID,
+          customerId,
+          customerToken,
+          action: 'create',
+          shuttleId: book.service.shuttleId,
+          scheduledFor: when.toISOString(),
+          passengers: Number(book.passengers) || 1,
+          notes: book.notes || null,
+          contactPhone: phone || null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setBookErro(reservationErrorMessage(data && data.error, t));
+        return;
+      }
+      setJustBooked(data);
+      setBook(null);
+      loadReservations().catch(() => { /* erro fica no card de reservas */ });
+    } catch (err) {
+      setBookErro(t.reserveConn ?? 'Não foi possível reservar. Verifique sua conexão.');
+    } finally {
+      setBookBusy(false);
+    }
+  }
+
+  async function cancelReservation(reservationId) {
+    setBookBusy(true);
+    try {
+      const res = await fetchComTimeout('/.netlify/functions/shuttle-reservation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId: TENANT_ID, customerId, customerToken, action: 'cancel', reservationId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setReservationsErro(reservationErrorMessage(data && data.error, t));
+        return;
+      }
+      // Recarrega em vez de remendar o array: o cancelamento pode ter sido
+      // recusado no banco e o estado local mentiria sobre o status.
+      loadReservations().catch(() => { /* erro fica no card de reservas */ });
+    } catch (err) {
+      setReservationsErro(t.reserveConn ?? 'Não foi possível cancelar. Verifique sua conexão.');
+    } finally {
+      setBookBusy(false);
+    }
   }
 
   // Card "Indique um amigo": o mesmo telefone sempre devolve o mesmo link de
@@ -822,6 +1076,95 @@ export default function ClientePage() {
                       {s.opensAt && s.closesAt && ` · ${s.opensAt}–${s.closesAt}`}
                       {Array.isArray(s.activeDays) && s.activeDays.length > 0 && ` · ${s.activeDays.join(', ')}`}
                     </div>
+                    <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button type="button" style={smallBtn} onClick={() => openBooking(s)}>
+                        {t.reserveNow ?? 'Reservar'}
+                      </button>
+                      {!s.opensAt || !s.closesAt ? (
+                        <span style={{ fontSize: 11, color: theme.textMuted }}>
+                          {t.reserveNoWindow ?? 'sem horário definido — reserve e a empresa combina'}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 11, color: theme.textMuted }}>{t.reservePickWhen ?? 'escolha data e horário'}</span>
+                      )}
+                    </div>
+                    {book && book.service && book.service.shuttleId === s.shuttleId && (
+                      <div style={{ border: `1px solid ${theme.gold}`, borderRadius: 12, padding: 12, marginTop: 10, background: theme.goldLight }}>
+                        <strong style={{ fontSize: 13 }}>{t.reserveTitle ?? 'Reservar translado'}</strong>
+                        {!customerId ? (
+                          <>
+                            <p style={{ fontSize: 12, margin: '6px 0' }}>{t.noPasswordNote}</p>
+                            <button type="button" style={smallBtn} onClick={finalizeRegistration}>
+                              {t.identifyNow ?? 'Identificar-me agora'}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                              <input
+                                type="date"
+                                style={{ ...input, margin: 0 }}
+                                value={book.date}
+                                onChange={(e) => setBookField({ date: e.target.value, time: '' })}
+                              />
+                              <input
+                                type="number"
+                                min={1}
+                                max={20}
+                                style={{ ...input, margin: 0, width: 90 }}
+                                value={book.passengers}
+                                onChange={(e) => setBookField({ passengers: e.target.value })}
+                              />
+                            </div>
+                            {(() => {
+                              const slots = bookingSlots(book.service, book.date, book.date === todayIso() ? nowMinutesLocal() : null);
+                              if (!book.date) {
+                                return <p style={{ fontSize: 12, margin: '8px 0 0' }}>{t.reservePickDate ?? 'Escolha a data.'}</p>;
+                              }
+                              if (slots.length === 0) {
+                                return (
+                                  <p style={{ fontSize: 12, margin: '8px 0 0', color: '#B42318' }}>
+                                    {t.reserveNoSlots ?? 'Sem horários disponíveis nesta data para este serviço.'}
+                                  </p>
+                                );
+                              }
+                              return (
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '8px 0 0' }}>
+                                  {slots.map((h) => (
+                                    <button
+                                      key={h}
+                                      type="button"
+                                      style={{
+                                        ...smallBtn,
+                                        background: book.time === h ? theme.gold : theme.bg,
+                                        color: book.time === h ? theme.greenDark : theme.text,
+                                        border: `1px solid ${theme.border}`,
+                                      }}
+                                      onClick={() => setBookField({ time: h })}
+                                    >{h}</button>
+                                  ))}
+                                </div>
+                              );
+                            })()}
+                            <input
+                              placeholder={t.reserveNotes ?? 'Observação (opcional)'}
+                              style={{ ...input, width: '100%', margin: '8px 0 0' }}
+                              value={book.notes}
+                              onChange={(e) => setBookField({ notes: e.target.value })}
+                            />
+                            {bookErro && <p style={{ fontSize: 12, color: '#B42318', margin: '8px 0 0' }}>{bookErro}</p>}
+                            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                              <button type="button" style={smallBtn} disabled={bookBusy} onClick={submitBooking}>
+                                {bookBusy ? (t.checking ?? 'Enviando...') : (t.reserveConfirm ?? 'Confirmar reserva')}
+                              </button>
+                              <button type="button" style={{ ...smallBtn, background: theme.bg, color: theme.text, border: `1px solid ${theme.border}` }} onClick={closeBooking}>
+                                {t.reserveClose ?? 'Fechar'}
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -846,6 +1189,104 @@ export default function ClientePage() {
           </>
         )}
       </div>
+
+      {justBooked && (
+        <div style={{ ...card, border: `2px solid ${theme.gold}` }}>
+          <h3 style={{ marginTop: 0 }}>{t.reserveDoneTitle ?? 'Reserva enviada!'}</h3>
+          <p style={{ fontSize: 13, margin: '0 0 6px' }}>
+            <strong>{justBooked.serviceName || (t.transladoTitle ?? 'Translado')}</strong>
+            {justBooked.businessName ? ` · ${justBooked.businessName}` : ''}
+          </p>
+          <p style={{ fontSize: 13, margin: 0 }}>
+            {formatWhen(justBooked.scheduledFor)} · {justBooked.passengers} {t.reservePassengers ?? 'passageiros'}
+            {formatPrice(justBooked.priceCents)
+              ? ` · ${formatPrice(justBooked.priceCents)}`
+              : ` · ${t.transladoPrice ?? 'Preço a combinar'}`}
+          </p>
+          <p style={{ fontSize: 12, color: theme.textMuted, margin: '6px 0 0' }}>
+            {t.reservePendingNote ?? 'A empresa confirma em breve. Acompanhe o status em "Minhas reservas".'}
+          </p>
+          {/* Telefone vem da RPC (businessPhone), nunca do browser. */}
+          {justBooked.businessPhone && (
+            <a
+              href={buildWaLink({ phone: justBooked.businessPhone, message: reservationWaMessage(justBooked) })}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 12, padding: '9px 14px',
+                borderRadius: 10, textDecoration: 'none', background: '#128C4A', color: '#fff',
+                fontWeight: 700, fontSize: 13,
+              }}
+            >
+              {t.reserveWhatsapp ?? 'Falar no WhatsApp'}
+            </a>
+          )}
+        </div>
+      )}
+
+      {customerId && (
+        <div style={card}>
+          <h3 style={{ marginTop: 0 }}>{t.myReservations ?? '📅 Minhas reservas'}</h3>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+            {[
+              { key: 'active', label: t.reserveFilterActive ?? 'Ativas' },
+              { key: 'cancelled', label: t.reserveFilterCancelled ?? 'Canceladas' },
+              { key: 'all', label: t.reserveFilterAll ?? 'Todas' },
+            ].map((f) => (
+              <button key={f.key} type="button" onClick={() => setResFilter(f.key)} style={{
+                ...smallBtn,
+                background: resFilter === f.key ? theme.gold : theme.bg,
+                color: resFilter === f.key ? theme.greenDark : theme.text,
+                border: `1px solid ${theme.border}`,
+              }}>{f.label}</button>
+            ))}
+          </div>
+          {reservationsErro ? (
+            <p style={{ color: '#B42318', margin: 0 }}>{reservationsErro}</p>
+          ) : (() => {
+            const visible = reservations.filter((r) => {
+              if (resFilter === 'all') return true;
+              if (resFilter === 'active') return r.status === 'pending' || r.status === 'confirmed';
+              return r.status === resFilter;
+            });
+            if (visible.length === 0) {
+              return <p>{t.reserveNone ?? 'Você ainda não tem reservas de translado.'}</p>;
+            }
+            return visible.map((r) => (
+              <div key={r.reservationId} style={{
+                border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12,
+                marginBottom: 8, background: theme.bg,
+              }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <strong style={{ fontSize: 13, flex: 1, minWidth: 140 }}>
+                    {r.serviceName || (t.transladoTitle ?? 'Translado')}
+                  </strong>
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999,
+                    background: r.status === 'confirmed' ? theme.greenLight : (r.status === 'cancelled' || r.status === 'rejected' ? '#FDECEC' : theme.gold),
+                    color: r.status === 'confirmed' ? theme.green : (r.status === 'cancelled' || r.status === 'rejected' ? '#B42318' : theme.greenDark),
+                  }}>{RESERVATION_STATUS_LABELS[r.status] || r.status}</span>
+                </div>
+                <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 4 }}>
+                  {formatWhen(r.scheduledFor)} · {r.passengers} {t.reservePassengers ?? 'passageiros'}
+                  {r.businessName ? ` · ${r.businessName}` : ''}
+                </div>
+                {r.reason && <div style={{ fontSize: 12, marginTop: 4 }}>{t.reserveReason ?? 'Motivo:'} {r.reason}</div>}
+                {(r.status === 'pending' || r.status === 'confirmed') && (
+                  <button
+                    type="button"
+                    style={{ ...smallBtn, marginTop: 8, background: theme.bg, color: '#B42318', border: `1px solid ${theme.border}` }}
+                    disabled={bookBusy}
+                    onClick={() => cancelReservation(r.reservationId)}
+                  >
+                    {bookBusy ? (t.checking ?? 'Aguarde...') : (t.reserveCancel ?? 'Cancelar reserva')}
+                  </button>
+                )}
+              </div>
+            ));
+          })()}
+        </div>
+      )}
 
       {customerId && (
         <div style={card}>

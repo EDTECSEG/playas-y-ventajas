@@ -59,6 +59,17 @@ const RPC_ERROR_STATUS = {
   INVITE_INVALID: 404,
   DOCUMENT_NOT_FOUND: 404,
   SHUTTLE_NOT_FOUND: 404,
+  // Agendamento de translado (SPEC-agendamento). Mesmo conteudo, mesma ordem do
+  // par CJS (_supabaseAdmin.js): os dois dialetos precisam traduzir o mesmo
+  // codigo no mesmo HTTP, senao a regra vira 400 na Netlify e 409 no Worker.
+  RESERVATION_NOT_FOUND: 404,
+  SLOT_CONFLICT: 409,
+  INVALID_STATUS_TRANSITION: 409,
+  SHUTTLE_HAS_RESERVATIONS: 409,
+  OUTSIDE_HOURS: 400,
+  DAY_NOT_ACTIVE: 400,
+  INVALID_PASSENGERS: 400,
+  INVALID_SCHEDULE: 400,
 };
 
 export function rpcErrorStatus(error) {

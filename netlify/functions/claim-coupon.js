@@ -1,5 +1,6 @@
 const { getSupabaseAdminClient, buildCustomerToken } = require('./_supabaseAdmin');
 const { buildCouponMessage, buildWaLink } = require('./_wa');
+const { notifyOutbound } = require('./_notify');
 
 // Canon CJS. Espelho ESM: functions/.netlify/functions/claim-coupon.js
 //
@@ -94,6 +95,31 @@ exports.handler = async (event) => {
         extras.whatsappUrl = buildWaLink({ phone: ctx.businessPhone, message, fallbackMessage: message });
       } catch (e) { /* opcional */ }
     }
+
+    // ---------- AVISO AO CLIENTE (base de notificacoes). Best-effort. ----------
+    // Dispara DEPOIS da taxa e do wa.me, ou seja, fora do caminho critico e
+    // depois de tudo que a resposta precisa. Sem provedor configurado (default)
+    // isto so grava provider='none'/status='noop' e loga; com provedor, envia e
+    // marca sent/failed. Em qualquer falha — RPC, rede, timeout — o resgate ja
+    // aconteceu: o status, o corpo e o whatsappUrl sao os mesmos de sempre.
+    //
+    // Contexto (titulo/empresa) vem do BANCO, via loadOfferContext acima. Nao
+    // entra nada do corpo do request no conteudo da mensagem.
+    try {
+      await notifyOutbound(supabase, {
+        event: 'coupon_claimed',
+        channel: 'WHATSAPP',
+        customerId: customerId,
+        couponId: data.couponId,
+        vars: {
+          tenantId: tenantId,
+          title: ctx ? ctx.title : '',
+          businessName: ctx ? ctx.businessName : '',
+          publicId: publicId,
+          shortCode: data.shortCode,
+        },
+      });
+    } catch (e) { /* opcional: o aviso nunca derruba o resgate */ }
 
     return {
       statusCode: 200,

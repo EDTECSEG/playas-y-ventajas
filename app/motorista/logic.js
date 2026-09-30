@@ -51,6 +51,8 @@ const FRIENDLY = {
   LOGIN_FAILED: 'Nao foi possivel entrar.',
   INVALID_COORDS: 'Informe uma localizacao valida.',
   SHUTTLE_NOT_FOUND: 'Servico de translado nao encontrado.',
+  RESERVATION_NOT_FOUND: 'Corrida nao encontrada na sua frota.',
+  INVALID_STATUS_TRANSITION: 'Esta corrida nao pode mudar de situacao agora.',
   'arquivo excede o limite de 6 MB': 'O arquivo passa de 6 MB.',
   'tipo de documento nao permitido (use PDF, JPEG ou PNG)': 'Use PDF, JPEG ou PNG.',
   'conteudo nao corresponde ao tipo informado': 'O conteudo do arquivo nao bate com o tipo escolhido.',
@@ -227,4 +229,79 @@ export function daysLabel(activeDays) {
   const D = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];
   if (!Array.isArray(activeDays) || !activeDays.length) return 'todos os dias';
   return activeDays.map((d) => D[d] || d).join(', ');
+}
+
+// --- Corridas do dia (driver-shuttle-runs) ---------------------------------
+
+// Situacao da corrida, como a tela mostra. 'confirmed' e a unica em que o
+// botao de concluir aparece.
+export const RUN_STATUS_LABEL = {
+  confirmed: 'Confirmada',
+  completed: 'Concluida',
+};
+
+// Dia local em YYYY-MM-DD. O endpoint agrupa a agenda por dia no fuso de
+// referencia do banco; mandar o dia do navegador evita que a corrida das 22:00
+// caia na agenda de amanha. Sem offset, `toISOString()` viraria UTC e no Brasil
+// (UTC-3) a virada seria sempre errada.
+export function localDateIso(date) {
+  const d = date || new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// 'dd/mm as HH:MM' no fuso do navegador. Devolve '' para data ausente, em vez
+// de 'Invalid Date' aparecendo na tela.
+export function formatRunWhen(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  try {
+    return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  } catch (e) {
+    return '';
+  }
+}
+
+// Agenda por horario. A RPC ja devolve ordenado, mas a tela nao pode depender
+// dessa promessa: ordenar aqui custa uma linha e remove a chance de a lista
+// aparecer embaralhada se a query mudar.
+export function sortRunsByTime(runs) {
+  if (!Array.isArray(runs)) return [];
+  return [...runs].sort((a, b) => {
+    const ta = new Date((a && a.scheduledFor) || 0).getTime();
+    const tb = new Date((b && b.scheduledFor) || 0).getTime();
+    if (Number.isNaN(ta)) return 1;
+    if (Number.isNaN(tb)) return -1;
+    return ta - tb;
+  });
+}
+
+// Monta a chamada de listagem. Mesma credencial de driver-position (a sessao) e
+// o mesmo gate de canDrive: quem nao esta na frota nao recebe agenda, e o
+// servidor conferiria o mesmo com NOT_APPROVED.
+export function buildRunsRequest({ session, date } = {}) {
+  if (!canDrive(session && session.status)) {
+    if (!session || !session.sessionToken) throw new Error(friendlyMessage('AUTH_REQUIRED'));
+    throw new Error(friendlyMessage('NOT_APPROVED'));
+  }
+  const day = date || localDateIso();
+  return {
+    query: `?date=${encodeURIComponent(day)}`,
+    headerToken: session.sessionToken,
+  };
+}
+
+// Concluir corrida. So 'confirmed' chega aqui: a transicao e do servidor
+// (INVALID_STATUS_TRANSITION), mas esconder o botao evita o erro previsivel.
+export function buildCompleteRunRequest({ session, reservationId, status } = {}) {
+  if (!canDrive(session && session.status)) {
+    if (!session || !session.sessionToken) throw new Error(friendlyMessage('AUTH_REQUIRED'));
+    throw new Error(friendlyMessage('NOT_APPROVED'));
+  }
+  if (!reservationId) throw new Error(friendlyMessage('RESERVATION_NOT_FOUND'));
+  if (status && status !== 'confirmed') throw new Error(friendlyMessage('INVALID_STATUS_TRANSITION'));
+  return {
+    body: { reservationId: String(reservationId) },
+    headerToken: session.sessionToken,
+  };
 }

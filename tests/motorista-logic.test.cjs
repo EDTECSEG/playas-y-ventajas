@@ -341,3 +341,108 @@ test('daysLabel traduz 0..6 e vazio vira todos os dias', () => {
   assert.strictEqual(L.daysLabel([]), 'todos os dias');
   assert.strictEqual(L.daysLabel(null), 'todos os dias');
 });
+
+// ------------------------------------------------------------
+// Corridas do dia (driver-shuttle-runs)
+// ------------------------------------------------------------
+
+test('buildRunsRequest leva a sessao no header e o dia local na query', () => {
+  const r = L.buildRunsRequest({ session: SESSION, date: '2026-10-02' });
+  assert.strictEqual(r.headerToken, 'sess-abc');
+  assert.strictEqual(r.query, '?date=2026-10-02');
+});
+
+test('buildRunsRequest sem date assume o dia local, em YYYY-MM-DD', () => {
+  // toISOString() daria UTC: no Brasil (UTC-3) a virada do dia seria sempre
+  // errada e a corrida das 22:00 cairia na agenda de amanha.
+  const r = L.buildRunsRequest({ session: SESSION });
+  assert.ok(/^\?date=\d{4}-\d{2}-\d{2}$/.test(r.query), r.query);
+  const hoje = L.localDateIso();
+  assert.strictEqual(r.query, `?date=${hoje}`);
+});
+
+test('buildRunsRequest barra quem nao esta aprovado, como driver-position', () => {
+  assert.throws(
+    () => L.buildRunsRequest({ session: { sessionToken: 'x', status: 'pending' } }),
+    /ainda nao foi aprovado/,
+  );
+  assert.throws(
+    () => L.buildRunsRequest({ session: { sessionToken: 'x', status: 'rejected' } }),
+    /ainda nao foi aprovado/,
+  );
+  assert.throws(() => L.buildRunsRequest({ session: null }), /Faca login/);
+});
+
+test('buildCompleteRunRequest monta o corpo e manda o token no header', () => {
+  const r = L.buildCompleteRunRequest({ session: SESSION, reservationId: 'r-1', status: 'confirmed' });
+  assert.deepStrictEqual(r.body, { reservationId: 'r-1' });
+  assert.strictEqual(r.headerToken, 'sess-abc');
+});
+
+test('buildCompleteRunRequest recusa corrida fora de confirmed', () => {
+  // Concluir uma corrida ja cancelada e 409 no banco; esconder o erro antes e
+  // melhor do que deixar o motorista descobrir na tela.
+  for (const status of ['completed', 'cancelled', 'pending', 'rejected']) {
+    assert.throws(
+      () => L.buildCompleteRunRequest({ session: SESSION, reservationId: 'r-1', status }),
+      /nao pode mudar de situacao/,
+      status,
+    );
+  }
+});
+
+test('buildCompleteRunRequest exige reserva e aprovacao', () => {
+  assert.throws(
+    () => L.buildCompleteRunRequest({ session: SESSION, reservationId: '' }),
+    /nao encontrada/,
+  );
+  assert.throws(
+    () => L.buildCompleteRunRequest({ session: { sessionToken: 'x', status: 'pending' }, reservationId: 'r-1' }),
+    /ainda nao foi aprovado/,
+  );
+  assert.throws(
+    () => L.buildCompleteRunRequest({ session: null, reservationId: 'r-1' }),
+    /Faca login/,
+  );
+});
+
+test('sortRunsByTime ordena por horario e nunca muta a lista original', () => {
+  const runs = [
+    { reservationId: 'r-2', scheduledFor: '2026-10-02T16:00:00-03:00' },
+    { reservationId: 'r-1', scheduledFor: '2026-10-02T09:00:00-03:00' },
+    { reservationId: 'r-3', scheduledFor: '2026-10-02T12:00:00-03:00' },
+  ];
+  const out = L.sortRunsByTime(runs);
+  assert.deepStrictEqual(out.map((r) => r.reservationId), ['r-1', 'r-3', 'r-2']);
+  assert.deepStrictEqual(runs.map((r) => r.reservationId), ['r-2', 'r-1', 'r-3']);
+  assert.deepStrictEqual(L.sortRunsByTime(null), []);
+});
+
+test('formatRunWhen formata em pt-BR e devolve vazio em vez de Invalid Date', () => {
+  const texto = L.formatRunWhen('2026-10-02T14:00:00-03:00');
+  assert.ok(texto.includes('02/10'), texto);
+  assert.ok(texto.includes('14:00'), texto);
+  assert.strictEqual(L.formatRunWhen(null), '');
+  assert.strictEqual(L.formatRunWhen('lixo'), '');
+});
+
+test('localDateIso usa o dia local, com dois digitos em mes e dia', () => {
+  assert.strictEqual(L.localDateIso(new Date(2026, 0, 5)), '2026-01-05');
+  assert.strictEqual(L.localDateIso(new Date(2026, 11, 31)), '2026-12-31');
+});
+
+test('friendlyMessage cobre os codigos novos das corridas', () => {
+  assert.strictEqual(L.friendlyMessage('RESERVATION_NOT_FOUND'), 'Corrida nao encontrada na sua frota.');
+  assert.strictEqual(L.friendlyMessage('INVALID_STATUS_TRANSITION'), 'Esta corrida nao pode mudar de situacao agora.');
+  // Os dois que ja existiam continuam com o mesmo texto: NOT_APPROVED e o que
+  // segura o card de corridas para quem nao esta na frota.
+  assert.strictEqual(L.friendlyMessage('NOT_APPROVED'), 'Seu cadastro ainda nao foi aprovado pela empresa.');
+  assert.strictEqual(L.friendlyMessage('SESSION_EXPIRED'), 'Sua sessao expirou. Entre de novo.');
+});
+
+test('canDrive continua barrando quem nao e approved, para o card de corridas', () => {
+  assert.strictEqual(L.canDrive('approved'), true);
+  for (const status of ['pending', 'rejected', 'suspended', null, undefined, '']) {
+    assert.strictEqual(L.canDrive(status), false, String(status));
+  }
+});

@@ -23,6 +23,124 @@ export async function onRequestGet(context) {
       if (error) return json({ error: rpcErrorCode(error) }, rpcErrorStatus(error));
       return json(data);
     }
+    // ---- Fila de reservas de translado ----
+    // A empresa e a dona da reserva: status e date sao escolha de tela (vem da
+    // query), mas o escopo sempre deriva da sessao. p_tenant_id/p_actor_user_id
+    // NUNCA vem da query: e o que impede a empresa A de ler a fila da empresa B.
+    // A resposta carrega telefone e observacao do cliente -> no-store.
+    if (mode === 'reservations') {
+      const jsonNoStore = (b, status = 200) => new Response(JSON.stringify(b), {
+        status,
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      });
+      const statusFiltro = url.searchParams.get('status');
+      const date = url.searchParams.get('date');
+      const { data, error } = await supabase.rpc('business_list_shuttle_reservations', {
+        p_tenant_id: actor.tenantId,
+        p_actor_user_id: actor.userId,
+        p_status: statusFiltro || null,
+        p_date: date || null,
+      });
+      if (error) return json({ error: rpcErrorCode(error) }, rpcErrorStatus(error));
+      const list = Array.isArray(data) ? data : [];
+      return jsonNoStore({ reservations: list, count: list.length });
+    }
+    // ---- Relatorio de performance (somente leitura) ----
+    // Fica DEPOIS de `shuttles` e ANTES do default (empresa_dashboard) para nao
+    // mudar o comportamento de nenhum mode existente.
+    //
+    // O periodo e validado AQUI, no handler, e nao no banco: `days=abc` e
+    // `from` com data quebrada sao entrada do cliente, e o Postgres nao tem
+    // como recusar isso com a assinatura da RPC. O banco continua sendo a
+    // autoridade do dado; aqui so decide o que chega a ser perguntado.
+    //
+    // REGRA 3 (IDOR): `p_tenant_id`/`p_actor_user_id` vem SEMPRE do
+    // resolveSession. Um `businessId` na query e ignorado de proposito — a RPC
+    // resolve o negocio a partir do ator, e nao de parametro do cliente.
+    if (mode === 'report') {
+      // O `json` de _shared.js nao aceita headers. Este payload e dado do
+      // negocio e nao pode ficar em cache, entao o ramo usa um json local.
+      const jsonNoStore = (b, status = 200) => new Response(JSON.stringify(b), {
+        status,
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      });
+      const days = url.searchParams.get('days');
+      const from = url.searchParams.get('from');
+      const to = url.searchParams.get('to');
+      const MS_DAY = 86400000;
+      const DEFAULT_DAYS = 30;
+      const MAX_DAYS = 366;
+      const badPeriod = () => jsonNoStore({ error: 'INVALID_PERIOD' }, 400);
+      // Aceita `YYYY-MM-DD` ou ISO-8601 completo. Devolve `null` quando o
+      // parametro nao veio (cai no default) e `undefined` quando veio mas nao
+      // e data utilizavel (400).
+      const parseWhen = (v) => {
+        if (!/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(v)) return undefined;
+        const ms = Date.parse(v);
+        return Number.isNaN(ms) ? undefined : ms;
+      };
+      const rawFrom = String(from === null ? '' : from).trim();
+      const rawTo = String(to === null ? '' : to).trim();
+      const rawDays = String(days === null ? '' : days).trim();
+      const msFrom = rawFrom ? parseWhen(rawFrom) : null;
+      const msTo = rawTo ? parseWhen(rawTo) : null;
+      if (msFrom === undefined || msTo === undefined) return badPeriod();
+      // `days` e validado sempre que vier (1..366 inteiro): uma tela que manda
+      // periodo invalido tem de tomar 400 mesmo mandando from/to junto.
+      let daysUsed = DEFAULT_DAYS;
+      if (rawDays) {
+        if (!/^\d+$/.test(rawDays)) return badPeriod();
+        daysUsed = Number(rawDays);
+        if (daysUsed < 1 || daysUsed > MAX_DAYS) return badPeriod();
+      }
+      const now = Date.now();
+      let pDe;
+      let pAte;
+      let msDe;
+      let msAte;
+      if (msFrom !== null || msTo !== null) {
+        // from/to mandam: a data que veio vai CRUA para a RPC, para o periodo
+        // do banco bater com o que a tela pediu (inclusive `YYYY-MM-DD`).
+        msDe = msFrom === null ? now - DEFAULT_DAYS * MS_DAY : msFrom;
+        msAte = msTo === null ? now : msTo;
+        pDe = msFrom === null ? new Date(msDe).toISOString() : rawFrom;
+        pAte = msTo === null ? new Date(msAte).toISOString() : rawTo;
+      } else {
+        msDe = now - daysUsed * MS_DAY;
+        msAte = now;
+        pDe = new Date(msDe).toISOString();
+        pAte = new Date(msAte).toISOString();
+      }
+      if (msAte < msDe) return badPeriod();
+      if (msAte - msDe > MAX_DAYS * MS_DAY) return badPeriod();
+      // business_report_v3 e a fonte do relatorio. business_report (v2, sem os
+      // blocos drivers/billing/shuttle) e o fallback para a aba subir antes da
+      // migracao business-report-v3.sql estar aplicada: degradar e melhor que
+      // 500. `source` diz qual das duas respondeu.
+      const missingReportFn = (e) => {
+        const message = String((e && e.message) || '');
+        return String((e && e.code) || '') === '42883'
+          || /function\s+business_report_v3/i.test(message)
+          || /does not exist/i.test(message);
+      };
+      const rpcArgs = { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_de: pDe, p_ate: pAte };
+      let source = 'business_report_v3';
+      let report = await supabase.rpc('business_report_v3', rpcArgs);
+      if (report.error && missingReportFn(report.error)) {
+        source = 'business_report';
+        report = await supabase.rpc('business_report', rpcArgs);
+      }
+      if (report.error) return jsonNoStore({ error: rpcErrorCode(report.error) }, rpcErrorStatus(report.error));
+      const data = report.data && typeof report.data === 'object' && !Array.isArray(report.data) ? report.data : {};
+      const period = data.period && typeof data.period === 'object' ? data.period : {};
+      return jsonNoStore({
+        ...data,
+        source,
+        // `days` derivado da janela resolvida: e o que a tela 7/30/90 precisa
+        // para se legendar sem recalcular nada.
+        period: { from: period.from || pDe, to: period.to || pAte, days: Math.max(1, Math.round((msAte - msDe) / MS_DAY)) },
+      });
+    }
     const { data, error } = await supabase.rpc('empresa_dashboard', { p_tenant_id: actor.tenantId, p_business_id: actor.businessId });
     if (error) return json({ error: error.message }, 400);
     return json(data);
@@ -151,6 +269,26 @@ export async function onRequestPost(context) {
       });
       if (error) return json({ error: rpcErrorCode(error) }, rpcErrorStatus(error));
       return json({ ok: true, deleted: !!data });
+    }
+
+    // ---- Decisao sobre reserva de translado ----
+    // decision fora de confirm/reject/cancel e 400 ANTES da RPC: uma decision
+    // invalida nao chega ao banco para virar erro de constraint. O escopo
+    // (tenant/ator) vem da sessao, nunca do corpo.
+    if (body.action === 'review_reservation') {
+      if (!['confirm', 'reject', 'cancel'].includes(body.decision)) {
+        return json({ error: 'ACTION_INVALID' }, 400);
+      }
+      if (!body.reservationId) return json({ error: 'RESERVATION_ID_REQUIRED' }, 400);
+      const { data, error } = await supabase.rpc('business_review_shuttle_reservation', {
+        p_tenant_id: actor.tenantId,
+        p_actor_user_id: actor.userId,
+        p_reservation_id: body.reservationId,
+        p_action: body.decision,
+        p_reason: body.reason || null,
+      });
+      if (error) return json({ error: rpcErrorCode(error) }, rpcErrorStatus(error));
+      return json(data);
     }
 
     return json({ error: 'action inválida' }, 400);

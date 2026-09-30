@@ -1,5 +1,6 @@
 import { getSupabaseAdminClient, buildCustomerToken, json } from './_shared.js';
 import { buildCouponMessage, buildWaLink } from './_wa.js';
+import { notifyOutbound } from './_notify.js';
 
 // Link de WhatsApp + crédito da indicação no resgate do cupom.
 //
@@ -104,6 +105,33 @@ export async function onRequestPost(context) {
         });
       } catch (e) { /* opcional */ }
     }
+
+    // ---------- AVISO AO CLIENTE (base de notificacoes). Best-effort. ----------
+    // Dispara DEPOIS da taxa e do wa.me, ou seja, fora do caminho critico e
+    // depois de tudo que a resposta precisa. Sem provedor configurado (default)
+    // isto so grava provider='none'/status='noop' e loga; com provedor, envia e
+    // marca sent/failed. Em qualquer falha — RPC, rede, timeout — o resgate ja
+    // aconteceu: o status, o corpo e o whatsappUrl sao os mesmos de sempre.
+    //
+    // `env` e' o objeto de configuracao do Cloudflare Pages: sem ele o
+    // adaptador cairia em process.env e em 'none', que e' o default seguro.
+    // Contexto (titulo/empresa) vem do BANCO, via loadOfferContext acima.
+    try {
+      await notifyOutbound(supabase, {
+        event: 'coupon_claimed',
+        channel: 'WHATSAPP',
+        customerId: customerId,
+        couponId: data.couponId,
+        env: env,
+        vars: {
+          tenantId: tenantId,
+          title: ctx ? ctx.title : '',
+          businessName: ctx ? ctx.businessName : '',
+          publicId: publicId,
+          shortCode: data.shortCode,
+        },
+      });
+    } catch (e) { /* opcional: o aviso nunca derruba o resgate */ }
 
     return json({
       ...data,

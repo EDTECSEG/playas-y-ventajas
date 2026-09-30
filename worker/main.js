@@ -65,6 +65,8 @@ import driverAddDocument from '../netlify/functions/driver-add-document.js';
 import driverListForBusiness from '../netlify/functions/driver-list-for-business.js';
 import driverDocumentUrl from '../netlify/functions/driver-document-url.js';
 import driverPosition from '../netlify/functions/driver-position.js';
+import shuttleReservation from '../netlify/functions/shuttle-reservation.js';
+import driverShuttleRuns from '../netlify/functions/driver-shuttle-runs.js';
 
 // driver-list-for-business e driver-document-url entraram na whitelist juntos
 // porque um sem o outro nao serve: a lista diz que existe um documento pendente,
@@ -118,6 +120,12 @@ const ROUTES = {
   // (fonte de list_live_vehicles no mapa de /cliente). Seu par de leitura,
   // shuttle, ja esta acima.
   'driver-position': driverPosition,
+  // Agendamento de translado: o cliente identificado cria/cancela e acompanha as
+  // proprias reservas (credencial = customerToken HMAC, como offers
+  // ?mode=my-coupons); o motorista aprovado ve a agenda do dia e conclui a
+  // corrida (credencial = sessao de driver, como driver-position).
+  'shuttle-reservation': shuttleReservation,
+  'driver-shuttle-runs': driverShuttleRuns,
 };
 
 const CORS_HEADERS = {

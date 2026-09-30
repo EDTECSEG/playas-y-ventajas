@@ -84,6 +84,16 @@ const RPC_ERROR_STATUS = {
   INVITE_INVALID: 404,
   DOCUMENT_NOT_FOUND: 404,
   SHUTTLE_NOT_FOUND: 404,
+  // Agendamento de translado (SPEC-agendamento). Sem estas entradas a mesma
+  // regra voltaria 400 na Netlify e 409/404 no Worker, conforme o dialeto.
+  RESERVATION_NOT_FOUND: 404,
+  SLOT_CONFLICT: 409,
+  INVALID_STATUS_TRANSITION: 409,
+  SHUTTLE_HAS_RESERVATIONS: 409,
+  OUTSIDE_HOURS: 400,
+  DAY_NOT_ACTIVE: 400,
+  INVALID_PASSENGERS: 400,
+  INVALID_SCHEDULE: 400,
 };
 
 function rpcErrorStatus(error) {

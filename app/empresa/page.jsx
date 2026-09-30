@@ -87,6 +87,26 @@ export default function EmpresaPage() {
     priceCents: '', opensAt: '', closesAt: '', activeDays: '1,2,3,4,5,6', stopsText: '',
   });
   const [editingShuttle, setEditingShuttle] = useState(null);
+  // Fila de reservas de translado: a empresa confirma/recusa/cancela.
+  // `revisandoReserva` guarda o id com o motivo aberto; `reservaMotivo` o texto
+  // da justificativa (opcional). `reservaFiltro` e um filtro de tela repassado
+  // a RPC como p_status; os demais campos sao iguais aos de `motoristas`.
+  const [reservations, setReservations] = useState([]);
+  const [reservationsMsg, setReservationsMsg] = useState('');
+  const [reservationsBusy, setReservationsBusy] = useState(false);
+  const [reservaFiltro, setReservaFiltro] = useState('');
+  const [revisandoReserva, setRevisandoReserva] = useState(null);
+  const [reservaMotivo, setReservaMotivo] = useState('');
+
+  // --- Relatorio (business_report_v3, com degradacao para business_report) ---
+  // Bloco proprio e aditivo: nao encosta em nenhuma variavel dos modos acima,
+  // entao o agente da aba Reservas pode mexer noTranslations sem colidir aqui.
+  const [report, setReport] = useState(null);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportMsg, setReportMsg] = useState('');
+  const [reportDays, setReportDays] = useState(30);
+  const [reportBillingBusy, setReportBillingBusy] = useState(false);
+  const [reportBillingMsg, setReportBillingMsg] = useState('');
   const [regForm, setRegForm] = useState({
     tenantSlug: 'playas-y-ventajas', name: '', category: 'passeio', city: '', phone: '', email: '',
     cnpj: '', website: '', logoUrl: '', lat: '', lng: '', internalCode: '', pin: '', pin2: '',
@@ -454,6 +474,59 @@ export default function EmpresaPage() {
     if (res.ok) setStats(data);
   }
 
+  // ------------------------------------------------------------
+  // Relatorio (aba "Relatorio")
+  // ------------------------------------------------------------
+  // A UI so manda `days`. Quem valida o periodo, resolve a empresa e escolhe
+  // entre business_report_v3 e business_report e o handler, a partir do ATOR
+  // (nunca do businessId da URL); a resposta traz `source` dizendo qual das
+  // duas respondeu. Sem AbortController nesta pagina (mesmo padrao de
+  // loadStats/loadShuttles): o carimbo reportBusy e a trava contra clique duplo.
+  async function loadReport(s, days) {
+    const sess = s || session;
+    if (!sess || reportBusy) return;
+    setReportBusy(true);
+    setReportMsg('');
+    setReportBillingMsg('');
+    try {
+      const res = await fetch(`/.netlify/functions/empresa?mode=report&days=${encodeURIComponent(String(days || 30))}`, {
+        headers: { Authorization: `Bearer ${sess.sessionToken}` },
+      });
+      const data = await res.json();
+      if (res.ok) { setReport(data); return; }
+      setReportMsg(data.error || (t.reportLoadError ?? 'Erro ao carregar relatório'));
+    } catch (e) {
+      setReportMsg(t.reportLoadError ?? 'Erro ao carregar relatório');
+    } finally {
+      setReportBusy(false);
+    }
+  }
+
+  // A assinatura nao e gerenciada aqui: quem monta e paga o checkout e o
+  // endpoint billing. Este botao so pede o status e obedece a URL devolvida
+  // (vindo de tres lugares diferentes conforme o caminho que o checkout usou).
+  async function openBillingSubscription() {
+    const sess = session;
+    if (!sess || reportBillingBusy) return;
+    setReportBillingBusy(true);
+    setReportBillingMsg('');
+    try {
+      const res = await fetch('/.netlify/functions/billing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess.sessionToken}` },
+        body: JSON.stringify({ action: 'status', businessId: sess.businessId }),
+      });
+      const data = await res.json();
+      const url = data?.subscription_url || data?.init_point || data?.data?.subscription_url || data?.data?.init_point;
+      if (url) { window.open(url, '_blank'); return; }
+      setReportBillingMsg(data?.status || data?.error || (t.reportBillingNoLink ?? 'Sem cobrança ativa para abrir.'));
+    } catch (e) {
+      setReportBillingMsg(t.reportBillingNoLink ?? 'Não foi possível consultar a assinatura.');
+    } finally {
+      setReportBillingBusy(false);
+    }
+  }
+
   // --- Revisao de cadastro de motorista -------------------------------
   //
   // A listagem vem de driver-list-for-business, que devolve nome, telefone,
@@ -545,6 +618,79 @@ export default function EmpresaPage() {
       setDriversMsg(t.driversReviewError ?? 'Não foi possível registrar a decisão.');
     } finally {
       setDriversBusy(false);
+    }
+  }
+
+  // --- Fila de reservas de translado ---------------------------------------
+  // GET mode=reservations devolve { reservations, count }; a lista carrega
+  // telefone de contato e observacao, entao a resposta e no-store. `status` e
+  // um filtro de tela opcional repassado a RPC como p_status.
+  async function loadReservations(s, status) {
+    const sess = s || session;
+    setReservationsBusy(true);
+    setReservationsMsg('');
+    try {
+      const q = status ? `&status=${encodeURIComponent(status)}` : '';
+      const res = await fetch(`/.netlify/functions/empresa?mode=reservations${q}`, {
+        headers: { Authorization: `Bearer ${sess.sessionToken}` },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setReservationsMsg(
+          res.status === 403
+            ? (t.reservationsForbidden ?? 'Você não pode ver esta fila.')
+            : (t.reservationsLoadError ?? 'Não foi possível carregar as reservas.')
+        );
+        setReservations([]);
+        return;
+      }
+      setReservations(data.reservations || []);
+      if (!(data.reservations || []).length) {
+        setReservationsMsg(t.reservationsEmpty ?? 'Nenhuma reserva ainda.');
+      }
+    } catch (e) {
+      setReservationsMsg(t.reservationsLoadError ?? 'Não foi possível carregar as reservas.');
+    } finally {
+      setReservationsBusy(false);
+    }
+  }
+
+  // Decisao da empresa. action = confirm | reject | cancel; o handler valida
+  // antes da RPC e mapeia RESERVATION_NOT_FOUND -> 404 e
+  // INVALID_STATUS_TRANSITION -> 409.
+  async function reviewReservation(reservationId, decision, reason) {
+    const sess = session;
+    if (!sess?.sessionToken) return;
+    setReservationsBusy(true);
+    setReservationsMsg('');
+    try {
+      const res = await fetch('/.netlify/functions/empresa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess.sessionToken}` },
+        body: JSON.stringify({ action: 'review_reservation', reservationId, decision, reason: reason || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setReservationsMsg(
+          res.status === 409
+            ? (t.reservationsConflict ?? 'A reserva já foi decidida ou o status não permite essa mudança.')
+            : res.status === 404
+              ? (t.reservationsNotFound ?? 'Reserva não encontrada.')
+              : res.status === 403
+                ? (t.reservationsForbidden ?? 'Você não pode revisar esta reserva.')
+                : (data?.error === 'ACTION_INVALID'
+                    ? (t.reservationsActionInvalid ?? 'Ação inválida.')
+                    : (t.reservationsReviewError ?? 'Não foi possível registrar a decisão.'))
+        );
+        return;
+      }
+      setRevisandoReserva(null);
+      setReservaMotivo('');
+      await loadReservations(sess);
+    } catch (e) {
+      setReservationsMsg(t.reservationsReviewError ?? 'Não foi possível registrar a decisão.');
+    } finally {
+      setReservationsBusy(false);
     }
   }
 
@@ -773,6 +919,8 @@ export default function EmpresaPage() {
             <button style={tab === 'ig' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('ig')}>{t.igTab ?? '📣 Instagram'}</button>
             <button style={tab === 'translado' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setTab('translado'); loadShuttles(); }}>{t.tabShuttles ?? '🚐 Translado'}</button>
             <button style={tab === 'motoristas' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setTab('motoristas'); loadDrivers(); }}>{t.tabDrivers ?? 'Motoristas'}</button>
+            <button style={tab === 'reservas' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setTab('reservas'); loadReservations(session); }}>{t.tabReservas ?? '📅 Reservas'}</button>
+            <button style={tab === 'relatorio' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setTab('relatorio'); loadReport(session, reportDays); }}>{t.reportTab ?? '📈 Relatório'}</button>
           </div>
 
           {tab === 'motoristas' && (
@@ -1141,8 +1289,269 @@ export default function EmpresaPage() {
             ))}
           </div>
           )}
+
+          {/* ------------------------------------------------------------
+              Relatorio - painel proprio, inserido depois do bloco de
+              translado e antes do fim da pagina. Nao mistura variavel com os
+              blocos acima: o agente da aba Reservas pode acrescentar o painel
+              dele ao lado deste sem reverter nada daqui.
+              ------------------------------------------------------------ */}
+          {tab === 'relatorio' && (
+          <>
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>{t.reportTitle ?? '📈 Relatório'}</h3>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+              {[7, 30, 90].map((d) => (
+                <button
+                  key={d}
+                  style={reportDays === d ? btn : { ...btn, background: theme.border, color: theme.text }}
+                  onClick={() => { setReportDays(d); loadReport(session, d); }}
+                >
+                  {d} {t.reportDays ?? 'dias'}
+                </button>
+              ))}
+            </div>
+            {reportBusy && <p style={{ fontSize: 13 }}>{t.loading ?? 'Carregando...'}</p>}
+            {reportMsg && <p style={{ fontSize: 13, color: '#c0392b' }}>{reportMsg}</p>}
+          </div>
+
+          {report && (
+          <>
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>{t.reportTotals ?? 'Totais do período'}</h3>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {[
+                [t.reportIssued ?? 'Emitidos', report.totals?.issued],
+                [t.reportValidated ?? 'Validados', report.totals?.validated],
+                [t.reportConversion ?? 'Conversão', report.totals?.conversionPct != null ? `${report.totals.conversionPct}%` : '—'],
+                [t.reportNewCustomers ?? 'Novos clientes', report.totals?.newCustomers],
+              ].map(([label, value]) => (
+                <div key={label} style={{ flex: '1 1 120px', background: theme.greenLight, borderRadius: 10, padding: 12 }}>
+                  <div style={{ fontSize: 12, opacity: 0.75 }}>{label}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700 }}>{value ?? 0}</div>
+                </div>
+              ))}
+            </div>
+            {report.totals?.totalCustomers != null && (
+              <p style={{ fontSize: 13, opacity: 0.75, margin: '10px 0 0' }}>
+                {t.reportTotalCustomers ?? 'Clientes acumulados:'} {report.totals.totalCustomers}
+                {report.totals.returningCustomers != null ? ` · ${t.reportReturning ?? 'recorrentes:'} ${report.totals.returningCustomers}` : ''}
+              </p>
+            )}
+          </div>
+
+          {Array.isArray(report.daily) && report.daily.length > 0 && (
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>{t.reportDaily ?? 'Resgates por dia'}</h3>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: 6 }}>{t.reportDay ?? 'Dia'}</th>
+                    <th style={{ textAlign: 'right', padding: 6 }}>{t.reportIssued ?? 'Emitidos'}</th>
+                    <th style={{ textAlign: 'right', padding: 6 }}>{t.reportValidated ?? 'Validados'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.daily.map((d) => (
+                    <tr key={d.day} style={{ borderTop: `1px solid ${theme.border}` }}>
+                      <td style={{ padding: 6 }}>{d.day}</td>
+                      <td style={{ padding: 6, textAlign: 'right' }}>{d.issued}</td>
+                      <td style={{ padding: 6, textAlign: 'right' }}>{d.validated}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          )}
+
+          {report.byCampaign?.length > 0 && (
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>{t.reportByCampaign ?? 'Por campanha'}</h3>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: 6 }}>{t.reportCampaign ?? 'Campanha'}</th>
+                    <th style={{ textAlign: 'right', padding: 6 }}>{t.reportIssued ?? 'Emitidos'}</th>
+                    <th style={{ textAlign: 'right', padding: 6 }}>{t.reportValidated ?? 'Validados'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.byCampaign.map((c) => (
+                    <tr key={c.campaignId || c.title} style={{ borderTop: `1px solid ${theme.border}` }}>
+                      <td style={{ padding: 6 }}>{c.title}</td>
+                      <td style={{ padding: 6, textAlign: 'right' }}>{c.issued}</td>
+                      <td style={{ padding: 6, textAlign: 'right' }}>{c.validated}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          )}
+
+          {report.byTemplate?.length > 0 && (
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>{t.reportByTemplate ?? 'Por cupom'}</h3>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: 6 }}>{t.reportTemplate ?? 'Cupom'}</th>
+                    <th style={{ textAlign: 'right', padding: 6 }}>{t.reportIssued ?? 'Emitidos'}</th>
+                    <th style={{ textAlign: 'right', padding: 6 }}>{t.reportValidated ?? 'Validados'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.byTemplate.map((c) => (
+                    <tr key={c.templateId || c.title} style={{ borderTop: `1px solid ${theme.border}` }}>
+                      <td style={{ padding: 6 }}>{c.title}</td>
+                      <td style={{ padding: 6, textAlign: 'right' }}>{c.issued}</td>
+                      <td style={{ padding: 6, textAlign: 'right' }}>{c.validated}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          )}
+
+          {report.drivers && (
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>{t.reportDrivers ?? '🚗 Motoristas'}</h3>
+            <p style={{ fontSize: 13, margin: '6px 0' }}>{t.reportDriversTotal ?? 'Total:'} <strong>{report.drivers.total ?? 0}</strong></p>
+            <p style={{ fontSize: 13, margin: '6px 0' }}>{t.reportDriversApproved ?? 'Aprovados:'} <strong>{report.drivers.approved ?? 0}</strong></p>
+            <p style={{ fontSize: 13, margin: '6px 0' }}>{t.reportDriversPending ?? 'Pendentes:'} <strong>{report.drivers.pending ?? 0}</strong></p>
+            {report.drivers.documentsPending != null && (
+              <p style={{ fontSize: 13, margin: '6px 0' }}>{t.reportDriversDocs ?? 'Documentos pendentes:'} <strong>{report.drivers.documentsPending}</strong></p>
+            )}
+            <p style={{ fontSize: 12, opacity: 0.75, margin: '8px 0 0' }}>{t.reportDriversHint ?? 'Mesmo escopo da aba Motoristas: seus motoristas e os independentes.'}</p>
+          </div>
+          )}
+
+          {report.billing && (
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>{t.reportBilling ?? '💳 Assinatura'}</h3>
+            <p style={{ fontSize: 13, margin: '6px 0' }}>{t.reportPlan ?? 'Plano:'} <strong>{report.billing.plan ?? '—'}</strong></p>
+            <p style={{ fontSize: 13, margin: '6px 0' }}>{t.reportBillingStatus ?? 'Status:'} <strong>{report.billing.status ?? '—'}</strong></p>
+            <p style={{ fontSize: 13, margin: '6px 0' }}>
+              {t.reportMonthlyFee ?? 'Mensalidade:'} <strong>{report.billing.monthlyFeeCents != null ? `R$ ${(report.billing.monthlyFeeCents / 100).toFixed(2)}` : '—'}</strong>
+            </p>
+            <p style={{ fontSize: 13, margin: '6px 0' }}>
+              {t.reportFeePerCoupon ?? 'Taxa por resgate:'} <strong>{report.billing.feePerCouponCents != null ? `R$ ${(report.billing.feePerCouponCents / 100).toFixed(2)}` : '—'}</strong>
+            </p>
+            <p style={{ fontSize: 13, margin: '6px 0' }}>
+              {t.reportCharged ?? 'Cobrado no período:'} <strong>{report.billing.chargedCents != null ? `R$ ${(report.billing.chargedCents / 100).toFixed(2)}` : '—'}</strong>
+            </p>
+            <p style={{ fontSize: 12, opacity: 0.75, margin: '10px 0' }}>{t.reportChargedHint ?? 'Valor cobrado pela plataforma, não o desconto dado ao cliente.'}</p>
+            {reportBillingMsg && <p style={{ fontSize: 13, color: '#c0392b' }}>{reportBillingMsg}</p>}
+            <button style={smallBtn} onClick={openBillingSubscription} disabled={reportBillingBusy}>
+              {reportBillingBusy ? (t.loading ?? 'Carregando...') : (t.reportBillingButton ?? 'Ver/retomar assinatura')}
+            </button>
+          </div>
+          )}
+
+          {report.shuttle && (
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>{t.reportShuttle ?? '🚐 Translado'}</h3>
+            <p style={{ fontSize: 13, margin: '6px 0' }}>{t.reportShuttleServices ?? 'Serviços:'} <strong>{report.shuttle.services ?? 0}</strong></p>
+            <p style={{ fontSize: 13, margin: '6px 0' }}>{t.reportShuttleActive ?? 'Ativos:'} <strong>{report.shuttle.activeServices ?? 0}</strong></p>
+            <p style={{ fontSize: 13, margin: '6px 0' }}>{t.reportShuttleReporting ?? 'Veículos reportando posição:'} <strong>{report.shuttle.vehiclesReporting ?? 0}</strong></p>
+          </div>
+          )}
+
+          {report.rides === null && (
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>{t.reportRides ?? '🚕 Corridas'}</h3>
+            <p style={{ fontSize: 13, opacity: 0.75, margin: 0 }}>{t.reportRidesEmpty ?? 'Ainda não há dados de corridas para o período.'}</p>
+          </div>
+          )}
+
+{report.source === 'business_report' && (
+            <p style={{ fontSize: 12, opacity: 0.6, margin: 0 }}>
+              {t.reportFallbackNotice ?? 'Exibindo dados consolidados do relatório (motoristas, assinatura e translado entram na próxima versão).'}
+            </p>
+            )}
+          </>
+          )}
+          </>
+          )}
+
+          {tab === 'reservas' && (
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>{t.reservationsTitle ?? '📅 Reservas de translado'}</h3>
+            <p style={{ fontSize: 13, opacity: 0.75, marginTop: 0 }}>
+              {t.reservationsHint ?? 'A empresa decide cada reserva. Confirmar, recusar e cancelar exigem uma transição de status válida no banco.'}
+            </p>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+              {['', 'pending', 'confirmed', 'rejected', 'cancelled', 'completed'].map((f) => (
+                <button
+                  key={f}
+                  style={reservaFiltro === f ? btn : { ...btn, background: theme.border, color: theme.text }}
+                  onClick={() => { setReservaFiltro(f); loadReservations(session, f || undefined); }}
+                >
+                  {f ? f : (t.reservationsAll ?? 'Todas')}
+                </button>
+              ))}
+            </div>
+
+            {reservationsMsg && <p style={{ fontSize: 13, color: '#c0392b', fontWeight: 600 }}>{reservationsMsg}</p>}
+            {reservationsBusy && <p style={{ fontSize: 13, opacity: 0.7 }}>{t.loading ?? 'Carregando...'}</p>}
+
+            {!reservationsBusy && reservations.map((r) => (
+              <div key={r.reservationId} style={{ borderTop: `1px solid ${theme.border}`, paddingTop: 12, marginTop: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <strong>{r.serviceName}</strong>
+                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 999, background: r.status === 'confirmed' || r.status === 'completed' ? theme.greenLight : r.status === 'pending' ? '#fdf3d0' : theme.border, color: r.status === 'confirmed' || r.status === 'completed' ? theme.greenDark : '#8a6d1f' }}>
+                    {r.status}
+                  </span>
+                </div>
+                <p style={{ fontSize: 13, opacity: 0.75, margin: '4px 0' }}>
+                  {new Date(r.scheduledFor).toLocaleString()} · {r.passengers} {r.passengers === 1 ? (t.reservationsPax ?? 'pax') : (t.reservationsPaxs ?? 'pax')}
+                  {r.priceCents != null ? ` · R$ ${(r.priceCents / 100).toFixed(2)}` : ''}
+                </p>
+                {r.businessName && <p style={{ fontSize: 12, opacity: 0.6, margin: '2px 0' }}>{r.businessName}{r.businessPhone ? ` · ${r.businessPhone}` : ''}</p>}
+                {r.contactPhone && <p style={{ fontSize: 13, margin: '2px 0' }}>📞 {r.contactPhone}</p>}
+                {r.notes && <p style={{ fontSize: 13, opacity: 0.75, margin: '2px 0' }}>{r.notes}</p>}
+                {r.reason && <p style={{ fontSize: 12, opacity: 0.6, margin: '2px 0' }}>{t.reservationsReason ?? 'Motivo:'} {r.reason}</p>}
+
+                {(r.status === 'pending' || r.status === 'confirmed') && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                    {r.status === 'pending' && (
+                      <button style={{ ...smallBtn, background: '#0B6E4F', color: '#fff' }} disabled={reservationsBusy} onClick={() => reviewReservation(r.reservationId, 'confirm')}>
+                        {t.reservationsConfirm ?? 'Confirmar'}
+                      </button>
+                    )}
+                    {r.status === 'pending' && (
+                      <button style={{ ...smallBtn, background: theme.border, color: theme.text }} disabled={reservationsBusy} onClick={() => { setRevisandoReserva(revisandoReserva === r.reservationId ? null : r.reservationId); setReservaMotivo(''); }}>
+                        {t.reservationsReject ?? 'Recusar'}
+                      </button>
+                    )}
+                    {r.status === 'confirmed' && (
+                      <button style={{ ...smallBtn, background: '#c0392b', color: '#fff' }} disabled={reservationsBusy} onClick={() => reviewReservation(r.reservationId, 'cancel')}>
+                        {t.reservationsCancel ?? 'Cancelar'}
+                      </button>
+                    )}
+                    {(r.status === 'pending' && revisandoReserva === r.reservationId) && (
+                      <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <input style={input} placeholder={t.reservationsReasonPlaceholder ?? 'Motivo (opcional)'} value={reservaMotivo} onChange={(e) => setReservaMotivo(e.target.value)} />
+                        <button style={{ ...smallBtn, background: '#c0392b', color: '#fff' }} disabled={reservationsBusy} onClick={() => reviewReservation(r.reservationId, 'reject', reservaMotivo)}>
+                          {t.reservationsConfirmReject ?? 'Confirmar recusa'}
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          )}
         </>
       )}
+
       {msg && <p style={{ fontSize: 13 }}>{msg}</p>}
       </div>
     </main>

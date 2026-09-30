@@ -22,6 +22,7 @@ const HELPERS = new Set([
   '_shared.js',
   '_mapPlaces.js', // logica Overpass, compartilhada pelos dois handlers de mapa
   '_wa.js',
+  '_notify.js', // base de notificacoes (fila/auditoria + adaptador no-op)
 ]);
 
 // O par do helper de admin tem nomes diferentes nos dois dialetos.

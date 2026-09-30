@@ -24,6 +24,12 @@ import {
   pinConsumed,
   buildDocumentRequest,
   buildPositionRequest,
+  buildRunsRequest,
+  buildCompleteRunRequest,
+  localDateIso,
+  sortRunsByTime,
+  formatRunWhen,
+  RUN_STATUS_LABEL,
   situationFor,
   sessionFromStorage,
   pendingFromStorage,
@@ -92,6 +98,12 @@ export default function MotoristaPage() {
   const [servicos, setServicos] = useState([]);
   const [servicoSel, setServicoSel] = useState('');
   const [ultimaPos, setUltimaPos] = useState(null);
+  // Corridas do dia (driver-shuttle-runs). `corridasErro` e separado da lista
+  // pelo mesmo motivo do cliente: "nenhuma corrida hoje" e "nao consegui
+  // carregar" sao coisas diferentes, e mostrar a primeira com o servidor quebrado
+  // faz o motorista achar que foi escalado para outra empresa.
+  const [corridas, setCorridas] = useState([]);
+  const [corridasErro, setCorridasErro] = useState('');
 
   // Sessao e cadastro pela metade sao reidratados do navegador. O guarda de
   // cada um esta em ./logic: o cadastro pela metade e conferido por
@@ -108,6 +120,13 @@ export default function MotoristaPage() {
   // encheria no click, e a tela abriria vazia apos o login.
   useEffect(() => {
     if (canDrive(session && session.status)) carregarServicos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
+  // Agenda do dia entra junto com os servicos: quem nao esta na frota (pending/
+  // rejected) nao tem corrida nenhuma, e o card nem aparece.
+  useEffect(() => {
+    if (canDrive(session && session.status)) carregarCorridas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
@@ -140,6 +159,32 @@ export default function MotoristaPage() {
     } catch (e) {
       setServicos([]);
     }
+  }
+
+  // Corridas de hoje da frota do motorista. A ordem, a formatacao e a credencial
+  // sao decididas em ./logic; aqui e so estado, fetch e render. O `call` ja
+  // traduz o {error} do servidor em texto e o 401/403 chega como NOT_APPROVED /
+  // SESSION_EXPIRED, entao o catch nao precisa adivinhar codigo.
+  async function carregarCorridas() {
+    try {
+      const req = buildRunsRequest({ session });
+      const data = await call(`driver-shuttle-runs${req.query}`, { token: req.headerToken });
+      setCorridas(sortRunsByTime(Array.isArray(data.runs) ? data.runs : []));
+      setCorridasErro('');
+    } catch (e) {
+      setCorridas([]);
+      setCorridasErro(e.message || friendlyMessage('erro interno'));
+    }
+  }
+
+  async function concluirCorrida(corrida) {
+    const req = buildCompleteRunRequest({ session, reservationId: corrida.reservationId, status: corrida.status });
+    await run(async () => {
+      await call('driver-shuttle-runs', { body: req.body, token: req.headerToken });
+      // Recarrega em vez de remendar o array: a empresa ve o 'completed' na
+      // fila e o horario do dia continua inteiro.
+      await carregarCorridas();
+    });
   }
 
   // So aprovado envia posicao. O telefone/mapa pede permissao de localizacao:
@@ -342,6 +387,50 @@ export default function MotoristaPage() {
                 Ultima posicao registrada as {new Date(ultimaPos).toLocaleTimeString()}.
               </p>
             ) : null}
+          </div>
+        ) : null}
+
+        {session && canDrive(session.status) ? (
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>Minhas corridas de hoje</h3>
+            <p style={{ color: theme.textMuted, marginTop: 0 }}>
+              Reservas confirmadas da sua empresa em {localDateIso()}. Nao mostramos nome nem
+              telefone do cliente: aqui e a agenda da rota.
+            </p>
+            {corridasErro ? (
+              <p style={{ color: '#B42318', margin: 0 }}>{corridasErro}</p>
+            ) : corridas.length === 0 ? (
+              <p style={{ marginBottom: 0 }}>Nenhuma corrida confirmada para hoje.</p>
+            ) : (
+              corridas.map((c) => (
+                <div key={c.reservationId} style={{
+                  border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12,
+                  marginTop: 8, background: theme.bg,
+                }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <strong style={{ flex: 1, minWidth: 120 }}>{formatRunWhen(c.scheduledFor)}</strong>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999,
+                      background: c.status === 'completed' ? theme.greenLight : theme.gold,
+                      color: c.status === 'completed' ? theme.green : theme.greenDark,
+                    }}>{RUN_STATUS_LABEL[c.status] || c.status}</span>
+                  </div>
+                  <div style={{ fontSize: 13, marginTop: 4 }}>{c.serviceName}</div>
+                  <div style={{ fontSize: 12, color: theme.textMuted }}>
+                    {c.passengers} passageiro(s)
+                    {c.durationMinutes ? ` · ${c.durationMinutes} min` : ''}
+                  </div>
+                  {c.status === 'confirmed' ? (
+                    <button style={{ ...smallBtn, marginTop: 8 }} onClick={() => concluirCorrida(c)} disabled={ocupado}>
+                      Concluir corrida
+                    </button>
+                  ) : null}
+                </div>
+              ))
+            )}
+            <div style={{ marginTop: 12 }}>
+              <button style={ghostBtn} onClick={carregarCorridas} disabled={ocupado}>Recarregar corridas</button>
+            </div>
           </div>
         ) : null}
 
