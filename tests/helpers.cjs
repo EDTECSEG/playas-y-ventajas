@@ -32,7 +32,7 @@ function installSupabaseMock(fakeClient) {
 
 // Fake client com RPC/storage/from configuraveis por teste.
 function makeFakeSupabase({ rpc, upload, from } = {}) {
-  const calls = { rpc: [], uploads: [], removals: [], from: [] };
+  const calls = { rpc: [], uploads: [], removals: [], from: [], eq: [], order: [] };
   return {
     calls,
     rpc: async (name, args) => {
@@ -40,10 +40,11 @@ function makeFakeSupabase({ rpc, upload, from } = {}) {
       if (typeof rpc === 'function') return rpc(name, args);
       return { data: null, error: null };
     },
-    // Cadeia minima de .from().select().eq().in()/.maybeSingle() para handlers
-    // que leem tabela alem de rpc (ex.: withOfferImages em offers.js,
-    // get-or-create em affiliates.js). Se um hook `from` for passado, o
-    // terminal (.in/.maybeSingle) resolve por ele, senao devolve data:null.
+    // Cadeia minima de .from().select().eq().in()/.order()/.limit()/.maybeSingle()
+    // para handlers que leem tabela alem de rpc (ex.: withOfferImages em
+    // offers.js, get-or-create em affiliates.js). Se um hook `from` for
+    // passado, o terminal (.in/.maybeSingle) resolve por ele, senao devolve
+    // data:null.
     from: (table) => {
       calls.from.push(table);
       const resolve = async () => {
@@ -52,8 +53,10 @@ function makeFakeSupabase({ rpc, upload, from } = {}) {
       };
       const chain = {
         select: () => ({ ...chain }),
-        eq: () => ({ ...chain }),
+        eq: (column, value) => { calls.eq.push({ table, column, value }); return { ...chain }; },
         in: () => resolve(),
+        order: (column, opts) => { calls.order.push({ table, column, opts }); return { ...chain }; },
+        limit: () => ({ ...chain }),
         maybeSingle: () => resolve(),
       };
       Object.defineProperty(chain, 'then', { value: undefined });

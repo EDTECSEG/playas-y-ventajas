@@ -86,6 +86,7 @@ export default function AdminPage() {
   }
   const [billing, setBilling] = useState([]);
   const [affiliates, setAffiliates] = useState([]);
+  const [affErr, setAffErr] = useState('');
   const [affRewards, setAffRewards] = useState({ affiliateRewardTemplateId: '', welcomeTemplateId: '', requireFirstClaim: true });
   const [msg, setMsg] = useState('');
   const [form, setForm] = useState({
@@ -131,7 +132,17 @@ export default function AdminPage() {
     const sess = s || session;
     const res = await fetch(`/.netlify/functions/admin?mode=affiliates`, { headers: { Authorization: `Bearer ${sess.sessionToken}` } });
     const data = await res.json();
-    if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
+    if (!res.ok) {
+      // A lista fica com o erro PRÓPRIO: quando a RPC quebrava, a tela caia no
+      // "Nenhum afiliado cadastrado ainda" e o dono achava que o cadastro
+      // tinha sumido. Falha de leitura e "não existe nenhum" são coisas
+      // diferentes e precisam aparecer diferentes.
+      setAffErr((data && data.error) || 'erro ao carregar');
+      setAffiliates([]);
+      setMsg(`Erro: ${(data && data.error) || 'erro ao carregar'}`);
+      return;
+    }
+    setAffErr('');
     setAffiliates(Array.isArray(data) ? data : []);
   }
 
@@ -429,7 +440,11 @@ export default function AdminPage() {
         <p style={{ fontSize: 12, marginTop: 0 }}>
           {t.affiliatesHint ?? 'Cada afiliado compartilha o link da home com \u200b?ref=CÓDIGO. O indicado é bonificado no resgate, e o afiliado recebe o prêmio quando configurado abaixo.'}
         </p>
-        {affiliates.length === 0 ? (
+        {affErr ? (
+          <p style={{ fontSize: 13, color: '#b91c1c', fontWeight: 600 }}>
+            {t.affLoadError ?? 'Não foi possível carregar os afiliados'}: {affErr}
+          </p>
+        ) : affiliates.length === 0 ? (
           <p style={{ fontSize: 13 }}>{t.affiliatesNone ?? 'Nenhum afiliado cadastrado ainda — eles se cadastram por /afiliado.'}</p>
         ) : (
           affiliates.map((a) => (

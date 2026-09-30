@@ -82,3 +82,72 @@ test('POST sem nome/telefone devolve 400', async (t) => {
   const res = await handler(makeEvent({ method: 'POST', body: { name: 'Maria' } }));
   assert.strictEqual(res.statusCode, 400);
 });
+
+// BUG (setembro/2026): a deduplicacao comparava o texto do telefone, entao
+// "22 99833-6286" e "22 99833-6286 " passavam uma pela outra e a MESMA pessoa
+// recebia dois codigos de indicacao. Aconteceu em producao.
+test('POST / deduplica pelos DIGITOS do telefone, nao pelo texto', async (t) => {
+  const fake = makeFakeSupabase({
+    from: async () => ({ data: { id: 'a-1', referral_code: 'MEUNOME-8E94' }, error: null }),
+    rpc: async () => { assert.fail('nao deve criar duplicado'); return { data: null, error: null }; },
+  });
+  const { handler, restore } = loadFunction('affiliates.js', fake);
+  t.after(restore);
+
+  const res = await handler(makeEvent({ method: 'POST', body: { name: 'Meu nome', phone: '(22) 99833-6286' } }));
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(parseBody(res).referralCode, 'MEUNOME-8E94');
+
+  const filtro = fake.calls.eq.find((c) => c.column === 'phone_digits');
+  assert.ok(filtro, 'a busca tem de usar a coluna phone_digits');
+  assert.strictEqual(filtro.value, '22998336286', 'compara so os digitos');
+  assert.ok(
+    !fake.calls.eq.some((c) => c.column === 'phone'),
+    'nao pode voltar a comparar o texto do telefone',
+  );
+});
+
+test('POST / telefone so com pontuacao devolve 400 em vez de cadastrar lixo', async (t) => {
+  const fake = makeFakeSupabase({ rpc: async () => ({ data: null, error: null }) });
+  const { handler, restore } = loadFunction('affiliates.js', fake);
+  t.after(restore);
+  const res = await handler(makeEvent({ method: 'POST', body: { name: 'Maria', phone: '() -' } }));
+  assert.strictEqual(res.statusCode, 400);
+});
+
+// A tela /afiliado oferecia 'empresa' e 'motorista', que violam o CHECK
+// affiliates_kind_check ('customer' | 'driver' | 'business') e faziam o
+// cadastro falhar com erro cru do Postgres.
+test('POST / kind fora do CHECK cai em customer em vez de estourar o banco', async (t) => {
+  const fake = makeFakeSupabase({
+    from: async () => ({ data: null, error: null }),
+    rpc: async (name, args) => {
+      if (name === 'affiliate_register') {
+        assert.strictEqual(args.p_kind, 'customer', 'kind invalido vira customer');
+        return { data: { affiliateId: 'a-3', referralCode: 'X-0001' }, error: null };
+      }
+      return { data: null, error: { message: 'unexpected rpc ' + name } };
+    },
+  });
+  const { handler, restore } = loadFunction('affiliates.js', fake);
+  t.after(restore);
+  const res = await handler(makeEvent({ method: 'POST', body: { name: 'X', phone: '21999990000', kind: 'empresa' } }));
+  assert.strictEqual(res.statusCode, 200);
+});
+
+test('POST / preserva um kind valido do formulario', async (t) => {
+  const fake = makeFakeSupabase({
+    from: async () => ({ data: null, error: null }),
+    rpc: async (name, args) => {
+      if (name === 'affiliate_register') {
+        assert.strictEqual(args.p_kind, 'driver');
+        return { data: { affiliateId: 'a-4', referralCode: 'Y-0002' }, error: null };
+      }
+      return { data: null, error: { message: 'unexpected rpc ' + name } };
+    },
+  });
+  const { handler, restore } = loadFunction('affiliates.js', fake);
+  t.after(restore);
+  const res = await handler(makeEvent({ method: 'POST', body: { name: 'Y', phone: '21999990001', kind: 'driver' } }));
+  assert.strictEqual(res.statusCode, 200);
+});

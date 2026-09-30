@@ -6,27 +6,48 @@ const { getSupabaseAdminClient } = require('./_supabaseAdmin');
 
 const TENANT_ID = '0dc57eeb-46c8-47ac-aad4-640d9d59e7b9';
 
+// Deduplicacao SEMPRE em digitos. A busca anterior era igualdade exata no
+// texto do telefone, entao "22 99833-6286" e "22 99833-6286 " (espaco no
+// fim) passavam uma pela outra e a mesma pessoa recebia DOIS codigos de
+// indicacao. A coluna phone_digits e gerada pelo Postgres a partir do phone,
+// entao nao ha como a comparacao divergir de novo.
+function phoneDigits(raw) {
+  return String(raw || '').replace(/\D/g, '');
+}
+
+// Os mesmos valores do CHECK affiliates_kind_check. Kind fora da lista cai em
+// 'customer' em vez de devolver o erro cru do Postgres ("violates check
+// constraint"), que nao diz nada para quem cadastrou.
+const KINDS = ['customer', 'driver', 'business'];
+
 exports.handler = async (event) => {
   try {
     const supabase = getSupabaseAdminClient();
 
     if (event.httpMethod === 'POST') {
       const { name, phone, email, kind } = JSON.parse(event.body || '{}');
-      if (!name || !phone) return { statusCode: 400, body: JSON.stringify({ error: 'nome e telefone obrigatÃ³rios' }) };
+      if (!name || !phone) return { statusCode: 400, body: JSON.stringify({ error: 'nome e telefone obrigatórios' }) };
+      const digits = phoneDigits(phone);
+      if (!digits) return { statusCode: 400, body: JSON.stringify({ error: 'telefone inválido' }) };
       // Idempotente por telefone: o mesmo cliente nunca cria afiliado duplicado.
       // O card de /cliente chama este endpoint a cada 'indicar amigo'.
+      // created_at asc + limit(1): se ainda houver duplicado antigo, o mais
+      // antigo manda e o codigo existente do afiliado nao muda de tempos em
+      // tempos. maybeSingle() segura o resultado em no maximo uma linha.
       const { data: existing, error: lookErr } = await supabase
         .from('affiliates')
         .select('id, referral_code')
         .eq('tenant_id', TENANT_ID)
-        .eq('phone', phone)
+        .eq('phone_digits', digits)
+        .order('created_at', { ascending: true })
+        .limit(1)
         .maybeSingle();
       if (!lookErr && existing) {
         return { statusCode: 200, body: JSON.stringify({ affiliateId: existing.id, referralCode: existing.referral_code, shareUrl: '/?ref=' + existing.referral_code }) };
       }
       const { data, error } = await supabase.rpc('affiliate_register', {
         p_tenant_id: TENANT_ID, p_name: name, p_phone: phone,
-        p_email: email || null, p_kind: kind || 'customer',
+        p_email: email || null, p_kind: KINDS.includes(kind) ? kind : 'customer',
       });
       if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
       return { statusCode: 200, body: JSON.stringify(data) };
@@ -34,7 +55,7 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === 'GET') {
       const { affiliateId, phone } = event.queryStringParameters || {};
-      if (!affiliateId || !phone) return { statusCode: 400, body: JSON.stringify({ error: 'affiliateId e phone obrigatÃ³rios' }) };
+      if (!affiliateId || !phone) return { statusCode: 400, body: JSON.stringify({ error: 'affiliateId e phone obrigatórios' }) };
       const { data, error } = await supabase.rpc('affiliate_dashboard', {
         p_tenant_id: TENANT_ID, p_affiliate_id: affiliateId, p_phone: phone,
       });

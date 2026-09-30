@@ -82,7 +82,9 @@ function renderBody(event, vars) {
     if (vars.title) linhas.push('Cupom: ' + vars.title);
     if (vars.businessName) linhas.push('Estabelecimento: ' + vars.businessName);
     if (vars.publicId) linhas.push('Codigo: ' + vars.publicId);
-    if (vars.shortCode) linhas.push('Codigo curto: ' + vars.shortCode);
+    // O codigo curto saiu daqui pelo mesmo motivo da mensagem de WhatsApp:
+    // ninguem no balcao consegue digitar (nao ha campo, e o codigo longo ja
+    // autoriza sozinho). Ver _wa.js.
     linhas.push('Mostre o codigo no balcao para usar.');
   } else if (event === 'shuttle_booking_confirmed') {
     linhas.push('Sua reserva de translado foi confirmada.');

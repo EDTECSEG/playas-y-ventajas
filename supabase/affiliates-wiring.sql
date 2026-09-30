@@ -61,7 +61,10 @@ AS $function$
   left join public.users u on u.id = r.referred_user_id
   where a.id = p_affiliate_id
     and a.tenant_id = p_tenant_id
-    and a.phone = p_phone
+    -- Compara os DIGITOS, nao o texto: o telefone volta do navegador como a
+    -- pessoa digitou e a igualdade exata fazia o painel devolver vazio so
+    -- por causa da mascara. phone_digits e coluna gerada pelo Postgres.
+    and a.phone_digits = regexp_replace(coalesce(p_phone, ''), '\D', '', 'g')
   group by a.id;
 $function$;
 
@@ -92,6 +95,20 @@ begin
     raise exception 'FORBIDDEN';
   end if;
 
+  -- BUG (setembro/2026): as contagens ficavam DENTRO do jsonb_agg(). Postgres
+  -- nao aninha agregacao (ERROR 42803), a RPC estourava em toda chamada e o
+  -- admin mostrava "nenhum afiliado cadastrado" mesmo com o cadastro no banco.
+  -- As contagens vao numa CTE e o jsonb_agg roda por fora, num nivel so.
+  with contagens as (
+    select r.affiliate_id,
+           count(*) as total,
+           count(*) filter (where r.status = 'converted') as converted,
+           count(*) filter (where r.status = 'pending') as pending
+    from public.referrals r
+    where (p_de is null or r.created_at >= p_de)
+      and (p_ate is null or r.created_at < p_ate)
+    group by r.affiliate_id
+  )
   select coalesce(jsonb_agg(
     jsonb_build_object(
       'affiliateId', a.id,
@@ -101,19 +118,15 @@ begin
       'kind', a.kind,
       'rewardStatus', a.reward_status,
       'createdAt', a.created_at,
-      'totalReferrals', count(r.id),
-      'converted', count(r.id) filter (where r.status = 'converted'),
-      'pending', count(r.id) filter (where r.status = 'pending')
+      'totalReferrals', coalesce(c.total, 0),
+      'converted', coalesce(c.converted, 0),
+      'pending', coalesce(c.pending, 0)
     ) order by a.created_at desc
   ), '[]'::jsonb)
   into v_out
   from public.affiliates a
-  left join public.referrals r
-         on r.affiliate_id = a.id
-        and (p_de is null or r.created_at >= p_de)
-        and (p_ate is null or r.created_at < p_ate)
-  where a.tenant_id = p_tenant_id
-  group by a.id;
+  left join contagens c on c.affiliate_id = a.id
+  where a.tenant_id = p_tenant_id;
 
   return v_out;
 end $function$;

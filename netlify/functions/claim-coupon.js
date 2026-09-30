@@ -1,6 +1,30 @@
 const { getSupabaseAdminClient, buildCustomerToken } = require('./_supabaseAdmin');
-const { buildCouponMessage, buildWaLink } = require('./_wa');
+const { buildCouponMessage, buildWaLink, siteUrl } = require('./_wa');
 const { notifyOutbound } = require('./_notify');
+
+// Codigo de indicacao de quem resgatou, quando essa pessoa tambem e afiliada.
+// A comparacao e por DIGITOS do telefone (coluna gerada phone_digits): o
+// telefone vem do navegador como a pessoa digitou. Antes nao havia essa
+// informacao na mensagem; o dono pediu o link de filiacao junto do site.
+// Falha aqui e inofensiva: a linha simplesmente nao entra na mensagem.
+async function findReferralCodeOfAffiliate(supabase, tenantId, phone) {
+  try {
+    const digits = String(phone || '').replace(/\D/g, '');
+    if (!digits) return null;
+    const { data, error } = await supabase
+      .from('affiliates')
+      .select('referral_code')
+      .eq('tenant_id', tenantId)
+      .eq('phone_digits', digits)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    return data.referral_code || null;
+  } catch (e) {
+    return null;
+  }
+}
 
 // Canon CJS. Espelho ESM: functions/.netlify/functions/claim-coupon.js
 //
@@ -90,7 +114,9 @@ exports.handler = async (event) => {
 
     try {
         const message = buildCouponMessage({
-          publicId, businessName: ctx.businessName, title: ctx.title, shortCode: data.shortCode,
+          publicId, businessName: ctx.businessName, title: ctx.title,
+          site: siteUrl(),
+          referralCode: await findReferralCodeOfAffiliate(supabase, tenantId, phone),
         });
         extras.whatsappUrl = buildWaLink({ phone: ctx.businessPhone, message, fallbackMessage: message });
       } catch (e) { /* opcional */ }

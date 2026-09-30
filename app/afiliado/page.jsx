@@ -3,9 +3,10 @@
 // Modulo do afiliado (Modelo A - recompensa em cupom). Publico, sem sessao:
 // o vinculo e por telefone, igual ao fluxo do cliente.
 //
-// Os textos ficam em portugues literal, e nao em t.*, porque lib/i18n.js esta
-// em alteracao por outro trabalho. Quando o arquivo voltar a ser editavel,
-// estas strings migram para la.
+// Os textos desta tela ainda ficam em portugues literal. A nota antiga dizia
+// que era por causa de uma alteracao em lib/i18n.js que ja terminou: as
+// strings migram para t.* (pt/en/es) em um lote proprio, junto da folha
+// impressa de divulgacao.
 
 import { useEffect, useRef, useState } from 'react';
 import Header from '../components/Header';
@@ -28,7 +29,12 @@ const input = { padding: 9, borderRadius: 8, border: `1px solid ${theme.border}`
 const btn = { padding: '9px 16px', borderRadius: 10, border: 'none', cursor: 'pointer', background: theme.gold, color: theme.greenDark, fontWeight: 700, marginRight: 8 };
 const smallBtn = { ...btn, padding: '5px 12px', fontSize: 12 };
 
-const KIND_LABEL = { customer: 'Cliente', empresa: 'Empresa', motorista: 'Motorista' };
+// O value das opcoes PRECISA ser o valor aceito pelo CHECK do banco
+// (affiliates_kind_check: 'customer' | 'driver' | 'business'). Antes eram
+// 'customer' | 'empresa' | 'motorista', e escolher empresa ou motorista
+// rebentava o INSERT com violacao de check - o cadastro do afiliado simply
+// nao acontecia. O texto da opcao continua em portugues para o usuario.
+const KIND_LABEL = { customer: 'Cliente', driver: 'Motorista', business: 'Empresa' };
 
 export default function AfiliadoPage() {
   const [splashDone, setSplashDone] = useState(false);
@@ -140,8 +146,8 @@ export default function AfiliadoPage() {
             <input style={input} placeholder="seu e-mail (opcional)" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
             <select style={input} value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
               <option value="customer">Sou cliente do programa</option>
-              <option value="empresa">Represento uma empresa parceira</option>
-              <option value="motorista">Sou motorista parceiro</option>
+              <option value="business">Represento uma empresa parceira</option>
+              <option value="driver">Sou motorista parceiro</option>
             </select>
             <button style={btn} onClick={register} disabled={busy}>{busy ? 'Cadastrando…' : 'Criar meu link de indicação'}</button>
           </div>

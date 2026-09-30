@@ -846,11 +846,11 @@ export default function ClientePage() {
           }}>
             {justClaimed.publicId}
           </p>
-          {justClaimed.shortCode && (
-            <p style={{ fontSize: 13, color: theme.textMuted, margin: '8px 0 0' }}>
-              Código curto: <strong style={{ letterSpacing: 2 }}>{justClaimed.shortCode}</strong>
-            </p>
-          )}
+          {/* O codigo curto saiu da tela (decisao do dono, setembro/2026): o
+              balcao nao tem campo para digitar e o codigo acima ja autoriza
+              sozinho, entao o numero so gerava confusao no caixa. O backend
+              continua aceitando quem use o par codigo+curto em material
+              antigo. Ver netlify/functions/_wa.js. */}
 
           {/* WhatsApp: link wa.me (gratuito, sem API). O usuario so toca em enviar. */}
           {justClaimed.whatsappUrl && (

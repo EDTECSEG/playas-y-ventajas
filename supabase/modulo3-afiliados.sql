@@ -35,6 +35,17 @@ CREATE TABLE IF NOT EXISTS public.affiliates (
   tenant_id       uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
   name            text NOT NULL,
   phone           text NOT NULL,
+  -- Telefone so com digitos, calculado pelo proprio banco.
+  --
+  -- POR QUE EXISTE: phone e text livre, entao "22 99833-6286" e
+  -- "22 99833-6286 " sao duas strings diferentes. Em producao isso criou dois
+  -- afiliados com o mesmo telefone e dois codigos (CLIENTE-5DCC e MEUNOME-8E94)
+  -- e a deduplicacao por igualdade de texto nao viu o par. Comparar digitos
+  -- resolve sem depender de mascara na entrada.
+  --
+  -- Gerada, nunca escrita a mao: nao ha como divergir do telefone.
+  -- (migration affiliates_phone_digits, aplicada em 2026-09-30)
+  phone_digits    text GENERATED ALWAYS AS (regexp_replace(phone, '\D', '', 'g')) STORED,
   email           text,
   -- Codigo curto de divulgacao. Unico por tenant.
   referral_code   text NOT NULL,
@@ -60,6 +71,18 @@ CREATE INDEX IF NOT EXISTS affiliates_tenant_idx
   ON public.affiliates (tenant_id);
 CREATE INDEX IF NOT EXISTS affiliates_kind_idx
   ON public.affiliates (tenant_id, kind);
+
+-- Um telefone = um codigo de afiliado, por tenant. A regra e de negocio, entao
+-- quem garante e o banco, e nao so a aplicacao: qualquer outro caminho de
+-- cadastro no futuro (importacao, script, painel) bate neste indice.
+--
+-- O indice e PARCIAL de proposito: phone_digits devolve '' quando falta
+-- telefone, e um unico sobre a coluna inteira colidiria todos os afiliados sem
+-- telefone entre si.
+-- (migration affiliates_unique_phone_digits, 2026-09-30)
+CREATE UNIQUE INDEX IF NOT EXISTS affiliates_tenant_phone_digits_key
+  ON public.affiliates (tenant_id, phone_digits)
+  WHERE phone_digits <> '';
 
 -- ------------------------------------------------------------
 -- 2) Tabela de indicacoes
@@ -145,6 +168,34 @@ declare
   v_code text;
   v_base text;
 begin
+  -- Um telefone = um codigo, por DIGITOS e nao por texto: "22 99833-6286" e
+  -- "22 99833-6286 " sao o mesmo telefone, e em producao isso ja tinha criado
+  -- dois afiliados (dois codigos) para uma pessoa so. Se o telefone ja e
+  -- afiliado, devolve o cadastro existente em vez de criar um segundo.
+  --
+  -- Isto tambem protege o indice unico affiliates_tenant_phone_digits_key: sem
+  -- a checagem, um telefone repetido cairia no except unique_violation, que so
+  -- sabe regenerar o CODIGO - e a segunda tentativa falharia pelo mesmo
+  -- telefone, devolvendo um 23505 em vez de "esse telefone ja e afiliado".
+  --
+  -- (migration affiliate_register_phone_is_idempotent, 2026-09-30)
+  select * into v_aff
+  from public.affiliates
+  where tenant_id = p_tenant_id
+    and phone_digits = regexp_replace(coalesce(p_phone, ''), '\D', '', 'g')
+    and phone_digits <> ''
+  order by created_at
+  limit 1;
+
+  if found then
+    return jsonb_build_object(
+      'affiliateId', v_aff.id,
+      'referralCode', v_aff.referral_code,
+      'shareUrl', '/?ref=' || v_aff.referral_code,
+      'alreadyRegistered', true
+    );
+  end if;
+
   -- codigo: usa o fornecido ou gera a partir do nome + aleatorio
   if p_referral_code is not null and p_referral_code <> '' then
     v_code := upper(regexp_replace(p_referral_code, '[^A-Za-z0-9]', '', 'g'));
@@ -162,11 +213,31 @@ begin
   return jsonb_build_object(
     'affiliateId', v_aff.id,
     'referralCode', v_aff.referral_code,
-    'shareUrl', '/?ref=' || v_aff.referral_code
+    'shareUrl', '/?ref=' || v_aff.referral_code,
+    'alreadyRegistered', false
   );
 exception
   when unique_violation then
-    -- codigo ja existe: gera outro automaticamente e tenta de novo
+    -- Colisao de CODIGO: e o caso normal, o codigo vem de nome + aleatorio.
+    -- Qualquer outra violacao unica (telefone, numa corrida de dois cadastros
+    -- simultaneos) nao se resolve mudando o codigo: devolve o existente.
+    select * into v_aff
+    from public.affiliates
+    where tenant_id = p_tenant_id
+      and phone_digits = regexp_replace(coalesce(p_phone, ''), '\D', '', 'g')
+      and phone_digits <> ''
+    order by created_at
+    limit 1;
+
+    if found then
+      return jsonb_build_object(
+        'affiliateId', v_aff.id,
+        'referralCode', v_aff.referral_code,
+        'shareUrl', '/?ref=' || v_aff.referral_code,
+        'alreadyRegistered', true
+      );
+    end if;
+
     v_code := v_code || upper(encode(gen_random_bytes(1), 'hex'));
     insert into public.affiliates (tenant_id, name, phone, email, kind, referral_code)
     values (p_tenant_id, p_name, p_phone, p_email, p_kind, v_code)
@@ -174,7 +245,8 @@ exception
     return jsonb_build_object(
       'affiliateId', v_aff.id,
       'referralCode', v_aff.referral_code,
-      'shareUrl', '/?ref=' || v_aff.referral_code
+      'shareUrl', '/?ref=' || v_aff.referral_code,
+      'alreadyRegistered', false
     );
 end $function$
 ;
