@@ -65,7 +65,21 @@ Fluxo completo com lógica pura testada em `app/motorista/logic.js`:
 - **Clientes**: busca e edição (nome, email, Instagram, ativo).
 - **Resset de senha** de negócio (PIN temporário) e **reset de PIN de motorista** (`admin_driver_reset_pin`).
 
-## 7. Regras de negócio no banco (RPCs)
+## 7. Módulo Afiliado (`/afiliado`)
+
+- **Sem sessão**: o vínculo é por telefone, como no `/cliente`. `POST /api/affiliates` (`affiliate_register`) cria ou devolve o afiliado já existente — idempotente por `phone_digits`, então a mesma pessoa nunca recebe dois códigos de indicação.
+- **Link e papel**: `shareUrl` = `/?ref=CODIGO`. A folha de divulgação sai pelo próprio navegador (Imprimir > Salvar em PDF), com marca, QR de 46mm, link, código, telefone e três passos — sem página, template ou fonte no servidor.
+- **Painel**: `GET /api/affiliates?affiliateId&phone` → `affiliate_dashboard` devolve contadores, indicações e o **extrato de resgates**, tudo no mesmo contrato autenticado (nenhum endpoint novo).
+- **Duas datas, porque não são o mesmo evento**:
+  - `converted_at` — a indicação converteu, o que dispara no **claim** (a pessoa pegou o cupom). É quando o afiliado recebe a recompensa.
+  - `coupons.validated_at` — o cupom foi validado no **caixa**, e pode nunca acontecer.
+  Chamar de "resgatado" o cupom que só foi pego faz o afiliado contar uma recompensa que ainda não existe, que é o número que ele usa para decidir se vale continuar divulgando. Por isso a tela rotula "pegou o cupom" e "resgatou no caixa" como estados distintos.
+- **Extrato**: uma linha por indicação, com pessoa, cupom (título e código), estabelecimento, benefício, data e o código da recompensa recebida. O cupom exibido é o **primeiro emitido depois da indicação** — o que disparou a conversão. Filtrar por `status = 'VALIDATED'` daria a resposta errada: mostraria o cupom de outra visita e esconderia o cupom pego e nunca usado.
+- **Recompensa**: `referral_track` registra a indicação (fail-open, exige `reward_status = 'active'` no afiliado) e `referral_convert` converte — cupom para o afiliado e cupom de boas-vindas para o indicado. A ponte é `try_referral_convert`, chamada por `claim-coupon.js` e `identify.js`.
+- **Segurança**: o painel exige `affiliate_id` **e** telefone (comparado por `phone_digits`, então a máscara não quebra) **e** `tenant_id`; qualquer um dos três errado devolve `null` — verificado em produção com telefone errado e com tenant errado. Nenhuma função de `public` aceita `EXECUTE` de `anon`/`PUBLIC` (`app_ainda_abertas = 0`).
+- **Estado dos dados**: `referrals` está **vazia** em produção. O fluxo não está quebrado (existe 1 afiliado ativo, e rastreamento e conversão estão ligados), mas nenhuma indicação entrou por link ainda. Por isso o caminho com indicação real **ainda não foi exercitado contra o banco**; o que fica travado em `tests/afiliado-extrato-guard.test.cjs` são as regressões estruturais: agregação aninhada (o 42803 que já derrubou `admin_affiliate_report`), escolha do cupom errado, e a confusão entre "pegou" e "resgatou".
+
+## 8. Regras de negócio no banco (RPCs)
 
 Grupos por domínio (96 funções de app em `public`, EXECUTE fechado para o cliente — `app_ainda_abertas = 0`):
 
@@ -76,13 +90,13 @@ Grupos por domínio (96 funções de app em `public`, EXECUTE fechado para o cli
 - **Empresa**: `business_get_own`, `business_update_own`, `business_report`, `business_report_v3` (Módulo C), `business_generate_invite`, `business_logo_by_id`.
 - **Admin**: gestão de negócios/faturamento/clientes/destaques/delete.
 - **Faturamento fase 2**: `billing_record_coupon_tax` (taxa por resgate em `PER_COUPON`, dedupe por `coupon_id`), `billing_mp_prepare/register/cancel` e webhooks MP recusam/ignoram `PER_COUPON`.
-- **Afiliados/indicação**: RPCs (`affiliate_register`, `affiliate_report`, `referral_track`, `referral_convert`, `try_referral_convert`, `get_referral_bonus`) consumidas pelas telas `/afiliado` (cadastro, link com QR, painel) e pela seção Afiliados do `/admin`.
+- **Afiliados/indicação**: RPCs (`affiliate_register`, `affiliate_report`, `referral_track`, `referral_convert`, `try_referral_convert`, `get_referral_bonus`) consumidas pelas telas `/afiliado` (cadastro, link com QR, painel com extrato de resgates) e pela seção Afiliados do `/admin`. `affiliate_dashboard` é `STABLE` e valida `affiliate_id` + `phone_digits` + `tenant_id` na própria função — sem `anon` executing, sem sessão.
 - **Translado/proximidade (Módulo 1, leitura)**: RPCs `list_shuttle_services` e `list_live_vehicles` com UI dedicada em `/cliente` (card "Translado e proximidade").
 - **Translado/proximidade (Módulo 1, escrita)**: `business_save_shuttle_service`, `business_toggle_shuttle_service`, `business_delete_shuttle_service`, `business_list_shuttle_services` e `driver_report_position` (`supabase/translado-write-flow.sql`, aplicado) — SECURITY DEFINER com autorização dentro da função (ator da empresa via `users.business_id`; motorista via sessão `driver_sessions`, `status='approved'`, `driver_id` nunca vem do cliente), EXECUTE só `service_role`.
 - **Agendamento (Módulo A, `supabase/agendamento.sql`, aplicado)**: `shuttle_create_reservation`, `shuttle_cancel_reservation`, `shuttle_list_customer_reservations`, `business_list_shuttle_reservations`, `business_review_shuttle_reservation`, `driver_list_shuttle_runs`, `driver_complete_shuttle_reservation` + tabela `shuttle_reservations` (RLS ativa sem policy; acesso só via RPC admin com service_role) e `shuttle_services.duration_minutes` (15..720).
 - **Notificações (Módulo B, `supabase/notificacoes.sql`, aplicado)**: `outbound_enqueue` (única escrita; dedupe por evento/canal/cupom/reserva), `outbound_mark_sent`, `outbound_mark_failed` (idempotentes), `outbound_list` (auditoria) + tabela `outbound_messages` (fila/auditoria; default no-op `provider='none'` até haver provedor real).
 
-## 8. Segurança (estado atual)
+## 9. Segurança (estado atual)
 
 - Erro interno **nunca** em resposta HTTP (sanitizado em 500/409, ambos dialetos) — 2026-09-28.
 - Erros de sessão são contrato `401` (`SESSION_REQUIRED` / `SESSION_EXPIRED`).
@@ -91,8 +105,9 @@ Grupos por domínio (96 funções de app em `public`, EXECUTE fechado para o cli
 - Pendências registradas em **SECURITY-DECISIONS.md** (inclui vazamento de credenciais numa conversa anterior — rotação a critério do dono).
 - Bateria de segurança da fase 2 (2026-09-29): apenas `service_role` executa as funções de app (regra 4 → `app_ainda_abertas=0`); `billing_record_coupon_tax` não aparece nos advisors de `SECURITY DEFINER` exposto (anon/authenticated). Único ERROR restante é `spatial_ref_sys` sem RLS — catálogo de SRIDs da extensão postgis, owned por `supabase_admin`; o `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` exige ownership/superuser e falha com `42501 must be owner` tanto no MCP quanto no SQL Editor do dashboard (ambos rodam como `postgres`, não-superuser, sem membership em `supabase_admin`; grants feitos pelo `supabase_admin` — sem caminho SQL). **Risco aceito e documentado em SECURITY-DECISIONS.md** (dado de referência, sem PII; remediação exigiria intervenção do Supabase).
 
-## 9. Qualidade
+## 10. Qualidade
 
-- **361 testes / 355 passando / 0 falhas / 6 pulados** (`node:test`) — cobrem handlers, lógica pura, contrato do diretório de functions, headers e asset routing do Worker. Módulo: `empresa-reservations.test.cjs` (9 casos do GET `mode=reservations` + `review_reservation`), `notificacoes.test.cjs` (fase 1 no-op + erros), `empresa-report.test.cjs` (report v3 com fallback v2), `shuttle.test.cjs` (10 casos de contrato/erro do endpoint de translado), `shuttle-manage.test.cjs` (15 casos do fluxo de escrita do Módulo 1).
+- **381 testes / 375 passando / 0 falhas / 6 pulados** (`node:test`) — cobrem handlers, lógica pura, contrato do diretório de functions, headers e asset routing do Worker. Módulos: `empresa-reservations.test.cjs` (9 casos do GET `mode=reservations` + `review_reservation`), `notificacoes.test.cjs` (fase 1 no-op + erros), `empresa-report.test.cjs` (report v3 com fallback v2), `shuttle.test.cjs` (10 casos de contrato/erro do endpoint de translado), `shuttle-manage.test.cjs` (15 casos do fluxo de escrita do Módulo 1), `afiliado-folha-guard.test.cjs` (folha de papel no `window.print()`) e `afiliado-extrato-guard.test.cjs` (extrato: agregação não aninhada, cupom da indicação, "pegou" ≠ "resgatou").
+- Os dois guards de afiliado travam **código-fonte** porque este runner não renderiza JSX nem executa SQL. Consequência aceita: o caminho do extrato com uma indicação real não tem cobertura de banco (ver seção 7).
 - Testes **live opcionais** (smoke, aprovação de motorista e reporte de posição) rodam com `RUN_LIVE=1` contra produção (`npm run test:live[:approval|:position]`).
 - Build gera Worker autocontido; rotas fora da whitelist → 404.
