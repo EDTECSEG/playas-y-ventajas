@@ -204,3 +204,46 @@ begin
   return jsonb_build_object('couponId', v_coupon_id, 'publicId', v_public_id, 'rawToken', v_raw_token, 'shortCode', v_short_code, 'customerId', v_customer_id);
 end $function$
 ;
+-- ===========================================================================
+-- list_customer_coupons: cupons do proprio cliente (tela "Meus cupons")
+-- ===========================================================================
+-- Esta RPC vivia SO no banco de producao, sem .sql no repositorio. A
+-- definicao foi versionada aqui em 2026-09-30 para o repositorio voltar a ser
+-- a fonte da verdade.
+--
+-- SEGURANCA (nao relaxar):
+--   - SECURITY INVOKER e SEM grants para anon/authenticated: so a service_role
+--     chega nela, ou seja, so via Netlify Function.
+--   - A Function exige o customerToken assinado (HMAC) do proprio cliente
+--     antes de chamar (offers.js, mode=my-coupons). Sem ele, 401.
+--   - Por isso devolver businessPhone NAO abre exposicao nova: quem ja recebia
+--     o nome da empresa desse cupom passa a receber o contato comercial dela.
+--
+-- businessPhone + validatedAt (migration list_customer_coupons_business_phone):
+--   O dono pediu o botao de WhatsApp tambem nos cupons JA resgatados. Sem o
+--   telefone nao ha destino para o link wa.me; sem a data do resgate o filtro
+--   "Resgatados" so mostra um selo verde sem quando.
+-- ===========================================================================
+create or replace function public.list_customer_coupons(p_tenant_id uuid, p_customer_id uuid)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = public, extensions
+as $function$
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'publicId', co.public_id,
+    'status', co.status,
+    'issuedAt', co.issued_at,
+    'expiresAt', co.expires_at,
+    'validatedAt', co.validated_at,
+    'title', t.title,
+    'businessName', b.name,
+    'businessPhone', b.phone
+  ) order by co.issued_at desc), '[]'::jsonb)
+  from coupons co
+  join coupon_templates t on t.id = co.template_id
+  join businesses b on b.id = co.business_id
+  where co.tenant_id = p_tenant_id and co.customer_id = p_customer_id;
+$function$
+;

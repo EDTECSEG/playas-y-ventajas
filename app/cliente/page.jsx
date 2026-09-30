@@ -180,6 +180,29 @@ function reservationWaMessage(res) {
   return linhas.join('\n');
 }
 
+// Mensagem para falar COM o estabelecimento a partir de um cupom que ja esta
+// na lista "Meus cupons" - inclusive os que foram resgatados (feedback do
+// dono, setembro/2026).
+//
+// O texto muda de proposito conforme o status: mandar "quero usar meu cupom"
+// em um cupom ja VALIDATED faz o caixa recusar com COUPON_ALREADY_USED, entao
+// nesse caso a mensagem so se apresenta e identifica o cupom. O texto do cupom
+// recem-resgatado (que vai do cliente para o estabelecimento) e montado no
+// servidor, em netlify/functions/_wa.js.
+function couponContactMessage(c, origin) {
+  const linhas = ['*Playas y Ventajas*'];
+  if (c.title) linhas.push('*Cupom:* ' + c.title);
+  if (c.businessName) linhas.push('*Estabelecimento:* ' + c.businessName);
+  if (c.publicId) linhas.push('*Codigo:* ' + c.publicId);
+  if (c.status === 'VALIDATED') {
+    linhas.push('*Status:* cupom ja resgatado');
+    if (c.validatedAt) linhas.push('*Resgatado em:* ' + formatWhen(c.validatedAt));
+  } else {
+    linhas.push('*Site:* ' + origin);
+  }
+  return linhas.join('\n');
+}
+
 function timeAgo(iso, t) {
   if (!iso) return '';
   const secs = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
@@ -1342,6 +1365,32 @@ export default function ClientePage() {
                 background: '#FDF3D7', border: '1px solid #E8C46A', borderRadius: 8,
                 padding: '6px 10px', margin: '8px 0 0', fontFamily: 'monospace',
               }}>{openCoupon.publicId}</p>
+              {openCoupon.status === 'VALIDATED' && openCoupon.validatedAt && (
+                <p style={{ fontSize: 12, color: theme.textMuted, margin: '6px 0 0' }}>
+                  {t.couponRedeemedOn} {formatWhen(openCoupon.validatedAt)}
+                </p>
+              )}
+              {/* WhatsApp direto com o estabelecimento, tambem para cupom ja
+                  resgatado (feedback do dono). So aparece se a empresa tiver
+                  telefone cadastrado: sem destino valido o wa.me abriria o
+                  "compartilhar" do proprio celular do cliente, que e pior que
+                  nao mostrar nada. */}
+              {String(openCoupon.businessPhone || '').replace(/\D/g, '').length >= 10 && (
+                <a
+                  href={buildWaLink({
+                    phone: openCoupon.businessPhone,
+                    message: couponContactMessage(openCoupon, window.location.origin),
+                  })}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-block', marginTop: 10, padding: '9px 16px', borderRadius: 999,
+                    background: '#128C7E', color: '#fff', fontWeight: 700, fontSize: 14, textDecoration: 'none',
+                  }}
+                >
+                  {t.couponContactWhatsapp}
+                </a>
+              )}
             </div>
           )}
         </div>
