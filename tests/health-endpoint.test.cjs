@@ -43,7 +43,6 @@ const { handler } = require(path.join(raiz, 'netlify', 'functions', 'health.js')
 const SEGREDOS = {
   NEXT_PUBLIC_SUPABASE_URL: 'https://exemplo.supabase.co',
   SUPABASE_SERVICE_ROLE_KEY: 'service-role-NAO-VAZAR-123',
-  RESEND_API_KEY: 're_send-NAO-VAZAR-456',
   GEOAPIFY_API_KEY: 'geo-NAO-VAZAR-789',
   MP_ACCESS_TOKEN: 'APP_USR-mp-NAO-VAZAR-012',
   MP_WEBHOOK_SECRET: 'hmac-NAO-VAZAR-345',
@@ -129,14 +128,17 @@ test('cliente admin que nem instancia vira erro, nao 500 cru', async () => {
 
 test('uma quebra no supabase nao impede o diagnostico das outras', async () => {
   limpar();
-  delete process.env.RESEND_API_KEY;
+  // A sonda e o webhook do Mercado Pago: ausente e opcional, entao aparece
+  // como 'ausente' sem entrar em quebradas -- e o supabase acima quebrado
+  // tambem nao pode impedir o health de chegar ate aqui.
+  delete process.env.MP_WEBHOOK_SECRET;
   respostaRpc = { data: null, error: { code: 'X', message: 'fora' } };
   const r = await get();
   const j = JSON.parse(r.body);
   // Este e o ponto do loop por integracao: se o primeiro check lancasse, o
   // health diria "degradado" sem dizer o que mais caiu, e o operador
   // teria de adivinhar.
-  assert.ok(j.integracoes.some((i) => i.nome === 'resend' && i.status === 'ausente'));
+  assert.ok(j.integracoes.some((i) => i.nome === 'mercadopago_webhook' && i.status === 'ausente'));
   assert.ok(j.integracoes.some((i) => i.nome === 'geoapify' && i.status === 'ok'));
 });
 
@@ -175,11 +177,29 @@ test('a resposta nunca carrega valor de variavel de ambiente', async () => {
 
 test('a resposta lista o NOME da variavel faltando, para o operador saber o que cadastrar', async () => {
   limpar();
-  delete process.env.RESEND_API_KEY;
+  delete process.env.GEOAPIFY_API_KEY;
   const r = await get();
   const j = JSON.parse(r.body);
-  const resend = j.integracoes.find((i) => i.nome === 'resend');
-  assert.deepEqual(resend.variaveis, ['RESEND_API_KEY']);
+  const geo = j.integracoes.find((i) => i.nome === 'geoapify');
+  assert.deepEqual(geo.variaveis, ['GEOAPIFY_API_KEY']);
+});
+
+// Resend saiu do health em 2026-10-01 junto com o envio por e-mail. A variavel
+// foi apagada do Pages, mas o teste nao pode depender disso: se alguem
+// recriar RESEND_API_KEY por um motivo legitimo no futuro, o health ainda nao
+// deve inventar uma integracao de e-mail que nao existe no codigo.
+test('RESEND_API_KEY presente no ambiente nao vira integracao no health', async () => {
+  limpar();
+  process.env.RESEND_API_KEY = 're_send-NAO-VAZAR-456';
+  try {
+    const r = await get();
+    const j = JSON.parse(r.body);
+    assert.ok(!j.integracoes.some((i) => i.nome === 'resend'), 'resend nao e mais integracao');
+    assert.ok(!r.body.includes('RESEND_API_KEY'));
+    assert.ok(!r.body.includes('re_send-NAO-VAZAR-456'), 'nem o valor pode vazar');
+  } finally {
+    delete process.env.RESEND_API_KEY;
+  }
 });
 
 test('apenas GET e aceito', async () => {
@@ -195,8 +215,8 @@ test('variavel em branco conta como ausente', async () => {
   // Espaco e o caso classico de "configurei mas o valor nao foi": o
   // ProcessInfo do painel mostra a variavel como cadastrada e o codigo
   // acha que tem credencial. Por isso o .trim().
-  process.env.RESEND_API_KEY = '   ';
+  process.env.MP_ACCESS_TOKEN = '   ';
   const r = await get();
   const j = JSON.parse(r.body);
-  assert.equal(j.integracoes.find((i) => i.nome === 'resend').status, 'ausente');
+  assert.equal(j.integracoes.find((i) => i.nome === 'mercadopago').status, 'ausente');
 });

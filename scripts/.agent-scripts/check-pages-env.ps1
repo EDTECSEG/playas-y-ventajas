@@ -19,12 +19,22 @@ $Projeto = 'playas-y-ventajas'
 # de todo jeito. As sensiveis tem de ser secret nos DOIS ambientes: o Cloudflare
 # guarda Production e Preview em slots separados, e marcar so em Production deixa
 # o Preview em texto claro sem nenhum aviso.
+# RESEND_API_KEY saiu da lista em 2026-10-01 (comunicacao so por WhatsApp).
+# A var foi removida do Pages de proposito -- se ela voltar a aparecer em
+# $Esperadas, este arquivo passaria a exigir que ela EXISTA, que e o
+# contrario do que se quer.
 $Esperadas = @(
   @{ nome = 'NEXT_PUBLIC_SUPABASE_URL';        secreta = $false; onde = 'production, preview' }
   @{ nome = 'NEXT_PUBLIC_SUPABASE_ANON_KEY';   secreta = $false; onde = 'production, preview' }
   @{ nome = 'SUPABASE_SERVICE_ROLE_KEY';       secreta = $true;  onde = 'production, preview' }
-  @{ nome = 'RESEND_API_KEY';                   secreta = $true;  onde = 'production, preview' }
   @{ nome = 'GEOAPIFY_API_KEY';                 secreta = $true;  onde = 'production, preview' }
+)
+
+# Variaveis que NAO podem existir. RESEND_API_KEY e' o caso de hoje: o envio
+# por e-mail foi cortado e a chave vazada nesta sessao de agente nao tem mais
+# onde morar. Reaparecer aqui e' regressao, nao esquecimento.
+$Proibidas = @(
+  @{ nome = 'RESEND_API_KEY'; motivo = 'envio por email cortado; comunicacao e por WhatsApp' }
 )
 
 function Obter-Token {
@@ -61,6 +71,13 @@ foreach ($amb in @('production', 'preview')) {
     Write-Host "  nenhuma variavel neste ambiente" -ForegroundColor Yellow
     $problemas++
     continue
+  }
+
+  foreach ($p in $Proibidas) {
+    if ($envVars.PSObject.Properties.Name -contains $p.nome) {
+      $problemas++
+      Write-Host ("{0,-32} AINDA EXISTE -- {1}" -f $p.nome, $p.motivo) -ForegroundColor Red
+    }
   }
 
   foreach ($e in $Esperadas) {
@@ -107,7 +124,7 @@ foreach ($amb in @('production', 'preview')) {
 
 Write-Host ""
 if ($problemas -eq 0) {
-  Write-Host "TUDO OK: variaveis presentes, com valor, e nenhuma secreta em texto claro." -ForegroundColor Green
+  Write-Host "TUDO OK: variaveis presentes, com valor, nenhuma secreta em texto claro, e nenhuma variavel proibida de pe." -ForegroundColor Green
   exit 0
 }
 Write-Host "$problemas problema(s). Vide a coluna acima." -ForegroundColor Red

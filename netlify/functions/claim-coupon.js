@@ -28,11 +28,14 @@ async function findReferralCodeOfAffiliate(supabase, tenantId, phone) {
 
 // Canonico CJS, fonte unica: functions/.netlify/functions/ foi removido em 2026-09-30.
 //
-// DECISAO DO DONO (setembro/2026): a comunicacao com o cliente e por WHATSAPP,
-// nao por email. Motivo: o Resend esta em modo de teste — o remetente
-// onboarding@resend.dev so entrega para o proprio titular da conta, entao
-// nenhum cliente real receberia nada. O wa.me nao depende de dominio, de
-// plano pago nem de aprovacao da Meta.
+// DECISAO DO DONO (setembro/2026, reforcada em 2026-10-01): a comunicacao com
+// o cliente e por WHATSAPP, e nao por email. O motivo original era o Resend
+// estar em modo de teste -- onboarding@resend.dev so entrega para o proprio
+// titular da conta, entao nenhum cliente real receberia nada. Em 2026-10-01 o
+// envio por e-mail foi CORTAADO por completo (canal EMAIL removido de
+// _notify.js, RESEND_API_KEY apagada do Pages): o motivo deixou de ser
+// "ainda nao presta" e passou a ser "nao existe mais opcao". O wa.me nao
+// depende de dominio, de plano pago nem de aprovacao da Meta.
 //
 // ORDEM DELIBERADA: a claim_coupon (dinheiro: estoque, limite, hash) roda
 // PRIMEIRO e e intocada. WhatsApp e indicacao sao extras best-effort: se

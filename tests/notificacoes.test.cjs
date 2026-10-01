@@ -32,6 +32,11 @@ const TEMPLATE_ROW = {
   businesses: [{ name: 'Cafe Central', phone: '11988887777' }],
 };
 
+// EMAIL_PROVIDER e SMTP_* nao sao mais lidos por codigo nenhum (canal cortado
+// em 2026-10-01). Eles continuam aqui de proposito: a funcao apaga estas
+// variaveis do ambiente durante o teste, para que uma config de e-mail que o
+// desenvolvedor tenha na sua maquina nao possa alterar o resultado -- nem
+// reintroduzir o provider 'smtp' por acidente.
 const NOTIFY_ENV_KEYS = [
   'WHATSAPP_PROVIDER', 'WHATSAPP_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID',
   'EMAIL_PROVIDER', 'SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_PORT', 'MAIL_FROM',
@@ -407,14 +412,59 @@ test('notificacoes: telefone ausente nao lanca: registra noop sem destino e sem 
   assert.strictEqual(logs.filter((l) => l.level === 'info').length, 1);
 });
 
-test('notificacoes: canal EMAIL usa o email do cliente (email segue canal nao verificado)', async () => {
+// Decisao do dono (2026-10-01): a comunicacao com o cliente e por WhatsApp e o
+// canal EMAIL foi removido. Este teste substitui o antigo, que afirmava que
+// 'EMAIL' usava o email do cliente como destino.
+test('notificacoes: canal EMAIL foi cortado e nao escreve nada', async () => {
   const { notifyOutbound } = loadNotify();
+  // O cliente TEM email no cadastro -- e continua tendo, o campo nao foi
+  // mexido. O que nao existe mais e o canal que usaria esse email.
   const fake = notifyFake({ customer: { id: CLAIM.customerId, phone: null, email: 'Cliente@Exemplo.COM ' } });
-  await withoutNotifyEnv(() => notifyOutbound(fake, notifyOpts({ channel: 'EMAIL' })));
+  const value = await withoutNotifyEnv(() => notifyOutbound(fake, notifyOpts({ channel: 'EMAIL' })));
+  assert.strictEqual(value.status, 'skipped');
+  assert.strictEqual(enqueueCalls(fake).length, 0, 'EMAIL nao pode chegar em outbound_messages');
+});
+
+// Trava o corte pela outra porta: mesmo com TODO o bloco SMTP configurado no
+// ambiente, o provider nao pode voltar a ser 'smtp'. Antes do corte, o
+// resolveProvider devolvia 'smtp' nesse cenario -- e a linha entrava na
+// auditoria como se um envio de e-mail tivesse sido tentado.
+test('notificacoes: SMTP_* no ambiente nao faz mais o provider virar smtp', async () => {
+  const { resolveProvider, notifyOutbound } = loadNotify();
+  const env = {
+    EMAIL_PROVIDER: 'smtp',
+    SMTP_HOST: 'smtp.exemplo.test',
+    SMTP_USER: 'usuario-exemplo',
+    SMTP_PASSWORD: 'senha-exemplo-fake',
+    SMTP_PORT: '587',
+    MAIL_FROM: 'nao-existe@example.test',
+  };
+
+  assert.strictEqual(resolveProvider('WHATSAPP', env), 'none');
+  assert.strictEqual(resolveProvider('EMAIL', env), 'none');
+  assert.strictEqual(resolveProvider('EMAIL', {}), 'none');
+
+  // E o caminho completo: canal WhatsApp com env de e-mail nao pode registrar
+  // provider='smtp'.
+  const fake = notifyFake();
+  await withNotifyEnv(env, () => notifyOutbound(fake, notifyOpts({
+    vars: Object.assign(notifyOpts().vars, { phone: '5511998888777' }),
+  })));
   const enq = enqueueCalls(fake)[0];
-  assert.strictEqual(enq.args.p_channel, 'EMAIL');
-  assert.strictEqual(enq.args.p_destination, 'cliente@exemplo.com');
+  assert.ok(enq, 'a linha de auditoria deve existir');
+  assert.strictEqual(enq.args.p_provider, 'none');
   assert.strictEqual(enq.args.p_status, 'noop');
+  assert.notStrictEqual(enq.args.p_destination, 'usuario-exemplo');
+});
+
+test('notificacoes: normalizeChannel so aceita WHATSAPP', () => {
+  const { normalizeChannel } = loadNotify();
+  assert.strictEqual(normalizeChannel('WHATSAPP'), 'WHATSAPP');
+  assert.strictEqual(normalizeChannel('whatsapp'), 'WHATSAPP');
+  // Inclui EMAIL: e' o que impede o canal cortado de voltar por callers novos.
+  for (const invalido of ['EMAIL', 'email', 'SMTP', 'SMS', '', null, undefined, 'W H A T S A P P']) {
+    assert.strictEqual(normalizeChannel(invalido), '', 'deveria rejeitar: ' + JSON.stringify(invalido));
+  }
 });
 
 test('notificacoes: entrada incompleta e canal invalido nao lanca e nao escreve', async () => {

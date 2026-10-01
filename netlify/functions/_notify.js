@@ -1,4 +1,4 @@
-const { normalizePhone } = require('./_wa');
+﻿const { normalizePhone } = require('./_wa');
 
 // Base de notificacoes (fila + auditoria) do cliente. Canon CJS.
 // Canonico CJS, fonte unica: functions/.netlify/functions/ foi removido em 2026-09-30.
@@ -7,9 +7,9 @@ const { normalizePhone } = require('./_wa');
 // ao cliente quando ele resgata um cupom (e, no futuro, quando uma reserva de
 // translado for confirmada). NADA mais.
 //
-// POR QUE O DEFAULT E' NO-OP: o envio real depende de credencial do dono
-// (WhatsApp Cloud API exige conta verificada + template aprovado; SMTP exigiria
-// uma lib nova, Ask first). Sem env, o comportamento observavel e' UMA linha em
+// POR QUE O DEFAULT E' NO-OP: o envio real depende de credencial do dono --
+// o WhatsApp Cloud API exige conta verificada da Meta, numero aprovado e
+// template aceito. Sem env, o comportamento observavel e' UMA linha em
 // outbound_messages com provider='none'/status='noop' e UM console.info sem PII.
 // O resgate ja aconteceu quando isto roda, entao aviso nenhum pode derrubar
 // o 200 nem alterar o corpo da resposta.
@@ -20,12 +20,26 @@ const { normalizePhone } = require('./_wa');
 //     tem, por defense in depth).
 //   - Conteudo da mensagem vem do BANCO (vars montadas por loadOfferContext).
 //     Nunca do corpo do request: o cliente nao escreve em nome do establecimento.
-//   - Segredo (WHATSAPP_TOKEN / SMTP_PASSWORD) vive so no servidor, entra na
-//     chamada HTTP do provedor e nunca sai em log, resposta ou auditoria.
+//   - Segredo (WHATSAPP_TOKEN) vive so no servidor, entra na chamada HTTP do
+//     provedor e nunca sai em log, resposta ou auditoria.
 //   - Erro de terceiro vira CODIGO curto (error_code), nunca mensagem crua.
 
+// Decisao do dono (2026-10-01): a comunicacao com o cliente e por WHATSAPP.
+// O canal EMAIL foi REMOVIDO daqui -- ver o bloco de canais abaixo.
+//
+// O que fica e' o numero do telefone como dado de contato (cadastro,
+//(login, extrato). Isso nao tem relacao com envio: 'email' continua sendo
+// gravado como dado do cliente e do motorista em varios lugares. O que
+// morreu foi o ENVIO.
+//
+// Por que o envio por e-mail nunca existiu de verdade: o provedor 'smtp'
+// estava em CAN_DELIVER como false, e enviar exigiria nodemailer (Ask
+// first) mais um transporte SMTP -- que Workers/Pages nao tem por HTTP. Se
+// alguem configurasse EMAIL_PROVIDER=smtp, a linha entrava em
+// outbound_messages como status='noop', rastreavel, sem inventar um envio
+// que nao saiu. Nenhum chamador passava channel='EMAIL'.
+
 const CHANNEL_WHATSAPP = 'WHATSAPP';
-const CHANNEL_EMAIL = 'EMAIL';
 
 // Limites obrigatorios do adaptador (ver SPEC-notificacoes.md).
 const MAX_BODY_CHARS = 1000;
@@ -33,11 +47,11 @@ const ATTEMPT_TIMEOUT_MS = 2000;
 const MAX_ATTEMPTS = 2;
 const WA_GRAPH_VERSION = 'v20.0';
 
-// Provider que realmente tem transporte nesta leva. 'smtp' fica de fora de
-// proposito: enviar email exigiria nodemailer (Ask first) e nao ha transporte
-// HTTP para SMTP. Com EMAIL_PROVIDER=smtp configurado, a linha entra na
-// auditoria como noop — rastreavel, sem inventar um envio que nao saiu.
-const CAN_DELIVER = { whatsapp_cloud_api: true, smtp: false };
+// Provider que realmente tem transporte nesta leva. O e-mail saiu do
+// codigo: sobrou so o WhatsApp Cloud API, e ele so entrega com
+// WHATSAPP_TOKEN + WHATSAPP_PHONE_NUMBER_ID + template aprovado pela Meta.
+// Sem os tres, resolveProvider devolve 'none' e a linha entra como noop.
+const CAN_DELIVER = { whatsapp_cloud_api: true };
 
 function pickEnv(explicit) {
   if (explicit && typeof explicit === 'object') return explicit;
@@ -45,25 +59,25 @@ function pickEnv(explicit) {
   return {};
 }
 
+// Canais aceitos. EMAIL saiu: a comunicacao com o cliente e por WhatsApp
+// (decisao do dono, 2026-10-01). Qualquer outra coisa, inclusive 'EMAIL' e
+// 'email', cai em '' e notifyOutbound responde 'skipped' sem tocar o banco.
 function normalizeChannel(raw) {
   const c = String(raw || '').trim().toUpperCase();
-  return c === CHANNEL_WHATSAPP || c === CHANNEL_EMAIL ? c : '';
+  return c === CHANNEL_WHATSAPP ? c : '';
 }
 
 // Seletor de provedor, avaliado NA CHAMADA (env pode aparecer a qualquer
-// momento). Ausente qualquer pre-requisito => 'none'.
+// momento). Ausente qualquer pre-requisito => 'none'. Nao ha mais ramo de
+// e-mail: EMAIL_PROVIDER / SMTP_* sao ignorados, mesmo se ainda existirem no
+// ambiente -- e o que o teste 'SMTP_* nao faz mais o provider virar smtp'
+// trava.
 function resolveProvider(channel, env) {
   if (channel === CHANNEL_WHATSAPP) {
     const wanted = String(env.WHATSAPP_PROVIDER || '').trim().toLowerCase();
     if (wanted && wanted !== 'none' && env.WHATSAPP_TOKEN && env.WHATSAPP_PHONE_NUMBER_ID) {
       return 'whatsapp_cloud_api';
     }
-    return 'none';
-  }
-  if (channel === CHANNEL_EMAIL) {
-    const wanted = String(env.EMAIL_PROVIDER || '').trim().toLowerCase();
-    if (wanted && wanted !== 'none' && env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASSWORD) return 'smtp';
-    return 'none';
   }
   return 'none';
 }
@@ -104,7 +118,7 @@ async function readCustomerContact(supabase, customerId) {
   try {
     const { data, error } = await supabase
       .from('users')
-      .select('id, phone, email')
+      .select('id, phone')
       .eq('id', customerId)
       .maybeSingle();
     if (error || !data) return null;
@@ -114,22 +128,16 @@ async function readCustomerContact(supabase, customerId) {
   }
 }
 
-async function resolveDestination(supabase, channel, customerId, vars) {
-  if (channel === CHANNEL_WHATSAPP) {
-    let raw = vars.phone || vars.customerPhone || null;
-    if (!raw && customerId) {
-      const row = await readCustomerContact(supabase, customerId);
-      raw = row && row.phone;
-    }
-    return normalizePhone(raw); // '' quando nao ha telefone: sem excecao, so sem envio
-  }
-  let raw = vars.email || vars.customerEmail || null;
+// Destino: telefone, e so telefone. A leitura de 'email' em users saiu com o
+// canal EMAIL -- o campo continua no banco (cadastro), mas nao e mais lido
+// aqui. normalizePhone devolve '' sem telefone: sem excecao, so sem envio.
+async function resolveDestination(supabase, customerId, vars) {
+  let raw = vars.phone || vars.customerPhone || null;
   if (!raw && customerId) {
     const row = await readCustomerContact(supabase, customerId);
-    raw = row && row.email;
+    raw = row && row.phone;
   }
-  const value = String(raw || '').trim().toLowerCase();
-  return value.indexOf('@') > 0 ? value : '';
+  return normalizePhone(raw);
 }
 
 // Única escrita do módulo. Devolve { ok, inserted, id } sem nunca lancar.
@@ -236,7 +244,7 @@ async function notifyOutbound(supabase, opts = {}) {
     const couponId = opts.couponId || null;
     const bookingRef = opts.bookingRef || null;
 
-    const destination = await resolveDestination(supabase, channel, customerId, vars);
+    const destination = await resolveDestination(supabase, customerId, vars);
     provider = resolveProvider(channel, env);
     const deliverable = !!(CAN_DELIVER[provider] && destination);
     const body = renderBody(event, vars);

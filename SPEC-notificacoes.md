@@ -1,4 +1,4 @@
-# Spec: Notificações
+﻿# Spec: Notificações
 
 > Especificação de módulo (nada de código implementado aqui). Data: 29/09/2026.
 > Padrões vigentes: handlers CJS em `netlify/functions` como fonte única (o espelho ESM `functions/.netlify/functions` foi removido em 2026-09-30, junto com o `tests/consistency.test.cjs`; o contrato do diretório está em `tests/function-contract.test.cjs`); handlers publicam rota pela whitelist `ROUTES` de `worker/main.js`; regras de negócio em RPC `SECURITY DEFINER` com `search_path` fixo e `EXECUTE` só para `service_role`.
@@ -38,9 +38,9 @@ Nenhum objeto é criado por este documento; abaixo está o conjunto previsto, pa
 - `tenant_id uuid not null`
 - `customer_id uuid` (nulo quando o canal não é endereçável a um cliente conhecido)
 - `event text not null` — domínio do evento (`coupon_claimed`, `shuttle_booking_confirmed`)
-- `channel text not null` — `WHATSAPP | EMAIL`
-- `provider text not null` — `none | whatsapp_cloud_api | smtp`
-- `destination text` — telefone normalizado (somente dígitos, com DDI) ou endereço de email
+- `channel text not null` - `WHATSAPP` (o canal `EMAIL` foi REMOVIDO em 2026-10-01; ver decisao 2)
+- `provider text not null` - `none | whatsapp_cloud_api`. O `smtp` continua aceito pelo CHECK no banco porque estreitar esse CHECK exige confirmar antes que nao existe linha com ele (2026-10-01: sem MCP do Supabase conectado, entao a verificacao ficou pendente) -- mas nenhum codigo o produz mais. E a unica protecao que o CHECK daria e a de recusar valor invalido, nao de impedir envio: quem decide o que sai e o codigo.
+- `destination text` - telefone normalizado (somente digitos, com DDI). O e-mail como destino saiu com o canal.
 - `subject text`, `body text` — conteúdo renderizado; **body nunca inclui** token, segredo ou código interno de negócio
 - `status text not null` — `noop | queued | sent | failed`
 - `provider_message_id text`, `error_code text` (código, nunca mensagem crua de terceiro)
@@ -77,10 +77,10 @@ Interface única em `netlify/functions/_notify.js`, registrada em `HELPERS` no `
 - `notifyOutbound(supabase, { event, channel, customerId, couponId, bookingRef, vars })` → `{ status, id, provider }`, **nunca lança**.
 - Seletor de provedor por env, avaliado na chamada:
   - WhatsApp: `WHATSAPP_PROVIDER` (`none` | `cloud`) + `WHATSAPP_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID`. Ausente qualquer um ⇒ `none`.
-  - Email: `EMAIL_PROVIDER` (`none` | `smtp`) + `SMTP_HOST` + `SMTP_USER` + `SMTP_PASSWORD` (+ `SMTP_PORT`, `MAIL_FROM`). Ausente ⇒ `none`.
+  - Email: **removido em 2026-10-01.** `EMAIL_PROVIDER`, `SMTP_*` e `MAIL_FROM` nao sao lidos por codigo nenhum; `resolveProvider` ignora esses nomes mesmo que ainda existam no ambiente.
 - Com `none`: grava `outbound_enqueue` com `provider='none'`, `status='noop'`, e escreve **um** `console.info('notificacoes: noop ...')` sem PII. Isso mantém o gancho visível em log e em auditoria, que é o comportamento observável do default.
 - Com provedor: renderiza a mensagem a partir do **contexto do banco** (título do cupom, nome da empresa, código público do cupom, dados da reserva), envia, e marca `sent`/`failed` via `outbound_mark_*`. Erro do provedor é capturado, resumido em `error_code`, e **não** propaga.
-- Dependências: transporte por `fetch` nativo (já disponível no runtime) e SMTP só se o dono escolher — **Ask first** para adicionar `nodemailer` (e para qualquer lib de WhatsApp). Nada disso entra no `package.json` nesta fase.
+- Dependencias: transporte por `fetch` nativo (ja disponivel no runtime). O envio por e-mail foi cortado em 2026-10-01 e nao ha dependencia a adicionar: `nodemailer` deixou de ser hipotese. Qualquer lib de WhatsApp continua **Ask first**. Nada disso entra no `package.json` nesta fase.
 - Env vars vivem só no servidor: `.dev.vars` (existe no repo, não lido aqui) para dev; settings do projeto Cloudflare Pages para produção. Segredo de `.dev.vars` nunca é lido por este documento e nunca é versionado.
 
 Limites obrigatórios do adaptador: timeout por tentativa (2 s), máximo de 2 tentativas, corpo com limite de tamanho, telefone normalizado só com dígitos (reaproveitando `normalizePhone` de `_wa.js`), e nenhuma variável `NEXT_PUBLIC_*` para credencial.
@@ -142,7 +142,7 @@ Unitário, com adaptador fake (mesmo padrão de `tests/claim-coupon-tax.test.cjs
 ## Perguntas em aberto
 
 1. **Reserva de translado não existe ainda.** Não há tabela/RPC de booking no repo — só CRUD de serviço e leitura pública (`list_shuttle_services`, `list_live_vehicles`) e posição do motorista. Onde nasce a "reserva confirmada"? Sem resposta, a spec entrega só o gancho e o `event` fica reservado (`shuttle_booking_confirmed`) sem emissor.
-2. **Qual provedor e quando?** A decisão registrada no `claim-coupon` (setembro/2026) é WhatsApp, não email, porque o Resend está em modo teste e não entrega para cliente real. Isso vale para este módulo também, ou o dono quer email como canal primário agora que a situação do Resend pode ter mudado?
+2. **Qual provedor e quando? RESPOSTA DO DONO (2026-10-01): WhatsApp, sem alternativa.** O envio por e-mail foi cortado por completo -- canal `EMAIL` removido de `_notify.js`, `RESEND_API_KEY` apagada de Production e Preview, e a variavel entrou na lista `$Proibidas` do `check-pages-env.ps1`. Nao e mais "email enquanto o Resend nao resolve": e decisao definitiva. `wa.me` segue como o canal do dia a dia; a Cloud API automatizada continua condicionada a decisao 3.
 3. **Meta/WhatsApp Cloud API exige** conta verificada, modelo de mensagem aprovado e janela de 24 h. O dono aceita essa dependência (custo + aprovação + prazo), ou o canal real deve ser outro (Twilio, Evolution API self-hosted, etc.)?
 4. **`wa.me` continua sendo o canal padrão?** Hoje o resgate devolve um link para o próprio cliente tocar em enviar. A notificação automática substitui isso, complementa (mantém o link na resposta) ou só cobre a reserva de translado?
 5. **Granularidade e quiet hours:** notificar todo resgate ou só quando o cliente tem email/telefone válido? Há janela de silêncio (ex.: 22h–8h, fuso do cliente)? Isso é política de produto, não técnica.

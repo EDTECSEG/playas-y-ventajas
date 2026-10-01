@@ -540,3 +540,62 @@ bundleados), e nao reaproveitados do espelho apagado.
 
 Responsável pela decisão: usuario do projeto (escolheu "apagar de vez, com teste
 e docs" apos saber que o espelho era so de forma, e nao de conteudo).
+
+## 2026-10-01 - Envio por e-mail cortado por decisao do dono; chave de Resend exposta nesta sessao e revogada
+
+### Decisao
+Comunikacao com o cliente e **por WhatsApp, sem alternativa**. O envio por e-mail
+foi removido do codigo, nao adiado:
+
+- `_notify.js`: canal `EMAIL` removido (`CHANNEL_EMAIL`, ramo em `normalizeChannel`,
+  ramo em `resolveProvider`, `CAN_DELIVER.smtp`). `resolveProvider` agora so conhece
+  `whatsapp_cloud_api`. `EMAIL_PROVIDER`, `SMTP_*` e `MAIL_FROM` nao sao lidos por
+  codigo nenhum.
+- `resolveDestination` perdeu o parametro `channel` e o ramo de e-mail; a leitura de
+  `users.email` saiu (o campo continua no banco -- e dado de contato, nao envio).
+- `health.js`: integracao `resend` removida das DEPENDENCIAS.
+- `RESEND_API_KEY` apagada do Cloudflare Pages em **production** e **preview**.
+- `check-pages-env.ps1`: a variavel saiu de `$Esperadas` e entrou em `$Proibidas`.
+  Reaparecer agora e falha do script, nao esquecimento.
+- Commentarios em `claim-coupon.js` e `health.js` que citavam o Resend como
+  dependencia viva foram corrigidos.
+
+O campo `email` como **dado** permanece em todo o sistema (cadastro de motorista
+exige e-mail, cadastro de cliente, painel). O que morreu foi o envio.
+
+### Por que nao foi preciso mexer no CHECK do banco
+`provider` ainda aceita `none | whatsapp_cloud_api | smtp` em
+`public.outbound_messages`. Estreitar exigiria confirmar antes que nao existe
+linha com `smtp` -- e o MCP do Supabase nao estava conectado na sessao. Alterar
+constraint sem essa verificacao seria às cegas. **Pendencia: quando o MCP voltar,
+`SELECT provider, count(*) FROM outbound_messages GROUP BY provider` e, se nao
+houver `smtp`, `ALTER TABLE ... DROP CONSTRAINT` + recriar o CHECK.**
+
+E o valor de check que sobrou e pequeno: o CHECK recusa valor invalido, nao impede
+envio. Quem decide o que sai e o codigo, e o codigo ja nao produz `smtp`.
+
+### Incidente: chave de Resend exposta nesta sessao
+Um `Select-String` amplo procurou `RESEND_API_KEY` no repositorio e imprimiu
+**`.dev.vars` com o valor da chave** no output do terminal e na conversa. Causa:
+busca de identificacao de codigo sem restringir os diretorios.
+
+Verificado depois:
+- `.dev.vars` esta no `.gitignore` (linha 12) e **nunca foi commitado**;
+- `git grep` da chave sobre todos os revs de `main`: vazio;
+- `do-backup.ps1` exclui `.dev.vars`, entao os 57 backups estao limpos.
+
+**Acoes**: (a) chave a revogar no painel da Resend -- remocao do valor no Pages
+**nao** revoga a chave na Resend; (b) revogacao e recreacao com um valor novo;
+(c) toda busca futura por nome de variavel tem de ser restrita a `netlify/functions`,
+`lib`, `app`, `worker`, `tests`, `supabase`, `scripts` -- nunca varredura a partir
+da raiz, que inclui `.dev.vars`.
+
+### O que este corte NAO resolve
+O alerta automatico de `/.netlify/functions/health` continua sem entrega. Trocar
+e-mail por WhatsApp **nao e atalho**: mensagem iniciada pelo negocio na Cloud API
+exige template aprovado e conta verificada da Meta (ver decisao 3 da
+`SPEC-notificacoes.md`). O `wa.me` exige que um humano toque no link -- serve para
+a acao do cliente, nao para ser notificado.
+
+Responsavel pela decisao: usuario do projeto ("cortar de vez o envio por email e
+efetuar todos os envios pelo whatsapp").

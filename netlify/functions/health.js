@@ -17,7 +17,7 @@ const { getSupabaseAdminClient } = require('./_supabaseAdmin');
 //
 // O QUE ELE DEVE FAZER
 // Dizer, em um olhar, qual das dependencias quebrou. Por isso cada check
-// e independente: o Resend cair nao pode impedir o diagnostico do Supabase.
+// e independente: o Geoapify cair nao pode impedir o diagnostico do Supabase.
 //
 // SEM AUTENTICACAO, DE PROPONITO
 // Nao exige token: um health check que precisa de login nao pode ser usado
@@ -29,9 +29,12 @@ const { getSupabaseAdminClient } = require('./_supabaseAdmin');
 // Por isso a resposta e deliberadamente pobre: um nome de integracao e
 // "ok"/"ausente"/"erro". Nenhum valor, nenhuma contagem, nenhuma URL interna.
 
+// Resend saiu em 2026-10-01: a comunicacao com o cliente e por WhatsApp e nao
+// ha mais nenhum envio por e-mail no codigo. Manter RESEND_API_KEY aqui
+// diria que o e-mail e uma dependencia viva do site, e nao e -- omissao e o
+// que faz o health mentir sobre a sua propria superficie.
 const DEPENDENCIAS = [
   { nome: 'supabase', env: ['NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'] },
-  { nome: 'resend', env: ['RESEND_API_KEY'] },
   { nome: 'geoapify', env: ['GEOAPIFY_API_KEY'] },
   { nome: 'mercadopago', env: ['MP_ACCESS_TOKEN'] },
   // Estas duas nao tem valor de verdade: o sistema funciona sem elas (o
