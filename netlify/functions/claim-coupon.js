@@ -1,4 +1,4 @@
-const { getSupabaseAdminClient, buildCustomerToken } = require('./_supabaseAdmin');
+﻿const { getSupabaseAdminClient, buildCustomerToken } = require('./_supabaseAdmin');
 const { buildCouponMessage, buildWaLink, siteUrl } = require('./_wa');
 const { notifyOutbound } = require('./_notify');
 
@@ -92,18 +92,25 @@ exports.handler = async (event) => {
     try { ctx = await loadOfferContext(supabase, templateId); }
     catch (e) { extras.notes.push('contexto indisponivel'); }
 
-    try {
-      const { data: ref, error: refErr } = await supabase.rpc('try_referral_convert', {
-        p_tenant_id: tenantId, p_customer_id: customerId,
-      });
-      if (!refErr) extras.referral = { converted: ref === true, welcomeCouponId: null };
-    } catch (e) { /* segue: resgate ja aconteceu */ }
-
-    if (ctx) {
-// Indicacao (Modelo A): se o cliente ainda nao foi vinculado a um
-    // codigo (claim aconteceu antes do identify), registra agora e deixa
-    // o try_referral_convert abaixo converter na mesma requisicao.
-    // Best-effort e fail-open: codigo invalido nunca bloqueia o resgate.
+    // ---------- INDICACAO (Modelo A). Best-effort e fail-open ----------
+    // Codigo invalido nunca bloqueia o resgate: o resgate ja aconteceu.
+    //
+    // A ordem das duas RPCs importa e ja esteve errada de dois jeitos:
+    //
+    // 1. try_referral_convert era chamada ANTES de referral_track. Ela
+    //    procurava uma indicacao PENDING que o track ainda nao tinha
+    //    criado, devolvia false, e a indicacao ficava pending para
+    //    sempre. O comentario aqui prometia o contrario ("deixa o
+    //    try_referral_convert abaixo converter na mesma requisicao"), mas
+    //    ele nao estava abaixo. Quem resgata sem ter passado antes pelo
+    //    identify nao tem nenhuma outra chance de converter; o fluxo
+    //    normal (identify -> claim) funcionava apenas porque o identify
+    //    ja tinha registrado a indicacao antes.
+    //
+    // 2. Este bloco ficava DENTRO de `if (ctx)`. Se loadOfferContext
+    //    falhasse, a indicacao nao era registrada nunca, sem erro e sem
+    //    aviso -- e o contexto do cupom nao tem relacao com o codigo de
+    //    indicacao. O resgate seguia 200 e o afiliado nunca soube.
     if (ref && customerId) {
       try {
         await supabase.rpc('referral_track', {
@@ -112,7 +119,22 @@ exports.handler = async (event) => {
       } catch (e) { /* segue normal */ }
     }
 
+    // Depois do track, nunca antes: e o track que cria a linha pending que
+    // isto converte.
+    //
+    // O booleano da conversao nao se chama mais `ref`. O `ref` do request e
+    // o codigo; o `ref` deste try era o booleano da conversao, e sombreava
+    // o codigo no mesmo escopo. Dois nomes para a mesma coisa em linhas
+    // separadas -- o jeito mais facil de alguem editar a variavel errada.
     try {
+      const { data: converted, error: refErr } = await supabase.rpc('try_referral_convert', {
+        p_tenant_id: tenantId, p_customer_id: customerId,
+      });
+      if (!refErr) extras.referral = { converted: converted === true, welcomeCouponId: null };
+    } catch (e) { /* segue: resgate ja aconteceu */ }
+
+    if (ctx) {
+      try {
         const message = buildCouponMessage({
           publicId, businessName: ctx.businessName, title: ctx.title,
           site: siteUrl(),
