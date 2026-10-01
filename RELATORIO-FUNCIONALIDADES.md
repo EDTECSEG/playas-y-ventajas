@@ -1,7 +1,7 @@
 # Playas y Ventajas — Relatório de Funcionalidades
 
 > Mapeado diretamente do código (rotas do App Router, endpoints do Worker, RPCs do banco).
-> Data: 29/09/2026.
+> Data: 01/10/2026 — inclui verificação do fluxo de indicação contra produção e estado do CI/CD.
 
 ## 1. Panorama e arquitetura
 
@@ -11,7 +11,7 @@
 | Servidor | Cloudflare Pages — Worker em modo avançado, bundle self-contained (`_worker.js`, ~290 kB) |
 | API | handlers em `netlify/functions` (CJS, fonte única — o espelho ESM `functions/.netlify/functions` foi removido em 2026-09-30), 26 rotas na whitelist (`worker/main.js` ROUTES; fora dela → 404) |
 | Banco | Supabase (Postgres), regras de negócio em RPC, Storage de imagens/documentos, RLS ativa |
-| Comunicação | WhatsApp (`wa.me`), QR code (qrcodejs), mapa Leaflet + OpenStreetMap/Overpass |
+| Comunicação | WhatsApp (`wa.me`), QR code (qrcodejs, chip do logo 11,5% + nível H), mapa Leaflet + dados abertos OSM via Geoapify |
 
 ## 2. Papéis do sistema
 
@@ -24,7 +24,7 @@
 
 - **Identificação por telefone** (`identify`): devolve `customerId` + token assinado (HMAC) antir-IDOR. Nome, Instagram e email são opcionais; **email não é mais verificado** (decisão registrada).
 - **Vitrine de ofertas** (`offers`): lista ativas por cidade, categoria e raio/distância (geolocalização), com imagens compensadas do catálogo.
-- **Mapa de proximidade**: radar (`find_nearby_businesses`) + camada de dados abertos OSM via `map-places` (Overpass, servidor-side por CORS).
+- **Mapa de proximidade**: radar (`find_nearby_businesses`) + camada de dados abertos OSM via `map-places` (Geoapify, servidor-side por CORS; chave nunca vai ao bundle, cache de 10 min e degradação para lista vazia em vez de erro — a instância pública do Overpass foi abandonada por 504/429 sob carga).
 - **Translado e proximidade**: card dedicado consumindo `shuttle` (`list_shuttle_services` + `list_live_vehicles`). Com geolocalização mostra distâncias e raio de 16 km; negada/indisponível ainda lista (sem `distanceKm`, aviso honesto). Veículos ao vivo mostram motorista, distância, velocidade e "atualizado há X"; sem dados → "Nenhum translado ativo por aqui no momento."
 - **Reservar translado / Minhas reservas** (Módulo A): agenda por serviço (`shuttle-reservation` → `shuttle_create_reservation`) com passageiros, data/hora, anotações e contato; painel "Minhas reservas" lista por status e permite cancelar (motivo opcional). Regras no banco: serviço ativo da empresa, dia ativo, janela de horário, sobreposição de slots (`tstzrange`) e fuso `America/Sao_Paulo`; `SLOT_CONFLICT` é tratado na tela como "acabou de ser reservado". Confirmação da empresa acompanha o status em "Minhas reservas" + link `wa.me`.
 - **Resgate de cupom** (`claim-coupon`): caminho crítico roda RPC `claim_coupon` (estoque, hash, limite); extras best-effort: conversão de indicação (`try_referral_convert`) e link WhatsApp montado a partir do contexto do banco (nunca do navegador). Retorna QR code.
@@ -77,7 +77,10 @@ Fluxo completo com lógica pura testada em `app/motorista/logic.js`:
 - **Extrato**: uma linha por indicação, com pessoa, cupom (título e código), estabelecimento, benefício, data e o código da recompensa recebida. O cupom exibido é o **primeiro emitido depois da indicação** — o que disparou a conversão. Filtrar por `status = 'VALIDATED'` daria a resposta errada: mostraria o cupom de outra visita e esconderia o cupom pego e nunca usado.
 - **Recompensa**: `referral_track` registra a indicação (fail-open, exige `reward_status = 'active'` no afiliado) e `referral_convert` converte — cupom para o afiliado e cupom de boas-vindas para o indicado. A ponte é `try_referral_convert`, chamada por `claim-coupon.js` e `identify.js`.
 - **Segurança**: o painel exige `affiliate_id` **e** telefone (comparado por `phone_digits`, então a máscara não quebra) **e** `tenant_id`; qualquer um dos três errado devolve `null` — verificado em produção com telefone errado e com tenant errado. Nenhuma função de `public` aceita `EXECUTE` de `anon`/`PUBLIC` (`app_ainda_abertas = 0`).
-- **Estado dos dados**: `referrals` está **vazia** em produção. O fluxo não está quebrado (existe 1 afiliado ativo, e rastreamento e conversão estão ligados), mas nenhuma indicação entrou por link ainda. Por isso o caminho com indicação real **ainda não foi exercitado contra o banco**; o que fica travado em `tests/afiliado-extrato-guard.test.cjs` são as regressões estruturais: agregação aninhada (o 42803 que já derrubou `admin_affiliate_report`), escolha do cupom errado, e a confusão entre "pegou" e "resgatou".
+- **Estado dos dados**: o caminho com indicação real **foi exercitado contra o banco em 2026-10-01** e passou ponta a ponta. Um cliente novo entrou por `?ref=JOSDASCOUVE-EB29`, resgatou `PYV-198300510F` (10% OFF, Edtec Seg Lagos) e o cupom foi depois validado no caixa. Resultado observado: `referrals` com `status = 'converted'`, `converted_at` preenchida ~10 s depois do `created_at`, `coupons.status = 'VALIDATED'`. O extrato therefore devolve a linha com os três estados coerentes.
+  - **Prêmio ainda não creditado**: a conversão ocorreu sem `reward_coupon_id`, porque não há template de prêmio configurado em `affiliate_rewards` (`require_first_claim` também nulo). `referral_convert` só marca como convertido quando não acha template — o afiliado ganha a indicação e **zero recompensa** até alguém chamar `admin_set_affiliate_rewards`.
+  - **Ordem a corrigir**: em `claim-coupon.js` a ponte chama `try_referral_convert` (linha 96) **antes** de `referral_track` (linha 109). Quem resgatar *antes* de se cadastrar tem a conversão procurada antes de a indicação existir: devolve `false` e a linha 109 registra a indicação já como `pending`, que não converte mais — o cliente não resgata um segundo cupom só para destravar a primeira indicação. Pendência aberta.
+  - O que continua travado em `tests/afiliado-extrato-guard.test.cjs` são as regressões estruturais: agregação aninhada (o 42803 que já derrubou `admin_affiliate_report`), escolha do cupom errado, e a confusão entre "pegou" e "resgatou".
 
 ## 8. Regras de negócio no banco (RPCs)
 
@@ -107,7 +110,14 @@ Grupos por domínio (96 funções de app em `public`, EXECUTE fechado para o cli
 
 ## 10. Qualidade
 
-- **381 testes / 375 passando / 0 falhas / 6 pulados** (`node:test`) — cobrem handlers, lógica pura, contrato do diretório de functions, headers e asset routing do Worker. Módulos: `empresa-reservations.test.cjs` (9 casos do GET `mode=reservations` + `review_reservation`), `notificacoes.test.cjs` (fase 1 no-op + erros), `empresa-report.test.cjs` (report v3 com fallback v2), `shuttle.test.cjs` (10 casos de contrato/erro do endpoint de translado), `shuttle-manage.test.cjs` (15 casos do fluxo de escrita do Módulo 1), `afiliado-folha-guard.test.cjs` (folha de papel no `window.print()`) e `afiliado-extrato-guard.test.cjs` (extrato: agregação não aninhada, cupom da indicação, "pegou" ≠ "resgatou").
-- Os dois guards de afiliado travam **código-fonte** porque este runner não renderiza JSX nem executa SQL. Consequência aceita: o caminho do extrato com uma indicação real não tem cobertura de banco (ver seção 7).
+- **402 testes / 396 passando / 0 falhas / 6 pulados** (`node:test`) — cobrem handlers, lógica pura, contrato do diretório de functions, headers e asset routing do Worker. Módulos: `empresa-reservations.test.cjs` (9 casos do GET `mode=reservations` + `review_reservation`), `notificacoes.test.cjs` (fase 1 no-op + erros), `empresa-report.test.cjs` (report v3 com fallback v2), `shuttle.test.cjs` (10 casos de contrato/erro do endpoint de translado), `shuttle-manage.test.cjs` (15 casos do fluxo de escrita do Módulo 1), `afiliado-folha-guard.test.cjs` (folha de papel no `window.print()`) e `afiliado-extrato-guard.test.cjs` (extrato: agregação não aninhada, cupom da indicação, "pegou" ≠ "resgatou").
+- Os dois guards de afiliado travam **código-fonte** porque este runner não renderiza JSX nem executa SQL. Consequência aceita: o caminho do extrato continua sem cobertura automatizada de banco (a verificação de 2026-10-01 foi manual, contra produção — ver seção 7).
 - Testes **live opcionais** (smoke, aprovação de motorista e reporte de posição) rodam com `RUN_LIVE=1` contra produção (`npm run test:live[:approval|:position]`).
 - Build gera Worker autocontido; rotas fora da whitelist → 404.
+
+## 11. Operação e entrega (2026-10-01)
+
+- **CI/CD**: `.github/workflows/deploy.yml` publica a `main` no Cloudflare Pages a cada push — `npm ci`, testes, `npm run build`, verificação de `out/_worker.js` e `wrangler-action`. Usa `CLOUDFLARE_API_TOKEN` (escopo Pages) e `CLOUDFLARE_ACCOUNT_ID` como secrets do repositório; o OAuth local do Wrangler expira em horas e **não** serve para o CI.
+- **Variáveis de ambiente**: as cinco (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `GEOAPIFY_API_KEY`) existem em **Production e Preview**, todas como `secret`. Havia `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY` e `GEOAPIFY_API_KEY` em texto claro no Preview; as três foram trocadas por valores novos e as antigas revogadas. `scripts/.agent-scripts/check-pages-env.ps1` audita nome/tipo/presença sem imprimir valor, e é o que impede a regressão.
+- **Domínio**: produção responde em `https://playas-y-ventajas.pages.dev`. **`playas-y-ventajas.com` não está registrado** (NXDOMAIN) — links de indicação e material impresso devem usar o endereço do Pages até haver domínio próprio. `NEXT_PUBLIC_SITE_URL` não existe no Pages; `_wa.js` usa `pages.dev` como reserva.
+- **Monitoramento**: inexistente. O Worker loga erro no tail (privado, sem alerta) e não há endpoint de health. A degradação do mapa em caso de falha da Geoapify é coberta por teste, mas cota estourada não gera aviso.
