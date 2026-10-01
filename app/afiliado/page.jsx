@@ -70,6 +70,18 @@ function statusResgate(r) {
   return { rotulo: 'Convertida, cupom não localizado', cor: theme.textMuted };
 }
 
+// A RPC affiliate_reward_status devolve o MOTIVO quando a recompensa nao pode
+// ser creditada ('semCadastroCliente' | 'semTemplate'), e nao so um booleano.
+// Traduzir aqui porque a alternativa e mostrar a string crua na tela: o
+// afiliado veria "semTemplate" e nao saberia o que fazer com isso.
+function recompensaLabel(status) {
+  if (status === 'active') return 'ativa';
+  if (status === 'semCadastroCliente') return 'aguardando seu cadastro de cliente';
+  if (status === 'semTemplate') return 'ainda não configurada pelo estabelecimento';
+  // Ausente: o endpoint nao conseguiu consultar o status (RPC fora do banco).
+  return 'não verificada';
+}
+
 function quandoResgate(r) {
   if (r.resgatadoEm) return { data: dataCurta(r.resgatadoEm), de: 'usou o cupom' };
   if (r.cupomEm) return { data: dataCurta(r.cupomEm), de: 'pegou o cupom' };
@@ -307,7 +319,7 @@ export default function AfiliadoPage() {
                 ))}
               </div>
               <p style={{ fontSize: 12, color: theme.textMuted, marginTop: 0 }}>
-                Recompensa: {dash.rewardStatus === 'active' ? 'ativa' : dash.rewardStatus || '—'} · Afiliado desde {new Date(dash.createdAt).toLocaleDateString('pt-BR')}
+                Recompensa: {recompensaLabel(dash.rewardStatus)} · Afiliado desde {new Date(dash.createdAt).toLocaleDateString('pt-BR')}
               </p>
 
               {/* Extrato. A lista antiga mostrava so nome + status e nao dizia

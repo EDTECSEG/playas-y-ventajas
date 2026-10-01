@@ -56,6 +56,11 @@ test('GET ?affiliateId&phone devolve o dashboard verificado por telefone', async
         assert.strictEqual(args.p_phone, '+5511999999999');
         return { data: { totalReferrals: 3, converted: 1 }, error: null };
       }
+      if (name === 'affiliate_reward_status') {
+        assert.strictEqual(args.p_tenant_id, TENANT);
+        assert.strictEqual(args.p_affiliate_id, 'a-1');
+        return { data: { pendingReason: 'ok' }, error: null };
+      }
       return { data: null, error: { message: 'unexpected rpc ' + name } };
     },
   });
@@ -65,6 +70,73 @@ test('GET ?affiliateId&phone devolve o dashboard verificado por telefone', async
   const res = await handler(makeEvent({ query: { affiliateId: 'a-1', phone: '+5511999999999' } }));
   assert.strictEqual(res.statusCode, 200);
   assert.strictEqual(parseBody(res).totalReferrals, 3);
+  assert.strictEqual(parseBody(res).rewardStatus, 'active');
+});
+
+// A tela /afiliado le `dash.rewardStatus` em dois lugares, mas affiliate_dashboard
+// NUNCA devolveu esse campo. Resultado: o painel mostrava "—" e a condicao
+// `=== 'active'` da folha de divulgacao nunca era verdadeira. Os dois pontos
+// eram codigo morto apontando para um campo inexistente.
+test('GET expoe rewardStatus a partir de affiliate_reward_status', async (t) => {
+  const fake = makeFakeSupabase({
+    rpc: async (name) => {
+      if (name === 'affiliate_dashboard') return { data: { totalReferrals: 5 }, error: null };
+      if (name === 'affiliate_reward_status') {
+        return { data: { pendingReason: 'semTemplate', rewardTemplateConfigured: false }, error: null };
+      }
+      return { data: null, error: { message: 'unexpected rpc ' + name } };
+    },
+  });
+  const { handler, restore } = loadFunction('affiliates.js', fake);
+  t.after(restore);
+
+  const res = await handler(makeEvent({ query: { affiliateId: 'a-1', phone: '+5511999999999' } }));
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(
+    parseBody(res).rewardStatus, 'semTemplate',
+    'o motivo tem de chegar cru para a tela traduzir; so "ok" vira active',
+  );
+});
+
+// A RPC e um diagnostico, nao a funcao principal do endpoint. Se ela nao existir
+// no banco (ou falhar), o painel tem de continuar funcionando.
+test('GET degrada sem rewardStatus quando a RPC de status falha, sem virar 500', async (t) => {
+  const fake = makeFakeSupabase({
+    rpc: async (name) => {
+      if (name === 'affiliate_dashboard') return { data: { totalReferrals: 2 }, error: null };
+      return { data: null, error: { message: 'function affiliate_reward_status does not exist' } };
+    },
+  });
+  const { handler, restore } = loadFunction('affiliates.js', fake);
+  t.after(restore);
+
+  const res = await handler(makeEvent({ query: { affiliateId: 'a-1', phone: '+5511999999999' } }));
+  assert.strictEqual(res.statusCode, 200, 'falha de diagnostico nao pode derrubar o painel');
+  assert.strictEqual(parseBody(res).totalReferrals, 2, 'o dashboard continua vindo');
+  assert.ok(!('rewardStatus' in parseBody(res)), 'sem status inventado: a chave nem aparece');
+});
+
+test('GET nao vaza o customerId que a RPC devolve', async (t) => {
+  const fake = makeFakeSupabase({
+    rpc: async (name) => {
+      if (name === 'affiliate_dashboard') return { data: { totalReferrals: 1 }, error: null };
+      if (name === 'affiliate_reward_status') {
+        return {
+          data: { customerId: 'c-uuid-secreto', hasCustomer: true, pendingReason: 'ok' },
+          error: null,
+        };
+      }
+      return { data: null, error: { message: 'unexpected rpc ' + name } };
+    },
+  });
+  const { handler, restore } = loadFunction('affiliates.js', fake);
+  t.after(restore);
+
+  const res = await handler(makeEvent({ query: { affiliateId: 'a-1', phone: '+5511999999999' } }));
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(parseBody(res).rewardStatus, 'active');
+  const bruto = JSON.stringify(parseBody(res));
+  assert.ok(!bruto.includes('c-uuid-secreto'), 'o UUID do cliente nao vai para o navegador');
 });
 
 test('GET sem affiliateId/phone devolve 400', async (t) => {

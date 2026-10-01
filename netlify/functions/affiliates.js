@@ -26,9 +26,9 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === 'POST') {
       const { name, phone, email, kind } = JSON.parse(event.body || '{}');
-      if (!name || !phone) return { statusCode: 400, body: JSON.stringify({ error: 'nome e telefone obrigatórios' }) };
+      if (!name || !phone) return { statusCode: 400, body: JSON.stringify({ error: 'nome e telefone obrigatÃ³rios' }) };
       const digits = phoneDigits(phone);
-      if (!digits) return { statusCode: 400, body: JSON.stringify({ error: 'telefone inválido' }) };
+      if (!digits) return { statusCode: 400, body: JSON.stringify({ error: 'telefone invÃ¡lido' }) };
       // Idempotente por telefone: o mesmo cliente nunca cria afiliado duplicado.
       // O card de /cliente chama este endpoint a cada 'indicar amigo'.
       // created_at asc + limit(1): se ainda houver duplicado antigo, o mais
@@ -55,13 +55,49 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === 'GET') {
       const { affiliateId, phone } = event.queryStringParameters || {};
-      if (!affiliateId || !phone) return { statusCode: 400, body: JSON.stringify({ error: 'affiliateId e phone obrigatórios' }) };
+      if (!affiliateId || !phone) return { statusCode: 400, body: JSON.stringify({ error: 'affiliateId e phone obrigatÃ³rios' }) };
       const { data, error } = await supabase.rpc('affiliate_dashboard', {
         p_tenant_id: TENANT_ID, p_affiliate_id: affiliateId, p_phone: phone,
       });
       if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
       // Sem match de telefone/afiliado o dashboard vem null: devolve vazio.
-      return { statusCode: 200, body: JSON.stringify(data || {}) };
+      const dash = data || {};
+
+      // `rewardStatus` NAO vem de affiliate_dashboard. A tela /afiliado le esse
+      // campo em dois lugares (o "Recompensa: ..." do painel e o texto da folha
+      // de divulgacao) e, sem esta chamada, recebia sempre undefined: o painel
+      // mostrava "â€”" e a folha caia sempre no "peca confirmacao", porque a
+      // condicao `=== 'active'` nunca era verdadeira. Codigo morto apontando
+      // para um campo que ninguem devolvia.
+      //
+      // affiliate_reward_status responde POR QUE a recompensa nao caiu, em vez
+      // de so dizer que nao caiu:
+      //   'ok'                 - tem tudo, pode creditar
+      //   'semCadastroCliente' - o premio nao tem onde cair
+      //   'semTemplate'        - falta configuracao do estabelecimento
+      //
+      // Degrada em silencio: se a RPC nao existir no banco, ou falhar, o painel
+      // volta ao comportamento anterior em vez de virar 500 -- o diagnostico e
+      // um extra, nao a funcao principal do endpoint. O `customerId` que a RPC
+      // devolve e descartado de proposito: a tela nao precisa dele e nao ha
+      // razao para mandar um UUID de cliente ao navegador.
+      let rewardStatus;
+      try {
+        const { data: rs, error: rsErr } = await supabase.rpc('affiliate_reward_status', {
+          p_tenant_id: TENANT_ID, p_affiliate_id: affiliateId,
+        });
+        if (rsErr) throw new Error(rsErr.message || 'erro desconhecido');
+        if (rs && rs.pendingReason) {
+          rewardStatus = rs.pendingReason === 'ok' ? 'active' : rs.pendingReason;
+        }
+      } catch (rsEx) {
+        console.warn('affiliates: affiliate_reward_status indisponivel (' + (rsEx && rsEx.message) + ')');
+      }
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify(rewardStatus ? { ...dash, rewardStatus } : dash),
+      };
     }
 
     return { statusCode: 405, body: '{}' };
