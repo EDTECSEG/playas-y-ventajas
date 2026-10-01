@@ -1,4 +1,4 @@
-﻿# Playas y Ventajas — Relatório de Funcionalidades
+# Playas y Ventajas — Relatório de Funcionalidades
 
 > Mapeado diretamente do código (rotas do App Router, endpoints do Worker, RPCs do banco).
 > Data: 01/10/2026 — inclui verificação do fluxo de indicação contra produção e estado do CI/CD.
@@ -99,7 +99,7 @@ Grupos por domínio (96 funções de app em `public`, EXECUTE fechado para o cli
 - **Translado/proximidade (Módulo 1, leitura)**: RPCs `list_shuttle_services` e `list_live_vehicles` com UI dedicada em `/cliente` (card "Translado e proximidade").
 - **Translado/proximidade (Módulo 1, escrita)**: `business_save_shuttle_service`, `business_toggle_shuttle_service`, `business_delete_shuttle_service`, `business_list_shuttle_services` e `driver_report_position` (`supabase/translado-write-flow.sql`, aplicado) — SECURITY DEFINER com autorização dentro da função (ator da empresa via `users.business_id`; motorista via sessão `driver_sessions`, `status='approved'`, `driver_id` nunca vem do cliente), EXECUTE só `service_role`.
 - **Agendamento (Módulo A, `supabase/agendamento.sql`, aplicado)**: `shuttle_create_reservation`, `shuttle_cancel_reservation`, `shuttle_list_customer_reservations`, `business_list_shuttle_reservations`, `business_review_shuttle_reservation`, `driver_list_shuttle_runs`, `driver_complete_shuttle_reservation` + tabela `shuttle_reservations` (RLS ativa sem policy; acesso só via RPC admin com service_role) e `shuttle_services.duration_minutes` (15..720).
-- **Notificacoes (Modulo B, `supabase/notificacoes.sql`, aplicado)**: `outbound_enqueue` (unica escrita; dedupe por evento/canal/cupom/reserva), `outbound_mark_sent`, `outbound_mark_failed` (idempotentes), `outbound_list` (auditoria) + tabela `outbound_messages` (fila/auditoria; default no-op `provider='none'` ate haver provedor real). **Canal unico: WhatsApp.** O canal `EMAIL` foi removido em 2026-10-01 por decisao do dono -- ver `SECURITY-DECISIONS.md`. O gancho de hoje e o `wa.me` que o proprio cliente toca; a Cloud API automatizada continua desligada (falta conta verificada e template aprovado da Meta).
+- **Notificações (Módulo B, `supabase/notificacoes.sql`, aplicado)**: `outbound_enqueue` (única escrita; dedupe por evento/canal/cupom/reserva), `outbound_mark_sent`, `outbound_mark_failed` (idempotentes), `outbound_list` (auditoria) + tabela `outbound_messages` (fila/auditoria; default no-op `provider='none'` até haver provedor real). **Canal único: WhatsApp.** O canal `EMAIL` foi removido em 2026-10-01 por decisão do dono -- ver `SECURITY-DECISIONS.md`. O gancho de hoje é o `wa.me` que o próprio cliente toca; a Cloud API automatizada foi **descartada** por decisão do dono (sem conta verificada e sem template aprovado da Meta), então **o sistema não notifica a operação automaticamente**.
 
 ## 9. Segurança (estado atual)
 

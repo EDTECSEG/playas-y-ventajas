@@ -541,61 +541,72 @@ bundleados), e nao reaproveitados do espelho apagado.
 Responsável pela decisão: usuario do projeto (escolheu "apagar de vez, com teste
 e docs" apos saber que o espelho era so de forma, e nao de conteudo).
 
-## 2026-10-01 - Envio por e-mail cortado por decisao do dono; chave de Resend exposta nesta sessao e revogada
+## 2026-10-01 - Envio por e-mail cortado por decisão do dono; chave da Resend exposta nesta sessão
 
-### Decisao
-Comunikacao com o cliente e **por WhatsApp, sem alternativa**. O envio por e-mail
-foi removido do codigo, nao adiado:
+### Decisão
+Comunicação com o cliente é **por WhatsApp, sem alternativa**. O envio por e-mail foi
+removido do código, não adiado:
 
 - `_notify.js`: canal `EMAIL` removido (`CHANNEL_EMAIL`, ramo em `normalizeChannel`,
-  ramo em `resolveProvider`, `CAN_DELIVER.smtp`). `resolveProvider` agora so conhece
-  `whatsapp_cloud_api`. `EMAIL_PROVIDER`, `SMTP_*` e `MAIL_FROM` nao sao lidos por
-  codigo nenhum.
-- `resolveDestination` perdeu o parametro `channel` e o ramo de e-mail; a leitura de
-  `users.email` saiu (o campo continua no banco -- e dado de contato, nao envio).
-- `health.js`: integracao `resend` removida das DEPENDENCIAS.
+  ramo em `resolveProvider`, `CAN_DELIVER.smtp`). `resolveProvider` agora só conhece
+  `whatsapp_cloud_api`. `EMAIL_PROVIDER`, `SMTP_*` e `MAIL_FROM` não são lidos por
+  código nenhum.
+- `resolveDestination` perdeu o parâmetro `channel` e o ramo de e-mail; a leitura de
+  `users.email` saiu. O campo continua no banco — é dado de contato, não envio.
+- `health.js`: integração `resend` removida das DEPENDENCIAS.
 - `RESEND_API_KEY` apagada do Cloudflare Pages em **production** e **preview**.
-- `check-pages-env.ps1`: a variavel saiu de `$Esperadas` e entrou em `$Proibidas`.
-  Reaparecer agora e falha do script, nao esquecimento.
-- Commentarios em `claim-coupon.js` e `health.js` que citavam o Resend como
-  dependencia viva foram corrigidos.
+- `check-pages-env.ps1`: a variável saiu de `$Esperadas` e entrou em `$Proibidas`.
+  Reaparecer agora é falha do script, não esquecimento.
+- Comentários em `claim-coupon.js` e `health.js` que citavam o Resend como
+  dependência viva foram corrigidos.
 
 O campo `email` como **dado** permanece em todo o sistema (cadastro de motorista
 exige e-mail, cadastro de cliente, painel). O que morreu foi o envio.
 
-### Por que nao foi preciso mexer no CHECK do banco
+### Por que não foi preciso mexer no CHECK do banco
 `provider` ainda aceita `none | whatsapp_cloud_api | smtp` em
-`public.outbound_messages`. Estreitar exigiria confirmar antes que nao existe
-linha com `smtp` -- e o MCP do Supabase nao estava conectado na sessao. Alterar
-constraint sem essa verificacao seria às cegas. **Pendencia: quando o MCP voltar,
-`SELECT provider, count(*) FROM outbound_messages GROUP BY provider` e, se nao
-houver `smtp`, `ALTER TABLE ... DROP CONSTRAINT` + recriar o CHECK.**
+`public.outbound_messages`. Estreitar exigiria confirmar antes que não existe linha
+com `smtp` — e o MCP do Supabase não estava conectado na sessão. Alterar constraint
+sem essa verificação seria às cegas. **Pendência: quando o MCP voltar,
+`SELECT provider, count(*) FROM outbound_messages GROUP BY provider` e, se não houver
+`smtp`, `ALTER TABLE ... DROP CONSTRAINT` + recriar o CHECK.**
 
-E o valor de check que sobrou e pequeno: o CHECK recusa valor invalido, nao impede
-envio. Quem decide o que sai e o codigo, e o codigo ja nao produz `smtp`.
+E o valor do check que sobrou é pequeno: o CHECK recusa valor inválido, não impede
+envio. Quem decide o que sai é o código, e o código já não produz `smtp`.
 
-### Incidente: chave de Resend exposta nesta sessao
-Um `Select-String` amplo procurou `RESEND_API_KEY` no repositorio e imprimiu
+### Incidente: chave da Resend exposta nesta sessão
+Um `Select-String` amplo procurou `RESEND_API_KEY` no repositório e imprimiu
 **`.dev.vars` com o valor da chave** no output do terminal e na conversa. Causa:
-busca de identificacao de codigo sem restringir os diretorios.
+busca de identificação de código sem restringir os diretórios.
 
 Verificado depois:
-- `.dev.vars` esta no `.gitignore` (linha 12) e **nunca foi commitado**;
+
+- `.dev.vars` está no `.gitignore` (linha 12) e **nunca foi commitado**;
 - `git grep` da chave sobre todos os revs de `main`: vazio;
-- `do-backup.ps1` exclui `.dev.vars`, entao os 57 backups estao limpos.
+- `do-backup.ps1` exclui `.dev.vars`, então os 57 backups estão limpos.
 
-**Acoes**: (a) chave a revogar no painel da Resend -- remocao do valor no Pages
-**nao** revoga a chave na Resend; (b) revogacao e recreacao com um valor novo;
-(c) toda busca futura por nome de variavel tem de ser restrita a `netlify/functions`,
-`lib`, `app`, `worker`, `tests`, `supabase`, `scripts` -- nunca varredura a partir
-da raiz, que inclui `.dev.vars`.
+**Ações**: (a) revogar a chave no painel da Resend — a remoção do valor no Pages
+**não** revoga a chave na Resend; (b) se algum dia o e-mail voltar, recriar com valor
+novo; (c) toda busca futura por nome de variável tem de ser restrita a
+`netlify/functions`, `lib`, `app`, `worker`, `tests`, `supabase`, `scripts` — nunca
+varredura a partir da raiz, que inclui `.dev.vars`.
 
-### O que este corte NAO resolve
-O alerta automatico de `/.netlify/functions/health` continua sem entrega. Trocar
-e-mail por WhatsApp **nao e atalho**: mensagem iniciada pelo negocio na Cloud API
-exige template aprovado e conta verificada da Meta (ver decisao 3 da
-`SPEC-notificacoes.md`). O `wa.me` exige que um humano toque no link -- serve para
-a acao do cliente, nao para ser notificado.
+### O que este corte NÃO resolve — e a consequência aceita
+O alerta automático de `/.netlify/functions/health` continua **sem entrega**, e agora
+isso é decisão, não pendência. Trocar e-mail por WhatsApp **não é atalho**: mensagem
+initiada pelo negócio na Cloud API exige template aprovado e conta verificada da Meta.
+O `wa.me` exige que um humano toque no link — serve para a ação do cliente, não para
+notificar o dono.
 
-Responsavel pela decisao: usuario do projeto ("cortar de vez o envio por email e
+**Decisão do dono em 2026-10-01: ficar só no `wa.me`.** Sem conta verificada, sem
+template, sem custo por conversa. O sistema **não avisa a operação sozinho**: não há
+alerta de 5xx, nem aviso de resgate, nem lembrete de pagamento pendente. O gancho de
+envio automatizado continua no `_notify.js`, inerte e desligado.
+
+Um efeito colateral que vale registrar: com o Resend fora e sem canal automático, uma
+falha de runtime em produção só aparece quando alguém olha. O `health` continua
+público ereporta o estado, mas **ninguém está olhando**. Se isso incomodar, a saída não
+é e-mail — é checagem manual periódica ou um provedor de uptime.
+
+Responsável pela decisão: usuário do projeto ("cortar de vez o envio por email e
 efetuar todos os envios pelo whatsapp").

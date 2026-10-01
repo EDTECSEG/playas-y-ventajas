@@ -1,4 +1,4 @@
-﻿# Spec: Notificações
+# Spec: Notificações
 
 > Especificação de módulo (nada de código implementado aqui). Data: 29/09/2026.
 > Padrões vigentes: handlers CJS em `netlify/functions` como fonte única (o espelho ESM `functions/.netlify/functions` foi removido em 2026-09-30, junto com o `tests/consistency.test.cjs`; o contrato do diretório está em `tests/function-contract.test.cjs`); handlers publicam rota pela whitelist `ROUTES` de `worker/main.js`; regras de negócio em RPC `SECURITY DEFINER` com `search_path` fixo e `EXECUTE` só para `service_role`.
@@ -40,7 +40,7 @@ Nenhum objeto é criado por este documento; abaixo está o conjunto previsto, pa
 - `event text not null` — domínio do evento (`coupon_claimed`, `shuttle_booking_confirmed`)
 - `channel text not null` - `WHATSAPP` (o canal `EMAIL` foi REMOVIDO em 2026-10-01; ver decisao 2)
 - `provider text not null` - `none | whatsapp_cloud_api`. O `smtp` continua aceito pelo CHECK no banco porque estreitar esse CHECK exige confirmar antes que nao existe linha com ele (2026-10-01: sem MCP do Supabase conectado, entao a verificacao ficou pendente) -- mas nenhum codigo o produz mais. E a unica protecao que o CHECK daria e a de recusar valor invalido, nao de impedir envio: quem decide o que sai e o codigo.
-- `destination text` - telefone normalizado (somente digitos, com DDI). O e-mail como destino saiu com o canal.
+- `destination text` - telefone normalizado (somente dígitos, com DDI). O e-mail como destino saiu com o canal em 2026-10-01.
 - `subject text`, `body text` — conteúdo renderizado; **body nunca inclui** token, segredo ou código interno de negócio
 - `status text not null` — `noop | queued | sent | failed`
 - `provider_message_id text`, `error_code text` (código, nunca mensagem crua de terceiro)
@@ -143,7 +143,7 @@ Unitário, com adaptador fake (mesmo padrão de `tests/claim-coupon-tax.test.cjs
 
 1. **Reserva de translado não existe ainda.** Não há tabela/RPC de booking no repo — só CRUD de serviço e leitura pública (`list_shuttle_services`, `list_live_vehicles`) e posição do motorista. Onde nasce a "reserva confirmada"? Sem resposta, a spec entrega só o gancho e o `event` fica reservado (`shuttle_booking_confirmed`) sem emissor.
 2. **Qual provedor e quando? RESPOSTA DO DONO (2026-10-01): WhatsApp, sem alternativa.** O envio por e-mail foi cortado por completo -- canal `EMAIL` removido de `_notify.js`, `RESEND_API_KEY` apagada de Production e Preview, e a variavel entrou na lista `$Proibidas` do `check-pages-env.ps1`. Nao e mais "email enquanto o Resend nao resolve": e decisao definitiva. `wa.me` segue como o canal do dia a dia; a Cloud API automatizada continua condicionada a decisao 3.
-3. **Meta/WhatsApp Cloud API exige** conta verificada, modelo de mensagem aprovado e janela de 24 h. O dono aceita essa dependência (custo + aprovação + prazo), ou o canal real deve ser outro (Twilio, Evolution API self-hosted, etc.)?
+3. **Meta/WhatsApp Cloud API: NÃO.** Decisão do dono em 2026-10-01: ficar só no `wa.me`. Sem conta verificada, sem template aprovado pela Meta, sem custo por conversa, sem automação. **Consequência aceita: o sistema não avisa o dono sozinho.** Não existe alerta automático de 5xx, nem aviso de resgate, nem lembrete de pagamento pendente. O `wa.me` exige toque humano e serve para o cliente agir, não para notificar a operação. O gancho de envio automatizado continua no `_notify.js`, inerte e desligado por falta de credenciais; se um dia for ativado, é decisão nova, com leitura de segurança nova — não é retomada natural.
 4. **`wa.me` continua sendo o canal padrão?** Hoje o resgate devolve um link para o próprio cliente tocar em enviar. A notificação automática substitui isso, complementa (mantém o link na resposta) ou só cobre a reserva de translado?
 5. **Granularidade e quiet hours:** notificar todo resgate ou só quando o cliente tem email/telefone válido? Há janela de silêncio (ex.: 22h–8h, fuso do cliente)? Isso é política de produto, não técnica.
 6. **Retry:** sem provedor configurado, `status` fica `noop` para sempre, ou uma routine agenda promotion de `noop → queued` ao detectar que as env apareceram? Com que cadência e onde (cron do Supabase ou Worker scheduled)?
