@@ -1,0 +1,72 @@
+name: Deploy no Cloudflare Pages
+
+# Publica o site em https://playas-y-ventajas.pages.dev a cada push em main.
+#
+# Substitui o `wrangler pages deploy` rodado a mao, que dependia de um token
+# OAuth da maquina do dono. Esse token expira em ~7h e, quando expira, o
+# deploy para sem aviso e o proximo depende de alguem abrir o navegador e
+# autorizar de novo -- foi o que travou o deploy da leva do QR Code. Aqui a
+# credencial vive em Secret do repositorio, com validade longa, e o historico
+# de deploy fica no proprio GitHub.
+#
+# O Secret e um API Token do Cloudflare com as permissoes
+# "Cloudflare Pages: Edit" + "Account: Read". NAO e a conta inteira: token com
+# escopo amplo demais seria uma credencial capaz de mexer em tudo na conta.
+
+on:
+  push:
+    branches: [main]
+  # Allows a re-run without pushing an empty commit, which is how a transient
+  # Cloudflare failure gets retried without inventing a commit.
+  workflow_dispatch:
+
+# Never let two deploys write the same Pages project at once. A second one
+# would race the first and could publish a half-uploaded bundle.
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    name: Build e publica
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # Build e testes antes de qualquer deploy. O build roda aqui e o artefato
+      # e o que sobe; se o build local passou mas o de CI falha, a diferenca
+      # aparece no log em vez de um bundle quebrado em producao.
+      - name: Instala dependencias
+        run: npm ci
+
+      - name: Testa
+        run: npm test
+
+      - name: Build
+        run: npm run build
+        # postbuild (bundle-worker.mjs) roda sozinho: ele gera out/_worker.js,
+        # que e o que faz as functions do Netlify responderem no Cloudflare.
+
+      - name: Confere que o _worker.js foi gerado
+        run: test -f out/_worker.js
+
+      - name: Publica no Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Sem --commit-dirty: aqui o checkout e limpo e out/ e node_modules
+          # sao gitignored, entao o wrangler nao tem nada a reclamar. No
+          # deploy manual local a arvore costuma estar suja, e ali o aviso
+          # importa.
+          command: pages deploy out --project-name=playas-y-ventajas --branch=main
