@@ -72,26 +72,34 @@ test('o chip e dimensionado em %, nao em px', () => {
   assert.match(helper, /s\.height = `\$\{CHIP_RATIO \* 100\}%`/);
 });
 
-test('o chip fica no menor tamanho que ainda se le: 10% (5x5 modulos)', () => {
-  // A medicao na matriz real (qrcodejs 1.0.0, textos de producao) mostrou que
-  // a correcao de erro nunca foi o gargalo: a 22% ainda havia 11x de folga, e
-  // as regioes criticas ficam de pe em qualquer tamanho testado. O limite real
-  // e a legibilidade do logo -- abaixo de ~5 modulos ele vira um ponto. Este
-  // teste trava esse piso E trava o teto: se alguem inflar o chip de novo, a
-  // guarda falha, porque area de QR gasta a toa nao compra leitura nenhuma.
-  assert.match(helper, /const CHIP_RATIO = 0\.10/);
+test('o chip fica no tamanho pedido, e ainda dentro do que se le: 11,5%', () => {
+  // A medicao monta a matriz de verdade (qrcodejs 1.0.0, textos de producao),
+  // aplica o chip como o CSS faz e tenta DECODIFICAR com jsQR. 11,5% le em
+  // 100% das leituras (matrizes de 41x41 a 73x73, 3 a 12 px por modulo, com e
+  // sem zona de silencio) e so quebra perto de 29%. Este teste trava o valor
+  // pedido E um teto folgado: passar de 29% e nao ler mais nada, nao e escolha
+  // de design.
+  assert.match(helper, /const CHIP_RATIO = 0\.115/);
   const ratio = Number(/const CHIP_RATIO = ([\d.]+)/.exec(helper)[1]);
-  assert.ok(ratio <= 0.10, `chip ${ratio} maior que o maximo de 0.10: gasta area de QR a toa`);
+  assert.ok(ratio <= 0.115, `chip ${ratio} maior que o pedido de 0.115`);
   assert.ok(ratio >= 0.06, `chip ${ratio} pequeno demais: o logo deixa de se ler`);
-  // 10% de 45 (indicacao/cupom tipico) e de 53 (cupom longo) arredonda para 5.
-  assert.equal(Math.round(0.10 * 45), 5, '5 modulos na matriz 45x45');
-  assert.equal(Math.round(0.10 * 53), 5, '5 modulos na matriz 53x53');
+  // Teto de legibilidade medido. Folgado de proposito: 0.29 ainda falhava em
+  // parte das resolucoes, e nao quero o teste colado no limite.
+  assert.ok(ratio < 0.29, `chip ${ratio} perto do ponto em que a leitura falha (~29%)`);
+  // O chip precisa continuar sendo grande o bastante para o desenho aparecer em
+  // qualquer matriz real que o app produza.
+  for (const n of [41, 49, 53, 57, 61, 65, 69, 73]) {
+    assert.ok(
+      Math.round(ratio * n) >= 4,
+      `chip de ${Math.round(ratio * n)} modulos na matriz ${n}x${n} fica pequeno demais para o logo`
+    );
+  }
 });
 
 test('o chip nao gasta area de QR com borda', () => {
-  // Com o chip em 5 modulos, 1px de filete comeria 10% da caixa de conteudo do
+  // Com o chip em ~5 modulos, 1px de filete comeria 10% da caixa de conteudo do
   // logo -- custo estetico pago em cima do tamanho util, que e o que foi
-  // minimalizado. E o branco do chip ja separa o logo dos modulos escuros.
+  // maximalizado. E o branco do chip ja separa o logo dos modulos escuros.
   assert.match(helper, /s\.border = 'none'/);
   assert.doesNotMatch(helper, /s\.border = '1px/);
 });

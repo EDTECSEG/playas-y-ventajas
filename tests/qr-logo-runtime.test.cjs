@@ -104,8 +104,8 @@ test('QR de cupom: logo da empresa no centro, correcao de erro maxima', async ()
 
   const chip = c.querySelector('[data-qr-logo]');
   assert.ok(chip, 'o chip do logo nao foi criado no centro');
-  assert.equal(chip.style.width, '10%', 'o chip tem que ser 10% do lado, em %');
-  assert.equal(chip.style.height, '10%');
+  assert.equal(chip.style.width, '11.5%', 'o chip tem que ser 11,5% do lado, em %');
+  assert.equal(chip.style.height, '11.5%');
   assert.equal(chip.style.background, '#ffffff', 'o chip precisa ser branco para cobrir os modulos');
   assert.equal(chip.style.border, 'none', 'o chip nao pode gastar area de QR com filete');
   assert.equal(chip.style.pointerEvents, 'none', 'o chip nao pode roubar o toque do QR');
@@ -139,7 +139,7 @@ test('empresa sem logo: o centro sai com o logo do sistema', async () => {
   assert.equal(chip.querySelector('img').getAttribute('src'), helper.QR_SYSTEM_LOGO);
   // O chip e em %, entao 220px nao muda a proporcao: e o mesmo objeto que
   // aparece em 46mm no cartaz impresso.
-  assert.equal(chip.style.width, '10%');
+  assert.equal(chip.style.width, '11.5%');
 });
 
 test('QR de cadastro/indicacao usa o logo do sistema', async () => {
