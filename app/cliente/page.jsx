@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLanguage } from '../../lib/LanguageContext';
 import Header from '../components/Header';
 import { theme } from '../../lib/theme';
+import { renderQrWithLogo } from '../../lib/qr-logo';
 
 const wrap = { maxWidth: 720, margin: '0 auto', padding: '20px 20px 80px', color: theme.text, background: theme.bg, minHeight: '100vh' };
 const card = { background: theme.card, color: theme.text, borderRadius: 14, padding: 20, marginBottom: 16, border: `1px solid ${theme.border}`, boxShadow: '0 2px 8px rgba(11,110,79,0.06)' };
@@ -23,17 +24,6 @@ function fetchComTimeout(url, options) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), OFERTAS_TIMEOUT_MS);
   return fetch(url, { ...options, signal: ctrl.signal }).finally(() => clearTimeout(timer));
-}
-
-function loadQrCode() {
-  return new Promise((resolve, reject) => {
-    if (window.QRCode) return resolve(window.QRCode);
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js';
-    script.onload = () => resolve(window.QRCode);
-    script.onerror = () => reject(new Error('falha de rede ao carregar a biblioteca de QR code'));
-    document.body.appendChild(script);
-  });
 }
 
 function loadLeaflet() {
@@ -633,33 +623,44 @@ export default function ClientePage() {
     let cancelled = false;
     (async () => {
       try {
-        const QRCode = await loadQrCode();
-        if (cancelled || !qrDivRef.current) return;
-        qrDivRef.current.innerHTML = '';
-        new QRCode(qrDivRef.current, { text: `PYV1|${justClaimed.publicId}|${justClaimed.rawToken}`, width: 220, height: 220 });
-        setTimeout(() => qrDivRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+        if (!qrDivRef.current) return;
+        // Logo da empresa no centro; se nao houver logo cadastrado, o helper
+        // usa o logo do sistema.
+        await renderQrWithLogo(qrDivRef.current, {
+          text: `PYV1|${justClaimed.publicId}|${justClaimed.rawToken}`,
+          size: 220,
+          logoUrl: justClaimed.logoUrl,
+        });
+        if (cancelled) return;
+        setTimeout(() => qrDivRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
       } catch (err) {
         if (!cancelled) setMsg(`Cupom resgatado, mas o QR code falhou ao gerar (${err.message}). Use o código de texto abaixo.`);
       }
     })();
     return () => { cancelled = true; };
-  }, [justClaimed]);
+    // logoUrl entra na dependencia: o QR precisa ser refeito quando o logo da
+    // empresa chega, senao o centro ficava com o logo do sistema para sempre.
+  }, [justClaimed, justClaimed?.logoUrl]);
 
   useEffect(() => {
     if (!openCoupon) return;
     let cancelled = false;
     (async () => {
       try {
-        const QRCode = await loadQrCode();
-        if (cancelled || !myCouponQrDivRef.current) return;
-        myCouponQrDivRef.current.innerHTML = '';
-        new QRCode(myCouponQrDivRef.current, { text: `PYV1|${openCoupon.publicId}|${openCoupon.rawToken}`, width: 200, height: 200 });
+        if (!myCouponQrDivRef.current) return;
+        await renderQrWithLogo(myCouponQrDivRef.current, {
+          text: `PYV1|${openCoupon.publicId}|${openCoupon.rawToken}`,
+          size: 200,
+          logoUrl: openCoupon.logoUrl,
+        });
       } catch (err) {
         if (!cancelled) setMsg(`Falha ao gerar QR do cupom aberto: ${err?.message || err}`);
       }
     })();
     return () => { cancelled = true; };
-  }, [openCoupon]);
+    // Mesma razao do caso acima: o logo deste cupom chega depois, via
+    // /offers?businessLogoFor=, e o centro do QR tem de acompanhar.
+  }, [openCoupon, openCoupon?.logoUrl]);
 
   function handleOpenCoupon(c) {
     const tokens = JSON.parse(localStorage.getItem('pyv_coupon_tokens') || '{}');

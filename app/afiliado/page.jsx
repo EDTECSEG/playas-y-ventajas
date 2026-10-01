@@ -12,16 +12,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Header from '../components/Header';
 import { theme } from '../../lib/theme';
-
-function loadQrCode() {
-  return new Promise((resolve) => {
-    if (window.QRCode) return resolve(window.QRCode);
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js';
-    script.onload = () => resolve(window.QRCode);
-    document.body.appendChild(script);
-  });
-}
+import { QR_SYSTEM_LOGO, renderQrWithLogo } from '../../lib/qr-logo';
 
 const wrap = { maxWidth: 720, margin: '0 auto', padding: '20px 20px 80px', color: theme.text };
 const card = { background: theme.card, color: theme.text, borderRadius: 14, padding: 20, marginBottom: 16, border: `1px solid ${theme.border}`, boxShadow: '0 2px 8px rgba(11,110,79,0.06)' };
@@ -120,13 +111,14 @@ export default function AfiliadoPage() {
     let cancelled = false;
     (async () => {
       try {
-        const QRCode = await loadQrCode();
-        if (cancelled) return;
-        [qrRef, qrSheetRef].forEach((ref) => {
-          if (!ref.current) return;
-          ref.current.innerHTML = '';
-          new QRCode(ref.current, { text: shareUrl, width: 200, height: 200 });
-        });
+        // Este QR e o link de cadastro/indicacao do sistema, nao um cupom de
+        // empresa: quem leve o papel para outra pessoa deve ver o logo do
+        // PYV, e nao o de um lojista. QR_SYSTEM_LOGO deixa isso explicito,
+        // ainda que o helper cairia nele de qualquer jeito.
+        for (const ref of [qrRef, qrSheetRef]) {
+          if (cancelled || !ref.current) continue;
+          await renderQrWithLogo(ref.current, { text: shareUrl, size: 200, logoUrl: QR_SYSTEM_LOGO });
+        }
       } catch (e) { /* QR opcional */ }
     })();
     return () => { cancelled = true; };
