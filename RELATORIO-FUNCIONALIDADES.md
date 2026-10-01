@@ -11,7 +11,7 @@
 | Servidor | Cloudflare Pages — Worker em modo avançado, bundle self-contained (`_worker.js`, ~290 kB) |
 | API | handlers em `netlify/functions` (CJS, fonte única — o espelho ESM `functions/.netlify/functions` foi removido em 2026-09-30), 26 rotas na whitelist (`worker/main.js` ROUTES; fora dela → 404) |
 | Banco | Supabase (Postgres), regras de negócio em RPC, Storage de imagens/documentos, RLS ativa |
-| Comunicação | WhatsApp (`wa.me`), QR code (qrcodejs, chip do logo 11,5% + nível H), mapa Leaflet + dados abertos OSM via Geoapify |
+| Comunicação | WhatsApp (`wa.me`), QR code (qrcodejs, chip do logo 11,5% + nível H — media errada até `40bd386`, ver 11.1), mapa Leaflet + dados abertos OSM via Geoapify |
 
 ## 2. Papéis do sistema
 
@@ -112,9 +112,9 @@ Grupos por domínio (96 funções de app em `public`, EXECUTE fechado para o cli
 
 ## 10. Qualidade
 
-- **439 testes / 433 passando / 0 falhas / 6 pulados** (`node:test`) — cobrem handlers, lógica pura, contrato do diretório de functions, headers e asset routing do Worker. Módulos: `empresa-reservations.test.cjs` (9 casos do GET `mode=reservations` + `review_reservation`), `notificacoes.test.cjs` (fase 1 no-op + erros), `empresa-report.test.cjs` (report v3 com fallback v2), `shuttle.test.cjs` (10 casos de contrato/erro do endpoint de translado), `shuttle-manage.test.cjs` (15 casos do fluxo de escrita do Módulo 1), `afiliado-folha-guard.test.cjs` (folha de papel no `window.print()`), `afiliado-extrato-guard.test.cjs` (extrato: agregação não aninhada, cupom da indicação, "pegou" ≠ "resgatou"), `afiliado-premio-guard.test.cjs` (15 guards do vínculo cliente↔afiliado, incluindo o que trava a troca de `affiliate_id` por `referred_user_id`) e `referral-order-guard.test.cjs` (9 casos da ordem das RPCs de indicação, com prova por mutação).
+- **444 testes / 438 passando / 0 falhas / 6 pulados** (`node:test`) — cobrem handlers, lógica pura, contrato do diretório de functions, headers e asset routing do Worker. Módulos: `empresa-reservations.test.cjs` (9 casos do GET `mode=reservations` + `review_reservation`), `notificacoes.test.cjs` (fase 1 no-op + erros), `empresa-report.test.cjs` (report v3 com fallback v2), `shuttle.test.cjs` (10 casos de contrato/erro do endpoint de translado), `shuttle-manage.test.cjs` (15 casos do fluxo de escrita do Módulo 1), `afiliado-folha-guard.test.cjs` (folha de papel no `window.print()`), `afiliado-extrato-guard.test.cjs` (extrato: agregação não aninhada, cupom da indicação, "pegou" ≠ "resgatou"), `afiliado-premio-guard.test.cjs` (15 guards do vínculo cliente↔afiliado, incluindo o que trava a troca de `affiliate_id` por `referred_user_id`) e `referral-order-guard.test.cjs` (9 casos da ordem das RPCs de indicação, com prova por mutação), `qr-logo-guard.test.cjs` e `qr-logo-runtime.test.cjs` (12 casos do chip do QR, incluindo os que travam a **base** do `%` — ver seção 11).
 - Os guards de afiliado travam **código-fonte** porque este runner não renderiza JSX nem executa SQL. Consequência aceita: o caminho do extrato continua sem cobertura automatizada de banco (a verificação de 2026-10-01 foi manual, contra produção — ver seção 7). O mesmo vale para `affiliate-link-customer.sql`, que foi aplicado e conferido por consulta manual em produção.
-- O teste de segurança do `/api/health` usa valores deliberadamente distintivos (`service-role-NAO-VAZAR-123`) e falha se qualquer um aparecer na resposta, então um vazamento de segredo é detectado pelo nome e não por acaso.
+- O teste de segurança do `/.netlify/functions/health` usa valores deliberadamente distintivos (`service-role-NAO-VAZAR-123`) e falha se qualquer um aparecer na resposta, então um vazamento de segredo é detectado pelo nome e não por acaso.
 - Testes **live opcionais** (smoke, aprovação de motorista e reporte de posição) rodam com `RUN_LIVE=1` contra produção (`npm run test:live[:approval|:position]`).
 - Build gera Worker autocontido; rotas fora da whitelist → 404.
 
@@ -125,4 +125,30 @@ Grupos por domínio (96 funções de app em `public`, EXECUTE fechado para o cli
 - **Domínio**: produção responde em `https://playas-y-ventajas.pages.dev`. **`playas-y-ventajas.com` não está registrado** (NXDOMAIN) — links de indicação e material impresso devem usar o endereço do Pages até haver domínio próprio. `NEXT_PUBLIC_SITE_URL` não existe no Pages; `_wa.js` usa `pages.dev` como reserva.
 - **Monitoramento**: existe `GET /.netlify/functions/health` (público, sem autenticação por decisão — um health check que exige login não serve nem para uptime monitor externo nem para quem está com o navegador travado). Devolve `503` quando alguma dependência **não opcional** falha ou falta, e `200` quando tudo está de pé, para o painel de uptime conseguir notificar. Verificado em produção em 2026-10-01: `503`, `quebradas: ["mercadopago"]`, `supabase: ok (testar rpc)` — a chamada real ao banco passou. O corpo carrega só nome de integração e `ok`/`ausente`/`erro`, nunca valor de variável.
   - **Mercado Pago está inoperante** — achado pelo próprio endpoint, não por inspeção. As três variáveis não existem no Pages: `MP_ACCESS_TOKEN`, `MP_NOTIFICATION_URL` e `MP_WEBHOOK_SECRET`. Consequência: `billing.js:80` lança sem o token, então **a assinatura mensal falha**; sem `MP_NOTIFICATION_URL` o cliente não tem para onde voltar; e `billing-webhook.js:79` devolve `500` em todo webhook que chegar. Nenhum outro módulo depende disso, então o site como um todo não cai. Depende de decisão do dono: ativou a cobrança recorrente ou não.
-  - Ainda falta: alerta configurado no painel do Cloudflare (o endpoint dá o sinal, ninguém foi avisado dele), contagem de uso da Geoapify (3000 req/dia no plano grátis) e verificação do QR de 11,5% com a câmera do aparelho.
+  - Ainda falta: alerta configurado no painel do Cloudflare (o endpoint dá o sinal, ninguém foi avisado dele) e contagem de uso da Geoapify (3000 req/dia no plano grátis).
+
+### 11.1 O chip do QR media a caixa errada (corrigido em `40bd386`, **ainda não em produção**)
+
+O QR de afiliado pede um chip de logo com **11,5% da largura do QR**. Esse número nunca foi alcançado, em nenhum dos dois lugares onde o QR aparece. O chip é posicionado e dimensionado em `%`, e `%` resolve contra o **bloco que o contém** — o container do QR nunca tem o tamanho do QR: na tela é um `div` de largura cheia, na folha é a caixa de 46mm, e a `<img>` do `qrcodejs` sempre sai nos 200px naturais (ele esconde o canvas e mostra o `data-URI` dele, sem `width`/`height` no atributo).
+
+Medido no browser em 2026-10-01, com o código como estava:
+
+| Onde | QR | Chip | Chip/QR | Desvio do centro | Transbordo |
+|---|---|---|---|---|---|
+| Tela | 200px | 82,8px | **41,4%** | 0,0px | não |
+| Folha (46mm) | 200px (52,9mm) | 20,0px | **10,0%** | **13,1px** | **6,9mm** |
+
+Na tela o chip era 3,6× maior que o pedido e, com correção **H** (que tolera ~30% dos codewords), estava no limite do que ainda lê. Na folha era menor que o pedido, estava deslocado e a imagem transbordava a caixa.
+
+O agravante é que o **comentário do topo do arquivo justificava o "% em vez de px" afirmando que os dois casos sairiam com a mesma proporção** — a suposição não confirmada, escrita no código como se fosse fato. O limiar de ~29% do `CHIP_RATIO` tinha sido medido nessa mesma base errada.
+
+**Correção**: o QR passa a ficar dentro de um quadro `inline-block` que o abraça, e é o **quadro** que recebe o chip. Como o quadro encolhe para a imagem, o `%` passa a resolver contra o QR. O `line-height: 0` no quadro mata o descascamento de `inline-block` (uns 4px que desalinhariam o chip na vertical) — o mesmo tipo de erro de centro que o quadro veio para eliminar. Na folha, duas regras novas esticam quadro e imagem para 46mm.
+
+| Onde | Chip/QR | Desvio do centro | Transbordo |
+|---|---|---|---|
+| Tela | **11,5%** | 0,0px | não |
+| Folha (46mm) | **11,5%** | 0,0px | não |
+
+**Sobre os testes**: os testes existentes já exigiam `width: '11.5%'` e passavam — travavam o **número**, nunca a **base** do `%`. Três testes novos travam a estrutura que faz o `%` valer (chip dentro do quadro, quadro abraçando a imagem, regra de 46mm na folha), verificados por mutação: voltando o chip para o container, três falham.
+
+**Continua pendente**: (a) leitura com a câmera do aparelho em tela e na folha impressa — nenhuma medida de layout substitui um leitor real; (b) **DPI** — a folha imprime um raster de 200px em 46mm, ou seja ~110 DPI. Subir é barato (renderizar o QR da folha maior e deixar o CSS reduzir), mas é mudança visual e de carga de memória, e fica para decisão do dono.
