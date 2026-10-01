@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 // lib/qr-logo.js em execucao, nao em texto.
 //
@@ -52,7 +52,9 @@ function makeEl(tag) {
     },
     querySelector(sel) {
       const wantTag = sel === 'img' ? 'img' : null;
-      const wantAttr = sel === '[data-qr-logo]' ? 'data-qr-logo' : null;
+      // Qualquer seletor de atributo, e nao so [data-qr-logo]: o quadro que
+      // abraça o QR (data-qr-frame) tambem precisa ser endereçável nos testes.
+      const wantAttr = sel.startsWith('[') ? sel.slice(1, -1) : null;
       for (const c of this.children) {
         if (wantTag && c.tag === wantTag) return c;
         if (wantAttr && wantAttr in c.attrs) return c;
@@ -90,6 +92,88 @@ after(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
   delete globalThis.document;
   delete globalThis.window;
+});
+
+// O chip e dimensionado em %, e % resolve contra o bloco que o contem. O
+// container do QR nunca tem o tamanho do QR -- na tela e um div de largura
+// cheia, na folha e a caixa de 46mm, e a <img> do qrcodejs sempre tem 200px
+// naturais. Medido no browser em 2026-10-01, com o codigo antes da correcao:
+// o chip saia com 41,4% do QR na tela e 10,0% na folha, esta ultima com
+// 13,1px fora do centro. O 11,5% nao aparecia em nenhum dos dois lugares.
+//
+// estes testes nao medem pixels -- travam a ESTRUTURA que faz o % valer: o
+// chip tem de estar dentro de um quadro que abraça a imagem, e nao solto no
+// container.
+// O chip passou a morar dentro do quadro, entao contar por filhos diretos do
+// container passa a dar 0 e nao "duplicado". A contagem precisa ser funda.
+function deepCount(el, attr) {
+  let n = 0;
+  for (const c of el.children) {
+    if (attr in c.attrs) n++;
+    n += deepCount(c, attr);
+  }
+  return n;
+}
+
+test('o QR fica dentro de um quadro que o abraca, e e o quadro que recebe o chip', async () => {
+  const c = makeEl('div');
+  await helper.renderQrWithLogo(c, { text: 'https://exemplo.test/?ref=X', size: 200, logoUrl: null });
+
+  const quadro = c.querySelector('[data-qr-frame]');
+  assert.ok(quadro, 'o QR precisa ficar dentro de um quadro');
+  assert.equal(quadro.style.position, 'relative', 'o quadro e o contexto do chip');
+  assert.equal(quadro.style.display, 'inline-block', 'tem que encolher para a imagem');
+  // line-height:0 tira o descascamento de inline-block que desalinha o chip.
+  assert.equal(quadro.style.lineHeight, '0');
+
+  const chip = c.querySelector('[data-qr-logo]');
+  assert.ok(chip, 'o chip nao foi criado');
+  assert.ok(
+    quadro.children.includes(chip),
+    'o chip tem de estar DENTRO do quadro: solto no container o % mede o container, nao o QR'
+  );
+});
+
+test('o quadro abraça a imagem do QR, e nao a contorna', async () => {
+  const c = makeEl('div');
+  await helper.renderQrWithLogo(c, { text: 'https://exemplo.test/?ref=X', size: 200, logoUrl: null });
+  const quadro = c.querySelector('[data-qr-frame]');
+  const img = quadro.querySelector('img');
+  assert.ok(img, 'a imagem do QR tem que estar dentro do quadro');
+  // Fora do quadro a % volta a medir o container, que e o bug original.
+  assert.ok(!c.children.includes(img), 'a imagem nao pode ficar solta no container');
+  // O quadro e criado uma vez por QR: dois quadros sobrepostos desalinhariam
+  // tudo de novo, e com o chip dentro do segundo o primeiro sumiria vazio.
+  assert.equal(deepCount(c, 'data-qr-frame'), 1, 'nao pode haver quadro duplicado');
+  assert.equal(deepCount(c, 'data-qr-logo'), 1, 'nao pode haver chip duplicado');
+});
+
+test('o redesenhe nao empilha quadros nem chips', async () => {
+  const c = makeEl('div');
+  await helper.renderQrWithLogo(c, { text: 'https://exemplo.test/?ref=X', size: 200, logoUrl: null });
+  await helper.renderQrWithLogo(c, { text: 'https://exemplo.test/?ref=X', size: 200, logoUrl: null });
+  assert.equal(deepCount(c, 'data-qr-frame'), 1);
+  assert.equal(deepCount(c, 'data-qr-logo'), 1);
+});
+
+test('a folha impressa preenche a caixa de 46mm, senao o QR transborda', () => {
+  const pagina = fs.readFileSync(path.join(root, 'app', 'afiliado', 'page.jsx'), 'utf8');
+  // A <img> do qrcodejs sai sem width/height e com 200px naturais, o que da
+  // 52,9mm dentro de uma caixa de 46mm. Medido: transbordo de 6,9mm.
+  assert.match(pagina, /\.pyv-sheet-qr \[data-qr-frame\] \{ width: 46mm; height: 46mm; \}/);
+  assert.match(pagina, /\.pyv-sheet-qr \[data-qr-frame\] img \{ width: 100%; height: 100%; display: block; \}/);
+});
+
+test('o helper documenta que o % e do QR, nao do container', () => {
+  // O comentario antigo afirmava que o % daria a mesma proporcao na tela e na
+  // folha, sem mentionar contra o que o % resolvia. Era a suposicao que nao se
+  // confirmou, e ela estava no codigo como justificativa -- dai a trava.
+  assert.ok(
+    !/em % os\s*\r?\n?\s*dois casos saem com a mesma proporcao/.test(src),
+    'o comentário original, que omitia contra o que o % resolvia, nao pode voltar'
+  );
+  assert.match(src, /% resolve contra o bloco que o contem/);
+  assert.match(src, /contra o QR, e nao contra o container/);
 });
 
 test('QR de cupom: logo da empresa no centro, correcao de erro maxima', async () => {
@@ -160,7 +244,7 @@ test('logo que chega depois: o QR e refeito, o centro acompanha, sem chip duplo'
   assert.equal(FakeQRCode.calls.length, 1, 'a chegada do logo tem que redesenhar o QR');
   assert.equal(c.querySelector('[data-qr-logo]').querySelector('img').getAttribute('src'), 'https://loja/tarde.png',
     'o centro do QR nao acompanhou o logo que chegou depois');
-  assert.equal(c.countAttr('data-qr-logo'), 1, 'o redesenhe deixou mais de um chip no container');
+  assert.equal(deepCount(c, 'data-qr-logo'), 1, 'o redesenhe deixou mais de um chip no QR');
 });
 
 test('re-render identico nao recria o canvas', async () => {

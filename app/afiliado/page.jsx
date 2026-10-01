@@ -220,8 +220,15 @@ export default function AfiliadoPage() {
             padding: 10mm 8mm;
             page-break-inside: avoid;
           }
-          .pyv-sheet-qr { width: 46mm; height: 46mm; }
-          .pyv-sheet-step { page-break-inside: avoid; }
+.pyv-sheet-qr { width: 46mm; height: 46mm; }
+        /* O quadro e a imagem sao esticados para a caixa de 46mm. Sem isto a
+           <img> do qrcodejs sai nos 200px naturais (52,9mm) e transborda a
+           folha em 6,9mm -- e o % do chip passaria a medir contra 200px em
+           vez de 46mm. Medido em 2026-10-01 antes desta regra: chip com 10,0%
+           do QR e 13,1px fora do centro. */
+        .pyv-sheet-qr [data-qr-frame] { width: 46mm; height: 46mm; }
+        .pyv-sheet-qr [data-qr-frame] img { width: 100%; height: 100%; display: block; }
+        .pyv-sheet-step { page-break-inside: avoid; }
         }
       `}</style>
       <div className="pyv-screen">
