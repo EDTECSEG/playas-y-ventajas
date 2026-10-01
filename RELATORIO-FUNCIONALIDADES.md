@@ -9,7 +9,7 @@
 |---|---|
 | Front (6 rotas, App Router) | Next.js 14 + React, i18n PT/EN/ES, tema próprio |
 | Servidor | Cloudflare Pages — Worker em modo avançado, bundle self-contained (`_worker.js`, ~290 kB) |
-| API | handlers em `netlify/functions` (CJS, fonte única — o espelho ESM `functions/.netlify/functions` foi removido em 2026-09-30), 26 rotas na whitelist (`worker/main.js` ROUTES; fora dela → 404) |
+| API | handlers em `netlify/functions` (CJS, fonte única — o espelho ESM `functions/.netlify/functions` foi removido em 2026-09-30), 27 rotas na whitelist (`worker/main.js` ROUTES; fora dela → 404) |
 | Banco | Supabase (Postgres), regras de negócio em RPC, Storage de imagens/documentos, RLS ativa |
 | Comunicação | WhatsApp (`wa.me`), QR code (qrcodejs, chip do logo 11,5% + nível H — media errada até `40bd386`, ver 11.1), mapa Leaflet + dados abertos OSM via Geoapify |
 
