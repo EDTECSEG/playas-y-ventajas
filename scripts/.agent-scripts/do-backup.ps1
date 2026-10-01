@@ -64,22 +64,31 @@ try {
     if ($rc2 -ge 8) { throw "robocopy passe 2 (espelho ESM) falhou rc=$rc2" }
   }
 
-  # 3) Prova de que o espelho ESM e o _worker.js chegaram
+  # 3) Prova de que as functions canonicas e o _worker.js chegaram
+  #
+  # O commit f6f0e09 ("apaga o espelho ESM de functions e deixa
+  # netlify/functions como fonte unica") removeu functions\.netlify do repo.
+  # Exigir o espelho ESM aqui, depois dessa mudanca, tornava TODOS os backups
+  # impossiveis: o script abortava com "espelho ESM nao copiado" e nao gerava
+  # zip nenhum. Entao o espelho virou OPCIONAL e a exigencia passou a ser a
+  # fonte canonica (netlify/functions), que e o que o AGENTS.md quer preservar
+  # ("functions/ e netlify/functions/"). Se o espelho voltar a existir, ele
+  # continua sendo copiado e a paridade continua sendo conferida.
   $esmBefore = @(Get-ChildItem -LiteralPath (Join-Path $stage 'functions\.netlify\functions') -File -Filter *.js -ErrorAction SilentlyContinue).Count
   $cjsBefore = @(Get-ChildItem -LiteralPath (Join-Path $stage 'netlify\functions')            -File -Filter *.js -ErrorAction SilentlyContinue).Count
   $wkrBefore = @(Get-ChildItem -LiteralPath $stage -File -Filter _worker.js -ErrorAction SilentlyContinue).Count
   Write-Output ("BEFORE_$Idx esm_mirror => " + $esmBefore)
   Write-Output ("BEFORE_$Idx canon_cjs   => " + $cjsBefore)
   Write-Output ("BEFORE_$Idx _worker.js  => " + $wkrBefore)
-  if ($esmBefore -eq 0) { throw "espelho ESM nao copiado (antes do zip)" }
+  if ($cjsBefore -eq 0) { throw "functions canonicas nao copiadas (antes do zip)" }
   # _worker.js so existe dentro de out/, que o AGENTS.md linha 17 manda EXCLUIR
   # do zip. Exigir esse arquivo aqui tornava o backup impossivel de concluir.
   # Por isso wkrBefore = 0 e o valor ESPERADO, e nao um sinal de falha.
 
-  # 3a) Paridade CJS/ESM. Nao e fatal (o repo tem desvio conhecido), mas o
-  # desvio precisa ficar VISIVEL em toda execucao para nao passar despercebido.
-  if ($esmBefore -ne $cjsBefore) {
-    Write-Output ("AVISO_$Idx PARIDADE_CJS_ESM => esm=" + $esmBefore + " cjs=" + $cjsBefore + " (ver tests\consistency.test.cjs)")
+  # 3a) Paridade CJS/ESM. So faz sentido se o espelho existir; desde f6f0e09 a
+  # fonte e unica, e esmBefore = 0 e o estado correto, nao um desvio.
+  if ($esmBefore -gt 0 -and $esmBefore -ne $cjsBefore) {
+    Write-Output ("AVISO_$Idx PARIDADE_CJS_ESM => esm=" + $esmBefore + " cjs=" + $cjsBefore + " (ver tests\function-contract.test.cjs)")
   }
 
   # 3b) Prova de que o segredo NAO foi copiado para o stage
@@ -122,7 +131,12 @@ try {
   Write-Output ("SQL_$Idx  => " + $sqlZip)
   Write-Output ("SEC_$Idx  => " + $secZip.Count)
 
-  if ($esmZip -eq 0) { throw "backup invalido: espelho ESM ausente no zip" }
+  if ($cjsZip -eq 0) { throw "backup invalido: netlify/functions/*.js ausente no zip" }
+  # Espelho ESM so e exigido se existir (f6f0e09 deixou netlify/functions como
+  # fonte unica). Se ele reaparecer, precisa bater com o canonico.
+  if ($esmZip -gt 0 -and $esmZip -ne $cjsZip) {
+    throw "backup invalido: espelho ESM divergente do canonico (esm=$esmZip cjs=$cjsZip)"
+  }
   # WKRZip = 0 e esperado (out/ fora do zip, ver AGENTS.md linha 17).
   # A cobertura perdida com o _worker.js e compensada pelo .sql, que o AGENTS.md
   # linha 14 exige no backup e que antes nao era validado de forma alguma.
