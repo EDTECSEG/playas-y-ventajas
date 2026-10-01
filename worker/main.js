@@ -47,6 +47,7 @@ import billing from '../netlify/functions/billing.js';
 import billingWebhook from '../netlify/functions/billing-webhook.js';
 import claimCoupon from '../netlify/functions/claim-coupon.js';
 import empresa from '../netlify/functions/empresa.js';
+import health from '../netlify/functions/health.js';
 import identify from '../netlify/functions/identify.js';
 import login from '../netlify/functions/login.js';
 import mapPlaces from '../netlify/functions/map-places.js';
@@ -93,6 +94,13 @@ const ROUTES = {
   'billing-webhook': billingWebhook,
   'claim-coupon': claimCoupon,
   empresa,
+  // Operacao, nao negocio: diagnostico de dependencias. PUBLICO de
+  // proposito -- um health check que exige login nao serve nem para
+  // uptime monitor externo nem para quem esta com o navegador travado.
+  // Por isso a resposta so traz nome da integracao e ok/ausente/erro,
+  // nenhum valor de variavel. Devolve 503 quando algo nao-opcional cai,
+  // para o painel de uptime conseguir notificar.
+  health,
   identify,
   login,
   // Complemento do mapa com dados abertos do OSM, buscado no servidor porque o
