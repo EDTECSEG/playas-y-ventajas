@@ -157,6 +157,31 @@ Vínculo por telefone: `driver_register`, `driver_set_pin`, `driver_login`, `dri
 
 `admin_billing_panel`, `admin_create_business`, `admin_list_businesses`, `admin_list_customers`, `admin_request_password_reset`, `admin_set_billing`, `admin_toggle_business`, `admin_update_business`, `admin_update_customer`, `auth_login`, `auth_pin_reset_required`, `auth_verify_session`, `business_coupon_stats`, `business_delete_template`, `business_set_pin`, `business_toggle_template`, `business_update_template`, `create_campaign`, `create_coupon_template`, `empresa_dashboard`, `identify_customer`, `list_customer_coupons`, `validate_and_redeem_coupon`, `list_shuttle_services`, `list_live_vehicles` (as duas últimas do Módulo 1 têm `.sql` versionado em `supabase/modulo1-motoristas-translado-proximity.sql`, já aplicado).
 
+### Contrato das 6 RPCs acima (trava automática no call-site)
+
+A lista acima é maior que 6: só estas **não** têm `.sql` versionado de forma
+confiável e são chamadaas pelos handlers. Sem o SQL, a assinatura (quais `p_*`
+cada uma aceita) não é verificável no repo — só o PostgREST de produção sabe.
+O que dá para travar é o lado do call-site:
+
+`tests/rpc-contract-guard.test.cjs` fixa o conjunto exato de parâmetros de cada
+uma com `deepStrictEqual` sobre `Object.keys`:
+
+| RPC | `p_*` esperados |
+|---|---|
+| `admin_list_customers` | `p_tenant_id`, `p_actor_user_id`, `p_search` |
+| `admin_toggle_business` | `p_tenant_id`, `p_actor_user_id`, `p_business_id`, `p_is_active` |
+| `admin_update_customer` | `p_tenant_id`, `p_actor_user_id`, `p_customer_id`, `p_name`, `p_email`, `p_instagram`, `p_is_active` |
+| `admin_update_business` | `p_tenant_id`, `p_actor_user_id`, `p_business_id`, `p_name`, `p_phone`, `p_email`, `p_category`, `p_city`, `p_cnpj`, `p_website`, `p_logo_url` |
+| `create_campaign` | `p_tenant_id`, `p_business_id`, `p_actor_user_id`, `p_title` |
+| `empresa_dashboard` | `p_tenant_id`, `p_business_id` |
+
+Quando o `.sql` de uma delas for versionado, a linha sai daqui: o teste passa de
+call-site para fonte da verdade.
+
+**Consequência prática**: renomear um `p_*` no handler quebra o teste local, em
+vez de virar um `function ... does not exist` para o usuário em produção.
+
 ## Frontend (roteamento do app)
 
 `/` (captura `?ref=` → `localStorage.pyv_ref`), `/cliente` (filtros cidade/atividade/raio + "Perto de mim" + badge ⭐ + repasse de `ref` no identify/claim, mapa Leaflet, **Translado e proximidade**: serviços de translado + veículos ao vivo com geolocalização e empty state honesto + **Reservar translado / Minhas reservas**: agenda por serviço, cancelamento com motivo e link wa.me para a empresa), `/empresa` (categoria em Meus dados + destaque por período + aba Instagram com gerador de card 1080×1080 em canvas + **aba Translado** com CRUD de serviços + **aba Reservas** com filtros por status e confirmar/recusar/cancelar + **Relatório** com períodos 7/30/90), `/admin` (seção Afiliados: relatório + config de rewards), `/afiliado` (cadastro, link com QR, WhatsApp/Instagram, painel), `/motorista` (cadastro/documentos + **Transmissão de posição** + **Minhas corridas de hoje** com concluir corrida).
