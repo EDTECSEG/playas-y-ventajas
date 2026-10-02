@@ -32,7 +32,7 @@ function installSupabaseMock(fakeClient) {
 
 // Fake client com RPC/storage/from configuraveis por teste.
 function makeFakeSupabase({ rpc, upload, from } = {}) {
-  const calls = { rpc: [], uploads: [], removals: [], from: [], eq: [], order: [] };
+  const calls = { rpc: [], uploads: [], removals: [], from: [], eq: [], in: [], order: [] };
   return {
     calls,
     rpc: async (name, args) => {
@@ -54,7 +54,11 @@ function makeFakeSupabase({ rpc, upload, from } = {}) {
       const chain = {
         select: () => ({ ...chain }),
         eq: (column, value) => { calls.eq.push({ table, column, value }); return { ...chain }; },
-        in: () => resolve(),
+        // Registra a coluna e os valores: sem isso, uma query com id errado
+        // (ex.: [null] de oferta sem templateId, em withOfferImages) sai
+        // indistinguivel de uma query certa, porque o terminal resolve pelo
+        // hook `from` e nao pelo valor procurado.
+        in: (column, values) => { calls.in.push({ table, column, values }); return resolve(); },
         order: (column, opts) => { calls.order.push({ table, column, opts }); return { ...chain }; },
         limit: () => ({ ...chain }),
         maybeSingle: () => resolve(),
