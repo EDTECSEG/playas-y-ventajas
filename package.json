@@ -11,7 +11,8 @@
     "test:live": "node --test tests/live.smoke.test.cjs",
     "test:live:approval": "node --test tests/live.driver-approval.test.cjs",
     "test:live:position": "node --test tests/live.driver-position.test.cjs",
-    "test:live:reserva": "node --test tests/live.shuttle-reservation.test.cjs"
+    "test:live:reserva": "node --test tests/live.shuttle-reservation.test.cjs",
+    "test:live:contract": "node --test tests/live.dashboard-contract.test.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

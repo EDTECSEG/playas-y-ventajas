@@ -182,6 +182,32 @@ call-site para fonte da verdade.
 **Consequência prática**: renomear um `p_*` no handler quebra o teste local, em
 vez de virar um `function ... does not exist` para o usuário em produção.
 
+### O contrato de `empresa_dashboard` é snake_case e pass-through
+
+O modo default de `empresa` (`empresa.js:139`) faz `JSON.stringify(data)` sem
+remodelar nada. Portanto `app/empresa/page.jsx` lê as colunas da RPC como são, e a
+convenção é **snake_case** — diferente das RPCs novas (`admin_get_affiliate_rewards`,
+`list_customer_coupons`, que devolvem camelCase). Confirmado no JSX:
+
+| Bloco | Campos lidos |
+|---|---|
+| `campaigns[]` | `id`, `title`, `status` |
+| `templates[]` | `id`, `title`, `image_url`, `is_active`, `issued_count`, `featured_until` |
+| `coupons[]` | `id`, `publicId`, `status`, `customerName`, `customerPhone` |
+
+(`startEditTemplate`, `page.jsx:750`, traduz snake→camel para o formulário de
+edição — é a única fronteira da tela.)
+
+`is_active` é o caso perigoso: `page.jsx:1105` compara `=== false` para riscar o
+item e trocar o rótulo do botão. Se a coluna sumir ou virar string, nenhum erro
+aparece — um template desativado simplesmente passa a parecer ativo.
+
+Nada disso é verificável sem o `.sql`. `tests/live.dashboard-contract.test.cjs`
+pergunta à produção (`npm run test:live:contract`, com `RUN_LIVE=1` +
+`LIVE_TENANT`/`LIVE_CODE`/`LIVE_PIN`) e falha se algum campo lido pela UI não
+existir no retorno. Ele só prova o contrato quando cada bloco tem ao menos um
+elemento; negócio sem dados deixa o teste sem poder de prova, por desenho.
+
 ## Frontend (roteamento do app)
 
 `/` (captura `?ref=` → `localStorage.pyv_ref`), `/cliente` (filtros cidade/atividade/raio + "Perto de mim" + badge ⭐ + repasse de `ref` no identify/claim, mapa Leaflet, **Translado e proximidade**: serviços de translado + veículos ao vivo com geolocalização e empty state honesto + **Reservar translado / Minhas reservas**: agenda por serviço, cancelamento com motivo e link wa.me para a empresa), `/empresa` (categoria em Meus dados + destaque por período + aba Instagram com gerador de card 1080×1080 em canvas + **aba Translado** com CRUD de serviços + **aba Reservas** com filtros por status e confirmar/recusar/cancelar + **Relatório** com períodos 7/30/90), `/admin` (seção Afiliados: relatório + config de rewards), `/afiliado` (cadastro, link com QR, WhatsApp/Instagram, painel), `/motorista` (cadastro/documentos + **Transmissão de posição** + **Minhas corridas de hoje** com concluir corrida).
