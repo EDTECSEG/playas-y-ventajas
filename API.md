@@ -157,27 +157,50 @@ Vínculo por telefone: `driver_register`, `driver_set_pin`, `driver_login`, `dri
 
 `admin_billing_panel`, `admin_create_business`, `admin_list_businesses`, `admin_list_customers`, `admin_request_password_reset`, `admin_set_billing`, `admin_toggle_business`, `admin_update_business`, `admin_update_customer`, `auth_login`, `auth_pin_reset_required`, `auth_verify_session`, `business_coupon_stats`, `business_delete_template`, `business_set_pin`, `business_toggle_template`, `business_update_template`, `create_campaign`, `create_coupon_template`, `empresa_dashboard`, `identify_customer`, `list_customer_coupons`, `validate_and_redeem_coupon`, `list_shuttle_services`, `list_live_vehicles` (as duas últimas do Módulo 1 têm `.sql` versionado em `supabase/modulo1-motoristas-translado-proximity.sql`, já aplicado).
 
-### Contrato das 6 RPCs acima (trava automática no call-site)
+### Contrato das 14 RPCs acima (trava automática no call-site)
 
-A lista acima é maior que 6: só estas **não** têm `.sql` versionado de forma
-confiável e são chamadaas pelos handlers. Sem o SQL, a assinatura (quais `p_*`
-cada uma aceita) não é verificável no repo — só o PostgREST de produção sabe.
-O que dá para travar é o lado do call-site:
+**São 14, não 6.** A contagem aqui é `CREATE [OR REPLACE] FUNCTION` de verdade, e
+não qualquer menção do nome. Uma varredura por substring dava 6 e errava nos dois
+sentidos:
 
-`tests/rpc-contract-guard.test.cjs` fixa o conjunto exato de parâmetros de cada
-uma com `deepStrictEqual` sobre `Object.keys`:
+- contava comentário como definição — `auth_login` aparece em
+  `email-login-billing.sql:26` só num comentário que diz "espelha auth_login";
+  a função definida no mesmo arquivo é `auth_login_by_email`;
+- perdia as 8 que não têm menção nenhuma, invisíveis a busca por texto
+  (`business_coupon_stats` só aparece em comentário, em
+  `business-report-v3.sql:18`).
+
+Sem o `.sql`, a assinatura (quais `p_*` cada uma aceita) não é verificável no
+repo — só o PostgREST de produção sabe. O que dá para travar é o call-site.
+`tests/rpc-contract-guard.test.cjs` fixa o conjunto exato de cada uma com
+`deepStrictEqual` sobre `Object.keys`:
 
 | RPC | `p_*` esperados |
 |---|---|
+| `admin_billing_panel` | `p_tenant_id`, `p_actor_user_id` |
+| `admin_create_business` | `p_tenant_id`, `p_actor_user_id`, `p_name`, `p_category`, `p_city`, `p_phone`, `p_email`, `p_lat`, `p_lng`, `p_owner_internal_code`, `p_owner_pin`, `p_billing_plan`, `p_cnpj`, `p_website`, `p_logo_url` |
 | `admin_list_customers` | `p_tenant_id`, `p_actor_user_id`, `p_search` |
 | `admin_toggle_business` | `p_tenant_id`, `p_actor_user_id`, `p_business_id`, `p_is_active` |
-| `admin_update_customer` | `p_tenant_id`, `p_actor_user_id`, `p_customer_id`, `p_name`, `p_email`, `p_instagram`, `p_is_active` |
 | `admin_update_business` | `p_tenant_id`, `p_actor_user_id`, `p_business_id`, `p_name`, `p_phone`, `p_email`, `p_category`, `p_city`, `p_cnpj`, `p_website`, `p_logo_url` |
+| `admin_update_customer` | `p_tenant_id`, `p_actor_user_id`, `p_customer_id`, `p_name`, `p_email`, `p_instagram`, `p_is_active` |
+| `auth_login` | `p_tenant_slug`, `p_internal_code`, `p_pin` |
+| `auth_verify_session` | `p_session_token` |
+| `business_coupon_stats` | `p_tenant_id`, `p_business_id` |
 | `create_campaign` | `p_tenant_id`, `p_business_id`, `p_actor_user_id`, `p_title` |
+| `create_coupon_template` | `p_tenant_id`, `p_business_id`, `p_campaign_id`, `p_actor_user_id`, `p_title`, `p_benefit_type`, `p_benefit_value`, `p_total_stock`, `p_image_url` |
 | `empresa_dashboard` | `p_tenant_id`, `p_business_id` |
+| `identify_customer` | `p_tenant_id`, `p_phone`, `p_name`, `p_email`, `p_instagram` |
+| `validate_and_redeem_coupon` | `p_tenant_id`, `p_business_id`, `p_public_id`, `p_raw_token`, `p_actor_user_id`, `p_idempotency_key`, `p_short_code` |
+
+`auth_verify_session` merece atenção: não é chamada por um handler, e sim pelo
+helper compartilhado `_supabaseAdmin.resolveSession` (`_supabaseAdmin.js:27`),
+que roda em **toda** rota autenticada. Um `p_*` errado ali derruba o sistema
+inteiro de uma vez.
 
 Quando o `.sql` de uma delas for versionado, a linha sai daqui: o teste passa de
-call-site para fonte da verdade.
+call-site para fonte da verdade. `tests/rpc-contract-guard.inventory.test.cjs`
+refaz a varredura e falha se a lista divergir do repo, para a contagem não
+envelhecer em silêncio.
 
 **Consequência prática**: renomear um `p_*` no handler quebra o teste local, em
 vez de virar um `function ... does not exist` para o usuário em produção.
