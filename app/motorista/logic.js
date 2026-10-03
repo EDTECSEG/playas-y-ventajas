@@ -231,6 +231,33 @@ export function daysLabel(activeDays) {
   return activeDays.map((d) => D[d] || d).join(', ');
 }
 
+// --- Transmissao automatica de posicao --------------------------------------
+
+// Intervalo do envio automatico.
+//
+// O numero nao e estetico: list_live_vehicles descarta posicao mais velha que
+// p_max_age_s (300 s por padrao). Com o envio so por botao, o motorista
+// desaparecia do mapa 5 min depois do clique e a tela nao dizia isso. 30 s de
+// headroom mantem a posicao fresca com folga; o upsert e por driver_id, entao
+// cada ciclo sobrescreve a linha em vez de acumular.
+export const AUTO_POSITION_MS = 30000;
+
+// Se o ciclo automatico pode rodar agora. Tres portoes, todos necessarios:
+//   - enabled: o motorista ligou. Comeca desligado: ligar no primeiro render
+//     gasta GPS sem ninguem ter pedido.
+//   - canDrive(status): o mesmo portao do botao manual. 'pending' e 'rejected'
+//     entram no app mas nao ficam na frota, e nao aparecem em list_live_vehicles
+//     — transmitiriam de um lugar que ninguem ve.
+//   - visible: com a aba em segundo plano o GPS fica ligado sem resultado. O
+//     `false` explicito e o unico que corta; indefinido conta como visivel, para
+//     a decisao nao depender de a pagina ter lido document.visibilityState.
+export function shouldAutoSend({ enabled, status, visible } = {}) {
+  if (!enabled) return false;
+  if (!canDrive(status)) return false;
+  if (visible === false) return false;
+  return true;
+}
+
 // --- Corridas do dia (driver-shuttle-runs) ---------------------------------
 
 // Situacao da corrida, como a tela mostra. 'confirmed' e a unica em que o

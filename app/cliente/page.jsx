@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useLanguage } from '../../lib/LanguageContext';
+import { visibleVehicles, vehicleMarkerHtml, vehiclePopupHtml } from './logic';
 import Header from '../components/Header';
 import { theme } from '../../lib/theme';
 import { renderQrWithLogo } from '../../lib/qr-logo';
@@ -27,7 +28,7 @@ function fetchComTimeout(url, options) {
 }
 
 function loadLeaflet() {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (window.L) return resolve(window.L);
     const css = document.createElement('link');
     css.rel = 'stylesheet';
@@ -36,6 +37,9 @@ function loadLeaflet() {
     const script = document.createElement('script');
     script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
     script.onload = () => resolve(window.L);
+    // Sem onerror a promessa nunca resolve nem rejeita: a tela ficava em
+    // "carregando mapa" para sempre quando a CDN estava fora do ar.
+    script.onerror = () => reject(new Error('falha de rede ao carregar o mapa'));
     document.body.appendChild(script);
   });
 }
@@ -249,6 +253,9 @@ export default function ClientePage() {
 
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
+  // Camada so dos motoristas. Sem ela, cada atualizacao de posicao empilha um
+  // marcador novo por cima do anterior (o mapa e remontado a cada "Atualizar").
+  const vehicleLayerRef = useRef(null);
   const qrDivRef = useRef(null);
   const myCouponQrDivRef = useRef(null);
   const [openCoupon, setOpenCoupon] = useState(null);
@@ -662,6 +669,31 @@ export default function ClientePage() {
     // /offers?businessLogoFor=, e o centro do QR tem de acompanhar.
   }, [openCoupon, openCoupon?.logoUrl]);
 
+  // Pins dos motoristas no mapa. Fica aqui, e nao dentro do showMap(), porque o
+  // carregamento do translado (loadShuttle) e independente da geolocalizacao do
+  // mapa: os dois chegam em ordens diferentes. Como efeito reagindo a
+  // shuttle.vehicles, o pin aparece assim que o dado chega, e e redesenhado a
+  // cada nova posicao.
+  function drawVehiclePins() {
+    const L = typeof window !== 'undefined' ? window.L : null;
+    if (!L || !mapInstanceRef.current || !vehicleLayerRef.current) return;
+    vehicleLayerRef.current.clearLayers();
+    for (const v of visibleVehicles(shuttle.vehicles)) {
+      L.marker([v.lat, v.lng], {
+        icon: L.divIcon({ className: 'pyv-driver-marker', html: vehicleMarkerHtml(v, t), iconSize: [44, 40], iconAnchor: [22, 20] }),
+      })
+        .addTo(vehicleLayerRef.current)
+        .bindPopup(vehiclePopupHtml(v, t, timeAgo(v.recordedAt, t)));
+    }
+  }
+
+  useEffect(() => {
+    // mapStatus entra na dependencia: o mapa so existe depois do 'done', e sem
+    // isso o primeiro desenho nunca aconteceria.
+    drawVehiclePins();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shuttle.vehicles, mapStatus]);
+
   function handleOpenCoupon(c) {
     const tokens = JSON.parse(localStorage.getItem('pyv_coupon_tokens') || '{}');
     const rawToken = tokens[c.publicId];
@@ -696,6 +728,9 @@ export default function ClientePage() {
       if (!mapInstanceRef.current) {
         mapInstanceRef.current = L.map(mapRef.current).setView([latitude, longitude], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapInstanceRef.current);
+        // Motoristas ficam numa camada propria para poderem ser redesenhados
+        // (limpa e repovoa) sem tocar nos marcadores de comercio.
+        vehicleLayerRef.current = L.layerGroup().addTo(mapInstanceRef.current);
         // O contêiner da div sai de display:none e o Leaflet precisa recalcular o
         // tamanho (senão marcadores "escapam" do lugar ao dar zoom).
         setTimeout(() => mapInstanceRef.current.invalidateSize(), 0);

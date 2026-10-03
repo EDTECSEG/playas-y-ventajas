@@ -24,6 +24,8 @@ import {
   buildPositionRequest,
   buildRunsRequest,
   buildCompleteRunRequest,
+  AUTO_POSITION_MS,
+  shouldAutoSend,
   localDateIso,
   sortRunsByTime,
   formatRunWhen,
@@ -104,6 +106,16 @@ export default function MotoristaPage() {
   // faz o motorista achar que foi escalado para outra empresa.
   const [corridas, setCorridas] = useState([]);
   const [corridasErro, setCorridasErro] = useState('');
+
+  // Transmissao automatica de posicao. Comeca desligada: ligar no primeiro
+  // render gastaria GPS sem o motorista ter pedido. `abaVisivel` alimenta o
+  // portao de visibilidade de shouldAutoSend (GPS aceso com a aba escondida nao
+  // serve para ninguem). `autoErrRef` e um contador de falhas silencioso: o
+  // ciclo repete a cada 30s e o unico motivo real de falhar (permissao negada)
+  // ja e avisado pelo botao manual, entao nao vale cobrir a tela de vermelho.
+  const [autoOn, setAutoOn] = useState(false);
+  const [abaVisivel, setAbaVisivel] = useState(true);
+  const autoErrRef = useRef(0);
 
   // Sessao e cadastro pela metade sao reidratados do navegador. O guarda de
   // cada um esta em ./logic: o cadastro pela metade e conferido por
@@ -187,9 +199,10 @@ export default function MotoristaPage() {
     });
   }
 
-  // So aprovado envia posicao. O telefone/mapa pede permissao de localizacao:
-  // recusada diz exatamente isso, e nao "erro interno".
-  const enviarPosicao = () => run(async () => {
+  // Envio cru de posicao, sem tocar em estado de UI. E o corpo comum do botao
+  // manual e do ciclo automatico; o botao envolve em run() para ter "enviado" e
+  // erro visivel, e o automatico chama direto para poder falhar em silencio.
+  async function transmitirPosicao() {
     if (!navigator.geolocation) throw new Error(friendlyMessage('INVALID_COORDS'));
     const pos = await new Promise((res, rej) => {
       navigator.geolocation.getCurrentPosition(
@@ -206,9 +219,46 @@ export default function MotoristaPage() {
       speedKmh: pos.coords.speed,
       shuttleId: servicoSel,
     });
-    const data = await call('driver-position', { body, token: headerToken });
+    return call('driver-position', { body, token: headerToken });
+  }
+
+  // So aprovado envia posicao. O telefone/mapa pede permissao de localizacao:
+  // recusada diz exatamente isso, e nao "erro interno".
+  const enviarPosicao = () => run(async () => {
+    const data = await transmitirPosicao();
     setUltimaPos(data.recordedAt);
   }, t.posSentOk);
+
+  // Ciclo automatico. Reage a autoOn/session/servicoSel/abaVisivel: desligar,
+  // trocar de rota, sair da frota ou esconder a aba derruba o interval e evita
+  // enviar posicao de uma configuracao que ja mudou.
+  useEffect(() => {
+    if (!shouldAutoSend({ enabled: autoOn, status: session && session.status, visible: abaVisivel })) return;
+    const id = setInterval(async () => {
+      try {
+        const data = await transmitirPosicao();
+        autoErrRef.current = 0;
+        setUltimaPos(data.recordedAt);
+      } catch (e) {
+        autoErrRef.current += 1;
+      }
+    }, AUTO_POSITION_MS);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOn, session, servicoSel, abaVisivel]);
+
+  // A visibilidade da aba e o portao que evita GPS ligado com a tela escondida.
+  useEffect(() => {
+    const onVis = () => setAbaVisivel(!document.hidden);
+    onVis();
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
+  function toggleAutoPosition() {
+    setAutoOn((v) => !v);
+    autoErrRef.current = 0;
+  }
 
   async function run(fn, ok) {
     setOcupado(true);
@@ -378,8 +428,18 @@ export default function MotoristaPage() {
             </select>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               <button style={btn} onClick={enviarPosicao} disabled={ocupado}>{t.posSend}</button>
+              <button
+                style={{ ...btn, background: autoOn ? '#B42318' : theme.green, color: '#FFFFFF' }}
+                onClick={toggleAutoPosition}
+                aria-pressed={autoOn}
+              >
+                {autoOn ? t.posAutoStop : t.posAutoStart}
+              </button>
               <button style={ghostBtn} onClick={carregarServicos} disabled={ocupado}>{t.posReloadServices}</button>
             </div>
+            {autoOn ? (
+              <p style={{ color: theme.textMuted, marginBottom: 0 }}>{t.posAutoOn}</p>
+            ) : null}
             {ultimaPos ? (
               <p style={{ color: theme.textMuted, marginBottom: 0 }}>
                 {fmt(t.posLast, { time: new Date(ultimaPos).toLocaleTimeString(lang === 'en' ? 'en-US' : lang === 'es' ? 'es-ES' : 'pt-BR') })}
