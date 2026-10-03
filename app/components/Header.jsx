@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from '../../lib/LanguageContext';
 import { theme } from '../../lib/theme';
 import { consumeAdminModulesOrigin, ADMIN_MODULES_PATH } from '../../lib/adminModules';
+import LanguageMenu from './LanguageMenu';
 
 export default function Header({ title, right }) {
   const { t } = useLanguage();
@@ -39,7 +40,10 @@ export default function Header({ title, right }) {
           {title}
         </strong>
       </div>
-      <div style={{ flexShrink: 0 }}>{right}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <LanguageMenu light />
+        {right}
+      </div>
     </div>
   );
 }
