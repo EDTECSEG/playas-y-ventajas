@@ -180,3 +180,117 @@ test('login bem-sucedido zera o contador de falhas do mesmo codigo', async (t) =
   res = await handler(makeEvent({ method: 'POST', body: { tenantSlug: 'x', internalCode: 'M-3', pin: WRONG_PIN } }));
   assert.strictEqual(res.statusCode, 429);
 });
+
+// --- bucket por IP -------------------------------------------------------
+// Regressao: `ip:${ip}` era consultado mas nunca alimentado, entao o bucket
+// ficava permanentemente vazio e a checagem devolvia sempre "allowed". O
+// limite por IP era inerte: nenhuma combinacao de tentativas o ativava.
+
+test('login bloqueia o IP apos 20 falhas distribuidas entre codigos diferentes', async (t) => {
+  const fake = makeFakeSupabase({
+    rpc: async (name) => {
+      if (name === 'auth_login') return { data: { error: 'INVALID_CREDENTIALS' }, error: null };
+      return { data: null, error: { message: 'unexpected' } };
+    },
+  });
+  const { handler, restore } = loadFunction('login.js', fake);
+  t.after(restore);
+
+  // Cada codigo so erra uma vez, entao NENHUM credential individual bate o
+  // limite de 5. E exatamente esse o ataque que o lock por codigo nao pega.
+  for (let i = 0; i < 20; i++) {
+    const res = await handler(makeEvent({ method: 'POST', body: { tenantSlug: 'x', internalCode: `ATK-${i}`, pin: WRONG_PIN } }));
+    assert.strictEqual(res.statusCode, 401, `tentativa ${i} deveria ser 401`);
+  }
+
+  // 21a tentativa, agora com a senha CORRETA: o bloqueio e por origem, e nao
+  // por credencial, entao nem um login valido passa.
+  const res = await handler(makeEvent({ method: 'POST', body: { tenantSlug: 'x', internalCode: 'ATK-0', pin: GOOD_PIN } }));
+  assert.strictEqual(res.statusCode, 429, 'o IP deveria estar bloqueado');
+  assert.ok(parseBody(res).error, 'corpo de erro presente');
+});
+
+test('login nao propaga o bloqueio de IP para outra origem', async (t) => {
+  const fake = makeFakeSupabase({
+    rpc: async (name) => {
+      if (name === 'auth_login') return { data: { error: 'INVALID_CREDENTIALS' }, error: null };
+      return { data: null, error: { message: 'unexpected' } };
+    },
+  });
+  const { handler, restore } = loadFunction('login.js', fake);
+  t.after(restore);
+
+  for (let i = 0; i < 20; i++) {
+    await handler(makeEvent({ method: 'POST', body: { tenantSlug: 'x', internalCode: `ATK-${i}`, pin: WRONG_PIN } }));
+  }
+  const blocked = await handler(makeEvent({ method: 'POST', body: { tenantSlug: 'x', internalCode: 'ATK-0', pin: WRONG_PIN } }));
+  assert.strictEqual(blocked.statusCode, 429);
+
+  // outra origem (203.0.113.9 e o IP padrao dos testes)
+  const other = await handler(makeEvent({
+    method: 'POST',
+    headers: { 'x-forwarded-for': '198.51.100.7' },
+    body: { tenantSlug: 'x', internalCode: 'ATK-0', pin: WRONG_PIN },
+  }));
+  assert.strictEqual(other.statusCode, 401, 'um IP distinto nao pode herdar o bloqueio');
+});
+
+test('login bem-sucedido zera o contador de falhas do IP', async (t) => {
+  const fake = makeFakeSupabase({
+    rpc: async (name, args) => {
+      if (name !== 'auth_login') return { data: null, error: { message: 'unexpected' } };
+      if (args.p_internal_code === 'BOM') {
+        return { data: { sessionToken: 'tok-ok' }, error: null };
+      }
+      return { data: { error: 'INVALID_CREDENTIALS' }, error: null };
+    },
+  });
+  const { handler, restore } = loadFunction('login.js', fake);
+  t.after(restore);
+
+  // 19 falhas: uma a menos do limite, bucket tem fails=19
+  for (let i = 0; i < 19; i++) {
+    const res = await handler(makeEvent({ method: 'POST', body: { tenantSlug: 'x', internalCode: `ATK-${i}`, pin: WRONG_PIN } }));
+    assert.strictEqual(res.statusCode, 401, `falha ${i} deveria ser 401`);
+  }
+
+  // um login legitimo zera o bucket por IP
+  const ok = await handler(makeEvent({ method: 'POST', body: { tenantSlug: 'x', internalCode: 'BOM', pin: GOOD_PIN } }));
+  assert.strictEqual(ok.statusCode, 200);
+
+  // Sem o reset, a 1a destas 19 voltaria a levar o contador a 20 e a 2a ja
+  // seria 429. Todas continuarem em 401 e o que prova que o bucket foi limpo.
+  for (let i = 0; i < 19; i++) {
+    const res = await handler(makeEvent({ method: 'POST', body: { tenantSlug: 'x', internalCode: `DEPOIS-${i}`, pin: WRONG_PIN } }));
+    assert.strictEqual(res.statusCode, 401, `falha pos-sucesso ${i} deveria ser 401`);
+  }
+});
+
+test('login com credencial ja bloqueada nao infla o contador por IP', async (t) => {
+  const fake = makeFakeSupabase({
+    rpc: async (name) => {
+      if (name === 'auth_login') return { data: { error: 'INVALID_CREDENTIALS' }, error: null };
+      return { data: null, error: { message: 'unexpected' } };
+    },
+  });
+  const { handler, restore } = loadFunction('login.js', fake);
+  t.after(restore);
+
+  // trava M-9 no limite de 5 por credencial
+  for (let i = 0; i < 5; i++) {
+    await handler(makeEvent({ method: 'POST', body: { tenantSlug: 'x', internalCode: 'M-9', pin: WRONG_PIN } }));
+  }
+
+  // martela o codigo ja bloqueado: cada uma responde 429 pelo limite de
+  // credencial e retorna ANTES de registrar falha por IP. Se registrasse, 20
+  // repetidas trancariam o IP inteiro -- um DoS que o proprio atacante
+  // fabricaria contra o escritorio inteiro.
+  for (let i = 0; i < 30; i++) {
+    const res = await handler(makeEvent({ method: 'POST', body: { tenantSlug: 'x', internalCode: 'M-9', pin: WRONG_PIN } }));
+    assert.strictEqual(res.statusCode, 429, `martelada ${i} deveria ser 429 por credencial`);
+  }
+
+  // um codigo novo, sem falhas, ainda passa: o IP nao foi contaminado
+  const fresh = await handler(makeEvent({ method: 'POST', body: { tenantSlug: 'x', internalCode: 'NOVO', pin: WRONG_PIN } }));
+  assert.strictEqual(fresh.statusCode, 401, 'o IP nao pode ser trancado por martelada a um codigo bloqueado');
+});

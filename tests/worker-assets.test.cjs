@@ -117,11 +117,15 @@ test('rota de funcao ganha do estatico e nunca vira asset', { skip: semBundle },
   const env = { ASSETS: assetsFalso(chamadas) };
 
   // Allowlist: tem que responder a funcao, mesmo com um arquivo de mesmo nome.
-  // offers sem tenantId responde 400 em json — nunca um asset.
-  const ok = await w.fetch(req('/.netlify/functions/offers'), env);
+  // `mode=my-coupons` sem customerId responde 400 em json antes de tocar o banco
+  // -- resposta deterministica, que e o que este teste precisa. Uma requisicao
+  // sem query nao serve mais: offers deixou de exigir tenantId, entao cairia em
+  // list_offers de verdade e devolveria 500 aqui por falta de credencial.
+  // O que este teste guarda e o roteamento, nao o contrato de validacao.
+  const ok = await w.fetch(req('/.netlify/functions/offers?mode=my-coupons'), env);
   assert.strictEqual(ok.status, 400);
   const body = await ok.json();
-  assert.strictEqual(body.error, 'tenantId obrigatório');
+  assert.strictEqual(body.error, 'customerId obrigatório');
   assert.ok(!chamadas.includes('/.netlify/functions/offers'), 'offers foi delegado por engano');
 
   // Funcao inexistente tem que continuar 404 em json, nao cair no estatico.

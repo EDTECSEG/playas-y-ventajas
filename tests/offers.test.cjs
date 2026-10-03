@@ -85,11 +85,71 @@ test('listagem de ofertas sem modo continua funcional (leitura publica)', async 
   assert.deepStrictEqual(parseBody(res), [{ templateId: 'tpl-1' }]);
 });
 
-test('offers exige tenantId', async (t) => {
-  const fake = makeFakeSupabase({ rpc: async () => ({ data: null, error: null }) });
+test('offers ignora tenantId da query e usa o tenant fixo (anti-IDOR)', async (t) => {
+  // Regressao: tenantId vinha da query string e ia direto para as cinco RPCs
+  // pelo client de administracao. Trocar o UUID por outro listava ofertas,
+  // categorias e cidades de outro tenant -- e, em my-coupons, os cupons de
+  // outro tenant, porque verifyCustomerToken so assina o customerId.
+  const INIMIGO = '11111111-2222-4333-8444-555555555555';
+  const seen = [];
+  const fake = makeFakeSupabase({
+    rpc: async (name, args) => {
+      seen.push({ name, tenant: args.p_tenant_id });
+      if (name === 'list_offers') return { data: [{ templateId: 'tpl-1' }], error: null };
+      if (name === 'list_cities') return { data: ['Recife'], error: null };
+      if (name === 'list_categories') return { data: ['food'], error: null };
+      return { data: null, error: { message: 'unexpected ' + name } };
+    },
+  });
+  const { handler, restore } = loadFunction('offers.js', fake);
+  t.after(restore);
+
+  for (const query of [
+    { tenantId: INIMIGO },
+    { tenantId: INIMIGO, mode: 'cities' },
+    { tenantId: INIMIGO, mode: 'categories' },
+  ]) {
+    const res = await handler(makeEvent({ query }));
+    assert.strictEqual(res.statusCode, 200, 'o parametro nao pode mais barrar a requisicao');
+  }
+
+  assert.strictEqual(seen.length, 3, 'as tres RPCs rodam normalmente');
+  for (const call of seen) {
+    assert.strictEqual(call.tenant, TENANT, `${call.name} deve usar o tenant fixo`);
+  }
+});
+
+test('offers sem tenantId na query funciona (o parametro virou opcional)', async (t) => {
+  const fake = makeFakeSupabase({
+    rpc: async (name) => {
+      if (name === 'list_offers') return { data: [], error: null };
+      return { data: null, error: { message: 'unexpected ' + name } };
+    },
+  });
   const { handler, restore } = loadFunction('offers.js', fake);
   t.after(restore);
 
   const res = await handler(makeEvent({ query: {} }));
-  assert.strictEqual(res.statusCode, 400);
+  assert.strictEqual(res.statusCode, 200);
+  assert.deepStrictEqual(parseBody(res), []);
+});
+
+test('my-coupons ignora tenantId da query (token valido nao compra tenant alheio)', async (t) => {
+  const INIMIGO = '11111111-2222-4333-8444-555555555555';
+  const fake = makeFakeSupabase({ rpc: async () => ({ data: [], error: null }) });
+  const { handler, restore } = loadFunction('offers.js', fake);
+  t.after(restore);
+
+  const res = await handler(makeEvent({
+    query: {
+      tenantId: INIMIGO,
+      mode: 'my-coupons',
+      customerId: VICTIM_CUSTOMER,
+      customerToken: customerTokenFor(VICTIM_CUSTOMER),
+    },
+  }));
+
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(fake.calls.rpc.length, 1);
+  assert.strictEqual(fake.calls.rpc[0].args.p_tenant_id, TENANT);
 });

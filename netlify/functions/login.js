@@ -6,6 +6,13 @@ const { getSupabaseAdminClient } = require('./_supabaseAdmin');
 // cold starts e vale para TODAS as instancias.
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILS = 5;
+// O bucket por IP tolera mais que o por credencial: varios funcionarios
+// compartilham a mesma origem (NAT/proxy do escritorio), e 5 erros de digitacao
+// de uma pessoa nao podem trancar o IP inteiro por 15 minutos. 20 falhas
+// concentradas numa origem ainda barram o forca bruta distribuido entre varios
+// codigos internos -- o caso que o lock por (tenant, codigo) do banco nao cobre,
+// porque o atacante nunca repete o mesmo codigo.
+const MAX_IP_FAILS = 20;
 const BLOCK_MS = 15 * 60 * 1000;
 const attempts = new Map(); // key -> { fails, blockedUntil }
 
@@ -26,12 +33,12 @@ function checkRateLimit(key) {
   return { allowed: true };
 }
 
-function recordFailure(key) {
+function recordFailure(key, max = MAX_FAILS) {
   const now = Date.now();
   const rec = attempts.get(key) || { fails: 0, blockedUntil: 0 };
   if (rec.blockedUntil > now) return;
   rec.fails += 1;
-  if (rec.fails >= MAX_FAILS) {
+  if (rec.fails >= max) {
     rec.fails = 0;
     rec.blockedUntil = now + BLOCK_MS;
   } else {
@@ -57,6 +64,7 @@ exports.handler = async (event) => {
     }
 
     const key = `${tenantSlug}\u0000${internalCode}`;
+    const ipKey = `ip:${ip}`;
     const limit = checkRateLimit(key);
     if (!limit.allowed) {
       return {
@@ -65,7 +73,7 @@ exports.handler = async (event) => {
         body: JSON.stringify({ error: 'TOO_MANY_ATTEMPTS' }),
       };
     }
-    const ipLimit = checkRateLimit(`ip:${ip}`);
+    const ipLimit = checkRateLimit(ipKey);
     if (!ipLimit.allowed) {
       return {
         statusCode: 429,
@@ -78,13 +86,21 @@ exports.handler = async (event) => {
     const { data, error } = await supabase.rpc('auth_login', { p_tenant_slug: tenantSlug, p_internal_code: internalCode, p_pin: pin });
     if (error) {
       recordFailure(key);
+      recordFailure(ipKey, MAX_IP_FAILS);
       return { statusCode: 401, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
     }
     if (data && data.error) {
       recordFailure(key);
+      recordFailure(ipKey, MAX_IP_FAILS);
       return { statusCode: 401, body: JSON.stringify({ error: data.error }) };
     }
     recordSuccess(key);
+    // Sucesso zera tambem o bucket por IP. Tradeoff consciente: um atacante com
+    // uma conta valida consegue lavar o contador intercalando um login bom entre
+    // as tentativas. Preferimos isso a trancar o IP de um escritorio inteiro por
+    // 15 minutos -- e o lock por (tenant, codigo) no banco continua valendo
+    // para cada credencial atacada.
+    recordSuccess(ipKey);
     let mustChangePin = false;
     try {
       const { data: flag, error: flagErr } = await supabase.rpc('auth_pin_reset_required', { p_user_id: data.userId });
