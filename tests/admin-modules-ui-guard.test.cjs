@@ -71,3 +71,8 @@ test('i18n cobre todos os rótulos dinâmicos do catálogo', () => {
     assert.strictEqual(countKey(i18n, k), 3, `${k} deve existir em pt/en/es`);
   }
 });
+
+test('rótulo do Volver é localizado por idioma (pt/en/es)', () => {
+  const values = [...i18n.matchAll(/backToModules:\s*'([^']*)'/g)].map((x) => x[1]);
+  assert.deepStrictEqual(values, ['Voltar', 'Back', 'Volver'], 'cada idioma com seu rótulo');
+});
