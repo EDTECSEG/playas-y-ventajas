@@ -26,6 +26,8 @@ import {
   buildCompleteRunRequest,
   AUTO_POSITION_MS,
   shouldAutoSend,
+  accuracyOk,
+  accuracyText,
   localDateIso,
   sortRunsByTime,
   formatRunWhen,
@@ -115,6 +117,9 @@ export default function MotoristaPage() {
   // ja e avisado pelo botao manual, entao nao vale cobrir a tela de vermelho.
   const [autoOn, setAutoOn] = useState(false);
   const [abaVisivel, setAbaVisivel] = useState(true);
+  // Raio de confianca (m) do ultimo fix lido. Existe para a tela avisar quando o
+  // GPS esta fraco — tipicamente um computador, que localiza por Wi-Fi/IP.
+  const [precisao, setPrecisao] = useState(null);
   const autoErrRef = useRef(0);
 
   // Sessao e cadastro pela metade sao reidratados do navegador. O guarda de
@@ -147,6 +152,7 @@ export default function MotoristaPage() {
     setPending(null);
     setDocEnviado(null);
     setUltimaPos(null);
+    setPrecisao(null);
     setServicos([]);
     setLogin({ phone: '', pin: '' });
     setPinForm({ pin: '', pin2: '' });
@@ -199,10 +205,16 @@ export default function MotoristaPage() {
     });
   }
 
-  // Envio cru de posicao, sem tocar em estado de UI. E o corpo comum do botao
-  // manual e do ciclo automatico; o botao envolve em run() para ter "enviado" e
-  // erro visivel, e o automatico chama direto para poder falhar em silencio.
-  async function transmitirPosicao() {
+  // Envio cru de posicao, sem tocar em estado de UI (fora da precisao). E o corpo
+  // comum do botao manual e do ciclo automatico; o botao envolve em run() para
+  // ter "enviado" e erro visivel, e o automatico chama direto para poder falhar
+  // em silencio.
+  //
+  // `requireAccuracy` e a trava contra o palpite por IP: sem GPS proprio (num
+  // computador), o navegador devolve accuracy enorme e a posicao aponta para o no
+  // da operadora. O envio automatico so passa com accuracyOk; o manual (acao
+  // explicita) transmite, mas a tela mostra que a precisao esta ruim.
+  async function transmitirPosicao({ requireAccuracy = false } = {}) {
     if (!navigator.geolocation) throw new Error(friendlyMessage('INVALID_COORDS'));
     const pos = await new Promise((res, rej) => {
       navigator.geolocation.getCurrentPosition(
@@ -211,6 +223,13 @@ export default function MotoristaPage() {
         { enableHighAccuracy: true, timeout: 12000 },
       );
     });
+    const accuracy = pos.coords.accuracy;
+    setPrecisao(accuracy);
+    if (requireAccuracy && !accuracyOk(accuracy)) {
+      const err = new Error(friendlyMessage('INVALID_COORDS'));
+      err.weakGps = true;
+      throw err;
+    }
     const { body, headerToken } = buildPositionRequest({
       session,
       lat: pos.coords.latitude,
@@ -218,6 +237,7 @@ export default function MotoristaPage() {
       heading: pos.coords.heading,
       speedKmh: pos.coords.speed,
       shuttleId: servicoSel,
+      accuracyM: accuracy,
     });
     return call('driver-position', { body, token: headerToken });
   }
@@ -236,7 +256,7 @@ export default function MotoristaPage() {
     if (!shouldAutoSend({ enabled: autoOn, status: session && session.status, visible: abaVisivel })) return;
     const id = setInterval(async () => {
       try {
-        const data = await transmitirPosicao();
+        const data = await transmitirPosicao({ requireAccuracy: true });
         autoErrRef.current = 0;
         setUltimaPos(data.recordedAt);
       } catch (e) {
@@ -439,6 +459,12 @@ export default function MotoristaPage() {
             </div>
             {autoOn ? (
               <p style={{ color: theme.textMuted, marginBottom: 0 }}>{t.posAutoOn}</p>
+            ) : null}
+            {precisao !== null && precisao !== undefined ? (
+              <p style={{ color: accuracyOk(precisao) ? theme.textMuted : '#B42318', marginBottom: 0 }}>
+                {t.posAccuracy.replace('{value}', accuracyText(precisao))}
+                {accuracyOk(precisao) ? '' : ` ${t.posGpsWeak}`}
+              </p>
             ) : null}
             {ultimaPos ? (
               <p style={{ color: theme.textMuted, marginBottom: 0 }}>

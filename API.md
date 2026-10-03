@@ -87,7 +87,7 @@ Mapa de referência: rota pública → handler Netlify → RPC do Supabase → S
 `GET /.netlify/functions/shuttle?tenantId=...` (+ parâmetros)
 - Sempre devolve `{ services: [], vehicles: [] }` (duas RPCs STABLE do Módulo 1, via client de administração):
   - `list_shuttle_services` → serviços de translado ativos do tenant (`shuttleId`, `name`, `serviceType`, `businessName`, `priceCents`, `opensAt`, `closesAt`, `activeDays`, `origin/destination` `{lat,lng}`, `stops`, `distanceKm`).
-  - `list_live_vehicles` → posições frescas dos veículos (`driverId`, `driverName`, `lat/lng`, `heading`, `speedKmh`, `recordedAt`, `distanceKm`), descartando posições mais velhas que `maxAgeS` (padrão 300 s).
+  - `list_live_vehicles` → posições frescas dos veículos (`driverId`, `driverName`, `lat/lng`, `heading`, `speedKmh`, `accuracyM`, `recordedAt`, `distanceKm`), descartando posições mais velhas que `maxAgeS` (padrão 300 s). `accuracyM` é o raio de confiança do fix em metros (NULL = desconhecido; valores grandes indicam palpite por Wi‑Fi/IP).
 - Parâmetros opcionais: `lat` + `lng` (juntos, numéricos), `radiusKm` (aplica o raio nos serviços em km e nos veículos em m = radiusKm×1000; exige lat/lng), `maxAgeS` (inteiro positivo).
 - Sem `lat/lng`: lista tudo sem `distanceKm` (contrato explícito com o cliente — a UI mostra "sem distâncias"). Sem dados → `[]` (os dois campos sempre presentes).
 
@@ -116,9 +116,10 @@ Vínculo por telefone: `driver_register`, `driver_set_pin`, `driver_login`, `dri
 - É o único caminho de recuperação de PIN: `driver-set-pin` só funciona com o `pinToken` do cadastro, que morre no primeiro uso. SQL: `supabase/fix-admin-driver-reset-pin-role.sql` (papel) + `supabase/modulo4-motoristas.sql` §9.
 
 #### `driver-position` — transmissão de posição do veículo (POST, sessão de motorista)
-`POST /.netlify/functions/driver-position` com `Authorization: Bearer <sessionToken>` e corpo `{ lat, lng, heading?, speedKmh?, shuttleId? }`.
-- Chama `driver_report_position` (SECURITY DEFINER): valida a sessão (`driver_sessions` não expirada → `SESSION_EXPIRED` 401; `status != approved` → `NOT_APPROVED` 403), coordenadas/heading/speed e `shuttleId` (ativo e do próprio tenant → `SHUTTLE_NOT_FOUND` 404).
+`POST /.netlify/functions/driver-position` com `Authorization: Bearer <sessionToken>` e corpo `{ lat, lng, heading?, speedKmh?, shuttleId?, accuracyM? }`.
+- Chama `driver_report_position` (SECURITY DEFINER): valida a sessão (`driver_sessions` não expirada → `SESSION_EXPIRED` 401; `status != approved` → `NOT_APPROVED` 403), coordenadas/heading/speed, `accuracyM` (sanidade `0..100000` → `INVALID_ACCURACY` 400; o limite de política de 150 m fica no cliente) e `shuttleId` (ativo e do próprio tenant → `SHUTTLE_NOT_FOUND` 404).
 - `driver_id` **nunca** vem do cliente — é derivado da sessão no banco (um motorista não grava posição em nome de outro).
+- `accuracyM` é o `coords.accuracy` do aparelho (metros). O app do motorista só auto-envia quando `accuracyM` é conhecido e ≤ 150 m, para um computador sem GPS (palpite por Wi‑Fi/IP) não sobrescrever a posição do celular; envio manual continua permitido e a tela avisa.
 - Upsert em `vehicle_positions` (1 posição por motorista); resposta `{ driverId, recordedAt }` com `Cache-Control: no-store`.
 
 ## RPCs novas (neste pacote — aplicadas via MCP; pendem apenas deploy do front)
@@ -144,7 +145,7 @@ Vínculo por telefone: `driver_register`, `driver_set_pin`, `driver_login`, `dri
 | `business_toggle_shuttle_service` | idem | Ativa/desativa serviço próprio do negócio |
 | `business_delete_shuttle_service` | idem | Apaga serviço próprio (posições ficam com `shuttle_id` NULL) |
 | `business_list_shuttle_services` | idem | Lista serviços do próprio negócio (com inativos, para o painel) |
-| `driver_report_position` | idem | Upsert da posição do veículo a partir da sessão do motorista (só `approved`; `driver_id` derivado no banco) |
+| `driver_report_position` | idem | Upsert da posição do veículo a partir da sessão do motorista (só `approved`; `driver_id` derivado no banco; grava `accuracy_m`) |
 | `shuttle_create_reservation` | `supabase/agendamento.sql` | **Módulo 3 (A) — agendamento** — cria reserva `pending` (lock do serviço ativo por `FOR UPDATE`; `INVALID_PASSENGERS`, `SHUTTLE_NOT_FOUND`, `INVALID_SCHEDULE`, `DAY_NOT_ACTIVE`, `OUTSIDE_HOURS`, `SLOT_CONFLICT` por `tstzrange`) |
 | `shuttle_cancel_reservation` | idem | Cliente cancela `pending`/`confirmed` → `cancelled` (com `reason`) |
 | `shuttle_list_customer_reservations` | idem | Reservas do cliente (filtro `p_status`) |

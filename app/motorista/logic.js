@@ -200,7 +200,7 @@ export function pendingFromStorage(raw) {
 // a confirmacao aqui a tela prometeria envio a quem ainda nao esta na frota.
 // A credencial e SEMPRE a sessao — driver-position nao aceita uploadToken, e
 // mandar as duas juntas e erro.
-export function buildPositionRequest({ session, lat, lng, heading, speedKmh, shuttleId } = {}) {
+export function buildPositionRequest({ session, lat, lng, heading, speedKmh, shuttleId, accuracyM } = {}) {
   if (!canDrive(session && session.status)) {
     if (!session || !session.sessionToken) throw new Error(friendlyMessage('AUTH_REQUIRED'));
     throw new Error(friendlyMessage('NOT_APPROVED'));
@@ -219,6 +219,9 @@ export function buildPositionRequest({ session, lat, lng, heading, speedKmh, shu
       heading: heading === null || heading === undefined || heading === '' ? null : Number(heading),
       speedKmh: speedKmh === null || speedKmh === undefined || speedKmh === '' ? null : Number(speedKmh),
       shuttleId: shuttleId || null,
+      // Raio de confianca do fix, em metros. Vai junto para o mapa poder
+      // distinguir um pin de GPS bom de um palpite por IP.
+      accuracyM: accuracyM === null || accuracyM === undefined || accuracyM === '' ? null : Number(accuracyM),
     },
     headerToken: session.sessionToken,
   };
@@ -256,6 +259,40 @@ export function shouldAutoSend({ enabled, status, visible } = {}) {
   if (!canDrive(status)) return false;
   if (visible === false) return false;
   return true;
+}
+
+// --- Qualidade da posicao (accuracy) ----------------------------------------
+
+// Raio maximo aceito para o envio automatico, em metros.
+//
+// `accuracy` e o raio de confianca do fix: menor e melhor. Um celular com GPS
+// ao ar livre entrega 5-30 m; dentro do predio, ate ~100 m. Ja um COMPUTADOR
+// sem GPS nao tem fix proprio: o navegador cai para localizacao por Wi-Fi/IP, que
+// devolve centenas de metros a dezenas de quilometros — e aponta para o no da
+// operadora, nao para a mesa. 150 m deixa o celular passar (inclusive em
+// condicao ruim) e corta o palpite por IP, que era o que derrubava a posicao
+// verdadeira do celular no upsert por driver_id.
+export const ACCURACY_MAX_M = 150;
+
+// A leitura da posicao tem qualidade suficiente para transmitir sozinha?
+// `null`/ausente/0/negativo/NaN contam como desconhecido: sem numero confiavel,
+// nao da para afirmar que o fix e bom, entao nao transmite.
+export function accuracyOk(accuracyM, maxM = ACCURACY_MAX_M) {
+  if (accuracyM === null || accuracyM === undefined || accuracyM === '') return false;
+  const n = Number(accuracyM);
+  if (!Number.isFinite(n) || n <= 0) return false;
+  return n <= maxM;
+}
+
+// Texto curto da precisao, para a tela: "±30 m". Vazio quando nao ha numero.
+// O raio e limitado a 999 km na apresentacao para nunca imprimir "Infinity".
+export function accuracyText(accuracyM) {
+  if (accuracyM === null || accuracyM === undefined || accuracyM === '') return '';
+  const n = Number(accuracyM);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  const m = Math.round(n);
+  if (m < 1000) return `±${m} m`;
+  return `±${Math.round(m / 1000)} km`;
 }
 
 // --- Corridas do dia (driver-shuttle-runs) ---------------------------------

@@ -31,6 +31,7 @@ exports.handler = async (event) => {
   const lng = toNumber(body.lng);
   const heading = toNumber(body.heading);
   const speedKmh = toNumber(body.speedKmh);
+  const accuracyM = toNumber(body.accuracyM);
 
   try {
     const supabase = getSupabaseAdminClient();
@@ -41,6 +42,7 @@ exports.handler = async (event) => {
       p_heading: heading,
       p_speed_kmh: speedKmh,
       p_shuttle_id: body.shuttleId || null,
+      p_accuracy_m: accuracyM,
     });
     if (error) return { statusCode: rpcErrorStatus(error), body: JSON.stringify({ error: rpcErrorCode(error) }) };
     return { statusCode: 200, body: JSON.stringify(data), headers: { 'Cache-Control': 'no-store' } };
