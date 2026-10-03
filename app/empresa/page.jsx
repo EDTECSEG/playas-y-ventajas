@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { useLanguage } from '../../lib/LanguageContext';
 import Header from '../components/Header';
+import PasswordInput from '../components/PasswordInput';
 import ModuleSplash from '../components/ModuleSplash';
 import { theme } from '../../lib/theme';
 
@@ -915,7 +916,7 @@ export default function EmpresaPage() {
             <div style={card}>
               <h3>{t.login}</h3>
               <input style={input} placeholder={t.companyCode} value={form.internalCode} onChange={(e) => setForm({ ...form, internalCode: e.target.value })} />
-              <input style={input} placeholder={t.password} value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} />
+              <PasswordInput style={input} placeholder={t.password} value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} />
               <button style={btn} onClick={login}>{t.enter}</button>
             </div>
             </>
@@ -943,8 +944,8 @@ export default function EmpresaPage() {
               <button style={smallBtn} onClick={useRegisterLocation}>{t.useLocation}</button>
               <br />
               <input style={input} placeholder={t.loginShort} autoComplete="off" value={regForm.internalCode} onChange={(e) => setRegForm({ ...regForm, internalCode: e.target.value })} />
-              <input style={input} placeholder={t.pinMin} type="password" value={regForm.pin} onChange={(e) => setRegForm({ ...regForm, pin: e.target.value })} />
-              <input style={input} placeholder={t.confirmPin} type="password" value={regForm.pin2} onChange={(e) => setRegForm({ ...regForm, pin2: e.target.value })} />
+              <PasswordInput style={input} placeholder={t.pinMin} value={regForm.pin} onChange={(e) => setRegForm({ ...regForm, pin: e.target.value })} />
+              <PasswordInput style={input} placeholder={t.confirmPin} value={regForm.pin2} onChange={(e) => setRegForm({ ...regForm, pin2: e.target.value })} />
               <br />
               <button style={btn} onClick={registerBusiness}>{t.authRegisterButton}</button>
             </div>
@@ -954,8 +955,8 @@ export default function EmpresaPage() {
         <div style={card}>
           <h3>{t.defineNewPasswordTitle}</h3>
           <p style={{ fontSize: 13 }}>{t.defineNewPasswordNotice}</p>
-          <input style={input} type="password" placeholder={t.newPassword} value={newPin} onChange={(e) => setNewPin(e.target.value)} />
-          <input style={input} type="password" placeholder={t.confirmPassword} value={newPin2} onChange={(e) => setNewPin2(e.target.value)} />
+          <PasswordInput style={input} placeholder={t.newPassword} value={newPin} onChange={(e) => setNewPin(e.target.value)} />
+          <PasswordInput style={input} placeholder={t.confirmPassword} value={newPin2} onChange={(e) => setNewPin2(e.target.value)} />
           <br />
           <button style={btn} onClick={saveNewPin}>{t.saveNewPassword}</button>
           <button style={{ ...btn, background: theme.border, color: theme.text }} onClick={() => setSession(null)}>{t.logout}</button>
@@ -1004,9 +1005,8 @@ export default function EmpresaPage() {
 
                   {resetandoPin === d.driverId && (
                     <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <input
+                      <PasswordInput
                         style={input}
-                        type="password"
                         inputMode="numeric"
                         placeholder={t.driversResetPinNew ?? 'Novo PIN (4 a 8 dígitos)'}
                         value={pinNovo}

@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Header from '../components/Header';
+import PasswordInput from '../components/PasswordInput';
 import ModuleSplash from '../components/ModuleSplash';
 import { useLanguage } from '../../lib/LanguageContext';
 import { theme } from '../../lib/theme';
@@ -523,10 +524,10 @@ export default function MotoristaPage() {
             {pending.pinToken ? (
               <>
                 <label style={label} htmlFor="pin">{t.pinLabel}</label>
-                <input id="pin" style={input} type="password" inputMode="numeric" value={pinForm.pin}
+                <PasswordInput id="pin" style={input} inputMode="numeric" value={pinForm.pin}
                   onChange={(e) => setPinForm({ ...pinForm, pin: e.target.value })} />
                 <label style={label} htmlFor="pin2">{t.pinConfirm}</label>
-                <input id="pin2" style={input} type="password" inputMode="numeric" value={pinForm.pin2}
+                <PasswordInput id="pin2" style={input} inputMode="numeric" value={pinForm.pin2}
                   onChange={(e) => setPinForm({ ...pinForm, pin2: e.target.value })} />
                 <button style={btn} onClick={definirPin} disabled={ocupado}>{t.pinSave}</button>
               </>
@@ -578,7 +579,7 @@ export default function MotoristaPage() {
                 <input id="lphone" style={input} value={login.phone}
                   onChange={(e) => setLogin({ ...login, phone: e.target.value })} />
                 <label style={label} htmlFor="lpin">{t.driverPinLabel}</label>
-                <input id="lpin" style={input} type="password" inputMode="numeric" value={login.pin}
+                <PasswordInput id="lpin" style={input} inputMode="numeric" value={login.pin}
                   onChange={(e) => setLogin({ ...login, pin: e.target.value })} />
                 <button style={btn} onClick={entrar} disabled={ocupado}>{t.driverEnter}</button>
               </div>

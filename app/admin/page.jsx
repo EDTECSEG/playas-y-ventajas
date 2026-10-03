@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '../../lib/LanguageContext';
 import Header from '../components/Header';
+import PasswordInput from '../components/PasswordInput';
 import ModuleSplash from '../components/ModuleSplash';
 import { theme } from '../../lib/theme';
 import { saveAdminSession, loadAdminSession, clearAdminSession, ADMIN_MODULES_PATH, isAdminRole } from '../../lib/adminModules';
@@ -296,7 +297,7 @@ export default function AdminPage() {
         <div style={card}>
           <h3>{t.login}</h3>
           <input style={input} placeholder={t.user} value={loginForm.internalCode} onChange={(e) => setLoginForm({ ...loginForm, internalCode: e.target.value })} />
-          <input style={input} placeholder={t.pin} type="password" value={loginForm.pin} onChange={(e) => setLoginForm({ ...loginForm, pin: e.target.value })} />
+          <PasswordInput style={input} placeholder={t.pin} value={loginForm.pin} onChange={(e) => setLoginForm({ ...loginForm, pin: e.target.value })} />
           <button style={btn} onClick={login}>{t.enter}</button>
           {msg && <p style={{ fontSize: 13, color: '#c0392b' }}>{msg}</p>}
         </div>
@@ -336,7 +337,7 @@ export default function AdminPage() {
         <button style={smallBtn} onClick={useMyLocation}>{t.useLocation}</button>
         <br />
         <input style={input} placeholder={t.loginCode} value={form.ownerInternalCode} onChange={(e) => setForm({ ...form, ownerInternalCode: e.target.value })} />
-        <input style={input} placeholder={t.pinMin} value={form.ownerPin} onChange={(e) => setForm({ ...form, ownerPin: e.target.value })} />
+        <PasswordInput style={input} placeholder={t.pinMin} value={form.ownerPin} onChange={(e) => setForm({ ...form, ownerPin: e.target.value })} />
         <select style={input} value={form.billingPlan} onChange={(e) => setForm({ ...form, billingPlan: e.target.value })}>
           <option value="FREE">{t.freePlan}</option>
           <option value="BASIC">{t.basicPlan}</option>
