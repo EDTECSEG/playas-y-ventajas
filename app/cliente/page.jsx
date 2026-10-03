@@ -206,6 +206,85 @@ function timeAgo(iso, t) {
   return (t.timeAgoHour ?? 'há {n} h').replace('{n}', Math.round(mins / 60));
 }
 
+// ---------------------------------------------------------------------------
+// CHAVE DE IDEMPOTENCIA DO RESGATE
+// ---------------------------------------------------------------------------
+// Resgatar cupom EMITE um cupom e CONSOME estoque. Se a rede cair depois que o
+// servidor ja fez isso, a tela mostra erro, o cliente nao tem cupom nenhum e
+// ao tocar de novo sem chave a RPC emite OUTRO cupom: estoque contado duas
+// vezes, dois QR, e o limite de 3 por template consumido sem o cliente querer.
+//
+// A RPC resolve isso em `p_idempotency_key`: mesma chave devolve o MESMO
+// cupom, com `idempotent: true`. Para isso a chave precisa:
+//
+//   - ser a MESMA entre o clique original e o retry. Por isso vai para
+//     sessionStorage (sobrevive a F5 e a trocar de aba na mesma sessao) e nao
+//     para um useRef, que se perderia no reload -- justamente o cenario em que
+//     o cliente recebe o erro e recarrega a pagina para tentar de novo;
+//   - ser DIFERENTE entre dois resgates legitimos do mesmo template. Como o
+//     limite e 3 por template, resgatar duas vezes e duas compras distintas, e
+//     reusar a chave transformaria a segunda em replay da primeira. Por isso
+//     ela e apagada quando a resposta chega;
+//   - nao sobreviver para sempre. Por isso o TTL: uma chave velha demais nao
+//     deve mais "casar" com um resgate novo.
+//
+// A chave tambem nao pode ser adivinhavel. Quem acertasse a chave de outra
+// pessoa e chamasse a RPC com o proprio telefone receberia do cache o
+// `rawToken` do cupom alheio. Por isso 128 bits de crypto.getRandomValues e,
+// na falta dele, `null` -- o resgate segue sem chave (comportamento de sempre,
+// nunca travado) em vez de usar uma chave adivinhavel.
+//
+// Duas toques rapidos no botao enviam a MESMA chave (a segunda leitura ve a
+// chave da primeira), e a segunda vira replay em vez decupom duplicado.
+const CLAIM_KEYS_STORAGE = 'pyv_claim_keys';
+const CLAIM_KEY_TTL_MS = 30 * 60 * 1000;
+
+function newClaimKey() {
+  try {
+    const c = typeof window !== 'undefined' ? window.crypto : null;
+    if (c && typeof c.getRandomValues === 'function') {
+      const b = new Uint8Array(16);
+      c.getRandomValues(b);
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    }
+  } catch (e) { /* sem crypto */ }
+  return null;
+}
+
+function readClaimKeys() {
+  try { return JSON.parse(sessionStorage.getItem(CLAIM_KEYS_STORAGE) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+
+// Chave viva para este template, ou uma nova. Mantem o timestamp original de
+// proposito: o TTL conta desde a primeira tentativa, nao desde o ultimo retry,
+// senao uma tentativa arrastada nunca expira.
+function claimKeyFor(templateId) {
+  const fresh = newClaimKey();
+  if (!fresh) return null;
+  try {
+    const all = readClaimKeys();
+    const prev = all[templateId];
+    const viva = prev && typeof prev.k === 'string' && prev.k.length > 0 && prev.k.length <= 200
+      && Number.isFinite(prev.ts) && Date.now() - prev.ts < CLAIM_KEY_TTL_MS;
+    if (viva) return prev.k;
+    all[templateId] = { k: fresh, ts: Date.now() };
+    sessionStorage.setItem(CLAIM_KEYS_STORAGE, JSON.stringify(all));
+    return fresh;
+  } catch (e) {
+    return null;
+  }
+}
+
+function clearClaimKey(templateId) {
+  try {
+    const all = readClaimKeys();
+    if (!(templateId in all)) return;
+    delete all[templateId];
+    sessionStorage.setItem(CLAIM_KEYS_STORAGE, JSON.stringify(all));
+  } catch (e) { /* sem storage */ }
+}
+
 export default function ClientePage() {
   const { lang, t } = useLanguage();
   const [phone, setPhone] = useState('');
@@ -599,12 +678,45 @@ export default function ClientePage() {
     const effEmail = email || saved.email || '';
     let ref;
     try { ref = localStorage.getItem('pyv_ref') || undefined; } catch (e) { /* sem referido */ }
-    const res = await fetch('/.netlify/functions/claim-coupon', {
-      method: 'POST',
-      body: JSON.stringify({ tenantId: TENANT_ID, templateId, phone: effPhone, name: effName, instagram: effInstagram, email: effEmail, ref }),
-    });
-    const data = await res.json();
-    if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
+
+    // Ver a nota da chave de idempotencia no topo do arquivo. `idempotencyKey`
+    // so entra no corpo quando existe: sem crypto ou sem storage, o resgate
+    // segue sem chave, que e como sempre foi.
+    const idempotencyKey = claimKeyFor(templateId);
+
+    let res;
+    try {
+      res = await fetch('/.netlify/functions/claim-coupon', {
+        method: 'POST',
+        body: JSON.stringify({
+          tenantId: TENANT_ID, templateId, phone: effPhone, name: effName,
+          instagram: effInstagram, email: effEmail, ref,
+          ...(idempotencyKey ? { idempotencyKey } : {}),
+        }),
+      });
+    } catch (e) {
+      // Rede caiu. NAO sabemos se o servidor chegou a emitir o cupom, entao a
+      // chave e mantida de proposito: o proximo toque devolve o MESMO cupom em
+      // vez de emitir outro. Antes desta guarda o fetch sem try/catch lancava
+      // rejeicao nao tratada e a tela nao mostrava nada.
+      setMsg(t.claimNetworkFail ?? 'Não foi possível conectar. Verifique sua internet e toque em resgatar de novo — não será emitido um segundo cupom.');
+      return;
+    }
+
+    let data = null;
+    try { data = await res.json(); } catch (e) { data = null; }
+
+    // Desfecho DEFINIDO (2xx, ou 4xx recusando o pedido) libera a chave: a
+    // tentativa acabou. Desfecho INDECIFIDO (5xx, corpo que nao e JSON, gateway
+    // no meio) mantem a chave, porque o cupom pode ter sido emitido e o retry
+    // tem de ser o replay dele. 429 e 4xx e nao emitiu cupom, entao liberar
+    // aqui e seguro.
+    if (res.ok || (res.status >= 400 && res.status < 500)) clearClaimKey(templateId);
+
+    if (!res.ok || !data || data.error) {
+      setMsg(`Erro: ${(data && data.error) || (t.claimGenericFail ?? 'não foi possível concluir o resgate')}`);
+      return;
+    }
     if (data.referral) { try { localStorage.removeItem('pyv_ref'); } catch (e) { /* sem referido */ } }
     localStorage.setItem('pyv_customer', JSON.stringify({ ...saved, phone: effPhone, name: effName, instagram: effInstagram, email: effEmail, customerId: data.customerId, customerToken: data.customerToken }));
     const tokens = JSON.parse(localStorage.getItem('pyv_coupon_tokens') || '{}');

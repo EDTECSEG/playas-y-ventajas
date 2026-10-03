@@ -73,7 +73,7 @@ async function loadOfferContext(supabase, templateId) {
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return { statusCode: 405, body: '{}' };
   try {
-    const { templateId, phone, name, instagram, email, ref } = JSON.parse(event.body || '{}');
+    const { templateId, phone, name, instagram, email, ref, idempotencyKey } = JSON.parse(event.body || '{}');
     if (!templateId || !phone) return { statusCode: 400, body: JSON.stringify({ error: 'templateId, phone obrigatórios' }) };
     const ip = clientIp(event);
     const limit = rateLimit(`claim:${ip}`, CLAIM_MAX, CLAIM_WINDOW_MS);
@@ -81,9 +81,30 @@ exports.handler = async (event) => {
     const supabase = getSupabaseAdminClient();
 
     // ---------- CAMINHO CRITICO (dinheiro). Nao tocar. ----------
+    // Chave de idempotencia: o parametro e OPCIONAL na RPC (p_idempotency_key
+    // DEFAULT NULL). Sem chave, o comportamento e o de antes, bit a bit.
+    //
+    // DIVERGENCIA PROPOSITAL de validate_and_redeem_coupon, que usa
+    // `body.idempotencyKey || randomUUID()`. Aqui isso NAO pode ser copiado:
+    // uma chave gerada no servidor e unica por requisicao, logo nunca sera
+    // lida de volta por um replay. O efeito seria escrever uma linha em
+    // idempotency_keys a CADA resgate -- guardando o rawToken do cupom em
+    // texto claro, sem TTL e sem cleanup -- sem nunca converter um retry em
+    // replay. Custo e retencao de segredo crescentes, beneficio zero.
+    //
+    // O cache so vale se a chave vier do CLIENTE e for estavel entre retries.
+    // Por isso passamos a chave como veio, ou null.
+    //
+    // Tamanho limitado porque o valor e gravado em
+    // idempotency_keys.idempotency_key (coluna text). Chave fora do formato
+    // e degradada para null, o que devolve o resgate ao comportamento antigo.
+    // Num caminho de dinheiro, degradar e melhor que devolver 400 e travar o
+    // resgate do cliente por causa de um campo opcional.
+    const rawKey = typeof idempotencyKey === 'string' ? idempotencyKey.trim() : '';
+    const idemKey = rawKey.length > 0 && rawKey.length <= 200 ? rawKey : null;
     const { data, error } = await supabase.rpc('claim_coupon', {
       p_tenant_id: TENANT_ID, p_template_id: templateId, p_customer_phone: phone, p_customer_name: name || '',
-      p_customer_instagram: instagram || null, p_customer_email: email || null,
+      p_customer_instagram: instagram || null, p_customer_email: email || null, p_idempotency_key: idemKey,
     });
     if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
     // ---------- FIM DO CAMINHO CRITICO ----------
