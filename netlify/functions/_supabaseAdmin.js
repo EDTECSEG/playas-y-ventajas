@@ -64,6 +64,26 @@ function rpcErrorCode(error) {
   return String((error && error.message) || '').split(':')[0].trim();
 }
 
+// Para os endpoints que NAO tem regra de negocio propria e precisam responder
+// "algo deu errado" sem repassar a mensagem do Postgres. Ela e texto livre e
+// costuma carregar nome de tabela, coluna ou constraint -- `relation
+// "public.coupons" does not exist` entrega o schema do banco para quem le a
+// resposta. O campo `code` e o SQLSTATE: um codigo curto de catalogo, que vem
+// da camada de banco e nunca do texto do usuario, e por isso e o unico campo
+// do erro que o cliente pode ler com seguranca.
+//
+// Diferente de rpcErrorCode, que le a mensagem porque aqui os codigos das
+// regras de negocio (PHONE_ALREADY_REGISTERED etc.) sao mesmo escritos por
+// `raise exception 'CODIGO: detalhe'`. Aqui nao ha codigo de regra: o que ha e
+// falha de infraestrutura.
+const SAFE_SQLSTATE = /^[A-Z0-9]{3,10}$/;
+
+function safeRpcError(error, fallback) {
+  const code = error && error.code;
+  if (typeof code === 'string' && SAFE_SQLSTATE.test(code)) return code;
+  return fallback || 'RPC_ERROR';
+}
+
 // HTTP status por codigo de regra de negocio. Sem isto, tudo vira 400 e o
 // cliente nao distingue "digitei errado" de "espera 1 hora" de "sem permissao".
 const RPC_ERROR_STATUS = {
@@ -100,4 +120,4 @@ function rpcErrorStatus(error) {
   return RPC_ERROR_STATUS[rpcErrorCode(error)] || 400;
 }
 
-module.exports = { getSupabaseAdminClient, resolveSession, extractSessionToken, buildCustomerToken, verifyCustomerToken, rpcErrorCode, rpcErrorStatus };
+module.exports = { getSupabaseAdminClient, resolveSession, extractSessionToken, buildCustomerToken, verifyCustomerToken, rpcErrorCode, rpcErrorStatus, safeRpcError };
