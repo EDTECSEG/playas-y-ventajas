@@ -69,11 +69,14 @@ test('sessão admin: salva, carrega e limpa', () => {
   assert.strictEqual(m.loadAdminSession(), null);
 });
 
-test('sessão admin: ausente e corrompida viram null', () => {
+test('sessão admin fica só em memória (não vai para sessionStorage)', () => {
+  m.clearAdminSession();
   global.window.sessionStorage.clear();
   assert.strictEqual(m.loadAdminSession(), null);
-  global.window.sessionStorage.setItem(m.ADMIN_SESSION_KEY, '{corrompido');
-  assert.strictEqual(m.loadAdminSession(), null);
+  m.saveAdminSession({ role: 'ADMIN' });
+  assert.strictEqual(global.window.sessionStorage.getItem('pyv_admin_session'), null, 'nada persistido');
+  assert.deepStrictEqual(m.loadAdminSession(), { role: 'ADMIN' });
+  m.clearAdminSession();
 });
 
 test('catálogo cobre os cinco módulos com href, título e subtítulo', () => {
