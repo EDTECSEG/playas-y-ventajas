@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useLanguage } from '../../lib/LanguageContext';
 import Header from '../components/Header';
 import ModuleSplash from '../components/ModuleSplash';
 import { theme } from '../../lib/theme';
+import { saveAdminSession, loadAdminSession, clearAdminSession, ADMIN_MODULES_PATH, isAdminRole } from '../../lib/adminModules';
 
 const wrap = { maxWidth: 780, margin: '0 auto', padding: '20px 20px 80px', color: theme.text };
 const card = { background: theme.card, color: theme.text, borderRadius: 14, padding: 20, marginBottom: 16, border: `1px solid ${theme.border}`, boxShadow: '0 2px 8px rgba(11,110,79,0.06)' };
@@ -48,6 +50,7 @@ async function uploadImage(file, folder, sessionToken) {
 
 export default function AdminPage() {
   const { t } = useLanguage();
+  const router = useRouter();
   const [splashDone, setSplashDone] = useState(false);
   const [session, setSession] = useState(null);
   const [loginForm, setLoginForm] = useState({ tenantSlug: 'playas-y-ventajas', internalCode: '', pin: '' });
@@ -94,16 +97,25 @@ export default function AdminPage() {
     lat: '', lng: '', ownerInternalCode: '', ownerPin: '', billingPlan: 'FREE',
   });
 
+  useEffect(() => {
+    const saved = loadAdminSession();
+    if (saved && isAdminRole(saved.role)) {
+      setSession(saved);
+      loadBusinesses(saved);
+      loadBilling(saved);
+      loadAffiliates(saved);
+      loadAffiliateRewards(saved);
+    }
+  }, []);
+
   async function login() {
     const res = await fetch('/.netlify/functions/login', { method: 'POST', body: JSON.stringify(loginForm) });
     const data = await res.json();
     if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
-    if (data.role !== 'ADMIN' && data.role !== 'SUPER_ADMIN') { setMsg('Este usuário não tem acesso de administrador.'); return; }
+    if (!isAdminRole(data.role)) { setMsg('Este usuário não tem acesso de administrador.'); return; }
     setSession(data);
-    loadBusinesses(data);
-    loadBilling(data);
-    loadAffiliates(data);
-    loadAffiliateRewards(data);
+    saveAdminSession(data);
+    router.replace(ADMIN_MODULES_PATH);
   }
 
   async function loadBusinesses(s) {
@@ -296,7 +308,7 @@ export default function AdminPage() {
   return (
     <main style={{ background: theme.bg, minHeight: '100vh' }}>
       <Header title={t.adminPanel} right={(
-        <button style={{ ...smallBtn, background: '#0B6E4F', color: '#FFFFFF', border: '1px solid rgba(255,255,255,0.6)' }} onClick={() => setSession(null)}>{t.logout}</button>
+        <button style={{ ...smallBtn, background: '#0B6E4F', color: '#FFFFFF', border: '1px solid rgba(255,255,255,0.6)' }} onClick={() => { clearAdminSession(); setSession(null); }}>{t.logout}</button>
       )} />
       <div style={wrap}>
 
