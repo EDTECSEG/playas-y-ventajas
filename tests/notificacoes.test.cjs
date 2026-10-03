@@ -224,7 +224,7 @@ test('notificacoes: env ausente enfileira 1 aviso noop e nao muda a resposta do 
   assert.strictEqual(calls.length, 1, 'exatamente uma chamada a outbound_enqueue');
   assert.strictEqual(calls[0].args.p_event, 'coupon_claimed');
   assert.strictEqual(calls[0].args.p_channel, 'WHATSAPP');
-  assert.strictEqual(calls[0].args.p_tenant_id, 't-1');
+  assert.strictEqual(calls[0].args.p_tenant_id, '0dc57eeb-46c8-47ac-aad4-640d9d59e7b9');
   assert.strictEqual(calls[0].args.p_customer_id, CLAIM.customerId);
   assert.strictEqual(calls[0].args.p_coupon_id, CLAIM.couponId);
   assert.strictEqual(calls[0].args.p_booking_ref, null);

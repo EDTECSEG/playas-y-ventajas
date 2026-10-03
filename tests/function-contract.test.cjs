@@ -34,6 +34,7 @@ const HELPERS = new Set([
   '_mapPlaces.js', // logica Overpass, compartilhada pelos dois handlers de mapa
   '_wa.js',
   '_notify.js', // base de notificacoes (fila/auditoria + adaptador no-op)
+  '_rateLimit.js', // limite de requisicoes por IP nos endpoints publicos
 ]);
 
 const isHelper = (name) => HELPERS.has(name);

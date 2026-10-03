@@ -6,7 +6,32 @@ const { makeFakeSupabase, makeEvent, loadFunction, parseBody } = require('./help
 
 const TENANT = '0dc57eeb-46c8-47ac-aad4-640d9d59e7b9';
 
-test('shuttle exige tenantId e NAO chama nenhuma RPC', async (t) => {
+test('shuttle IGNORA tenantId da query e sempre consulta o tenant fixo (IDOR)', async (t) => {
+  // Regressao: tenantId vinha da query string e ia direto para as RPCs pelo
+  // client de administracao. list_live_vehicles devolve posicao GPS, entao
+  // trocar o UUID por outro expunha a localizacao de outro tenant.
+  const INIMIGO = '11111111-2222-4333-8444-555555555555';
+  const fake = makeFakeSupabase({
+    rpc: async (name) => {
+      if (name === 'list_shuttle_services') return { data: [{ id: 1 }], error: null };
+      if (name === 'list_live_vehicles') return { data: [{ lat: -23.5, lng: -46.6 }], error: null };
+      return { data: null, error: { message: 'unexpected ' + name } };
+    },
+  });
+  const { handler, restore } = loadFunction('shuttle.js', fake);
+  t.after(restore);
+
+  const res = await handler(makeEvent({ query: { tenantId: INIMIGO } }));
+  assert.strictEqual(res.statusCode, 200, 'o parametro nao pode mais barrar a requisicao');
+
+  assert.strictEqual(fake.calls.rpc.length, 2, 'as duas RPCs rodam normalmente');
+  for (const call of fake.calls.rpc) {
+    assert.strictEqual(call.args.p_tenant_id, TENANT, `${call.name} deve usar o tenant fixo`);
+    assert.notStrictEqual(call.args.p_tenant_id, INIMIGO, 'o tenant da query nao pode chegar na RPC');
+  }
+});
+
+test('lat/lng invalidos barram ANTES de qualquer RPC (nada e consultado sem coordenada coerente)', async (t) => {
   const fake = makeFakeSupabase({
     rpc: async (name) => {
       if (name === 'list_shuttle_services' || name === 'list_live_vehicles') return { data: ['vazou'], error: null };
@@ -16,18 +41,9 @@ test('shuttle exige tenantId e NAO chama nenhuma RPC', async (t) => {
   const { handler, restore } = loadFunction('shuttle.js', fake);
   t.after(restore);
 
-  const res = await handler(makeEvent({ query: {} }));
+  const res = await handler(makeEvent({ query: { tenantId: TENANT, lat: '-23.5' } }));
   assert.strictEqual(res.statusCode, 400);
-  assert.strictEqual(fake.calls.rpc.length, 0, 'não deve chamar nenhuma RPC sem tenantId');
-});
-
-test('shuttle sem tenantId devolve 400 com mensagem de contrato', async (t) => {
-  const fake = makeFakeSupabase({ rpc: async () => ({ data: null, error: null }) });
-  const { handler, restore } = loadFunction('shuttle.js', fake);
-  t.after(restore);
-
-  const res = await handler(makeEvent({ query: {} }));
-  assert.strictEqual(parseBody(res).error, 'tenantId obrigatório');
+  assert.strictEqual(fake.calls.rpc.length, 0, 'não deve chamar nenhuma RPC com par de coordenada quebrado');
 });
 
 test('shuttle com lat e sem lng devolve 400 (par coordenado)', async (t) => {
@@ -115,10 +131,24 @@ test('shuttle sem lat/lng chama as RPCs com null (lista completa, sem distancia)
   assert.deepStrictEqual(parseBody(res), { services: [], vehicles: [] });
 });
 
-test('shuttle propaga erro de RPC como 400 sem vazar stack', async (t) => {
+test('shuttle responde 400 com o SQLSTATE e NUNCA com o texto do Postgres', async (t) => {
+  // O teste antigo fixava 'erro do postgres: 42P01', um formato que nao existe
+  // em producao: o PostgREST devolve message separada de code, e a message e
+  // texto livre que nomeia tabela. Pinava o passthrough cru sem nunca poder
+  // falhar pela razao que importa.
   const fake = makeFakeSupabase({
     rpc: async (name) => {
-      if (name === 'list_shuttle_services') return { data: null, error: { message: 'erro do postgres: 42P01' } };
+      if (name === 'list_shuttle_services') {
+        return {
+          data: null,
+          error: {
+            code: '42P01',
+            message: 'relation "public.list_shuttle_services" does not exist',
+            details: null,
+            hint: null,
+          },
+        };
+      }
       return { data: null, error: null };
     },
   });
@@ -127,7 +157,29 @@ test('shuttle propaga erro de RPC como 400 sem vazar stack', async (t) => {
 
   const res = await handler(makeEvent({ query: { tenantId: TENANT, lat: '-1', lng: '-1' } }));
   assert.strictEqual(res.statusCode, 400);
-  assert.strictEqual(parseBody(res).error, 'erro do postgres: 42P01');
+  assert.strictEqual(parseBody(res).error, '42P01', 'o SQLSTATE e util e seguro');
+  assert.ok(!/relation|public\.|does not exist/.test(res.body), 'o texto do Postgres nao pode vazar');
+});
+
+test('shuttle sem SQLSTATE cai num codigo estavel, nunca na mensagem crua', async (t) => {
+  // Sem `code` nao ha nada de confiavel a repassar: a mensagem pode ser qualquer
+  // texto. O fallback e estavel para o cliente tratar, e o motivo real so vai
+  // para o log do servidor.
+  const fake = makeFakeSupabase({
+    rpc: async (name) => {
+      if (name === 'list_live_vehicles') {
+        return { data: null, error: { message: 'violates row-level security policy for table "businesses"' } };
+      }
+      return { data: [], error: null };
+    },
+  });
+  const { handler, restore } = loadFunction('shuttle.js', fake);
+  t.after(restore);
+
+  const res = await handler(makeEvent({ query: { tenantId: TENANT, lat: '-1', lng: '-1' } }));
+  assert.strictEqual(res.statusCode, 400);
+  assert.strictEqual(parseBody(res).error, 'SHUTTLE_UNAVAILABLE');
+  assert.ok(!/businesses|row-level security|violates/.test(res.body), 'nenhum detalhe de schema na resposta');
 });
 
 test('falha inesperada na RPC vira 500 sanitizado', async (t) => {

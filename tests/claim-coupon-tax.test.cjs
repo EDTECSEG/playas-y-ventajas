@@ -26,7 +26,7 @@ function claimFake({ onTax }) {
 }
 
 function makeClaim() {
-  return makeEvent({ method: 'POST', body: { tenantId: 't-1', templateId: 'tmpl-1', phone: '5511999999999' } });
+  return makeEvent({ method: 'POST', body: { tenantId: '0dc57eeb-46c8-47ac-aad4-640d9d59e7b9', templateId: 'tmpl-1', phone: '5511999999999' } });
 }
 
 test('claim-coupon: resgate chama billing_record_coupon_tax com o cupom gerado', async (t) => {
@@ -37,7 +37,7 @@ test('claim-coupon: resgate chama billing_record_coupon_tax com o cupom gerado',
   assert.strictEqual(res.statusCode, 200);
   const tax = fake.calls.rpc.find((c) => c.name === 'billing_record_coupon_tax');
   assert.ok(tax, 'billing_record_coupon_tax deve ser chamado');
-  assert.strictEqual(tax.args.p_tenant_id, 't-1');
+  assert.strictEqual(tax.args.p_tenant_id, '0dc57eeb-46c8-47ac-aad4-640d9d59e7b9');
   assert.strictEqual(tax.args.p_template_id, 'tmpl-1');
   assert.strictEqual(tax.args.p_coupon_id, CLAIM.couponId);
   assert.strictEqual(parseBody(res).couponId, CLAIM.couponId);

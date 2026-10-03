@@ -9,12 +9,12 @@ exports.handler = async (event) => {
       if (!actor.businessId) return { statusCode: 400, body: JSON.stringify({ error: 'ator não vinculado a um estabelecimento' }) };
       if (mode === 'stats') {
         const { data, error } = await supabase.rpc('business_coupon_stats', { p_tenant_id: actor.tenantId, p_business_id: actor.businessId });
-        if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
         return { statusCode: 200, body: JSON.stringify(data) };
       }
       if (mode === 'my-data') {
         const { data, error } = await supabase.rpc('business_get_own', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
-        if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
         return { statusCode: 200, body: JSON.stringify(data) };
       }
       if (mode === 'shuttles') {
@@ -137,7 +137,7 @@ exports.handler = async (event) => {
         };
       }
       const { data, error } = await supabase.rpc('empresa_dashboard', { p_tenant_id: actor.tenantId, p_business_id: actor.businessId });
-      if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+      if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
       return { statusCode: 200, body: JSON.stringify(data) };
     }
 

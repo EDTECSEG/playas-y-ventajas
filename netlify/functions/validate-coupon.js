@@ -1,10 +1,17 @@
-const { getSupabaseAdminClient, resolveSession, extractSessionToken } = require('./_supabaseAdmin');
+const { getSupabaseAdminClient, resolveSession, extractSessionToken, rpcErrorCode } = require('./_supabaseAdmin');
 const { randomUUID } = require('crypto');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
+  // Sem rate limit por IP, de proposito. Diferente de claim/identify/affiliates,
+  // este endpoint exige sessao (resolveSession abaixo) e so enxerga o proprio
+  // tenant: quem chama nao consegue enumerar cupom de outro estabelecimento. O
+  // limite por IP aqui atrapalharia em vez de ajudar -- varios funcionarios da
+  // mesma empresa sao CGNAT no mesmo IP publico e um deles takingdown levaria
+  // junto o balcao inteiro. Se um dia precisar de teto contra forca bruta de
+  // short_code, o contador vai por ator (actor.userId), nunca por IP.
   const supabase = getSupabaseAdminClient();
   try {
     const body = JSON.parse(event.body || '{}');
@@ -28,7 +35,7 @@ exports.handler = async (event) => {
     });
 
     if (error) {
-      const code = (error.message || '').split(':')[0].trim();
+      const code = rpcErrorCode(error);
       console.error('validate-coupon: rpc recusou: ' + (error && error.message));
       return { statusCode: 409, body: JSON.stringify({ error: code || 'COUPON_REJECTED' }) };
     }

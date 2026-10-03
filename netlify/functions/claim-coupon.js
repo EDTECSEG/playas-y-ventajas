@@ -1,4 +1,14 @@
-﻿const { getSupabaseAdminClient, buildCustomerToken } = require('./_supabaseAdmin');
+﻿const { getSupabaseAdminClient, buildCustomerToken, rpcErrorCode } = require('./_supabaseAdmin');
+const TENANT_ID = '0dc57eeb-46c8-47ac-aad4-640d9d59e7b9';
+
+const { rateLimit, clientIp, tooManyAttempts } = require('./_rateLimit');
+
+// 20 por minuto por IP. Generoso de proposito: no 4G/5G brasileiro o CGNAT
+// coloca dezenas de pessoas atras do mesmo IP, e bloquear uma delas e pior do
+// que deixar um robo passar um pouco mais devagar. O script continua barrado
+// em ~99% das requisicoes.
+const CLAIM_MAX = 20;
+const CLAIM_WINDOW_MS = 60 * 1000;
 const { buildCouponMessage, buildWaLink, siteUrl } = require('./_wa');
 const { notifyOutbound } = require('./_notify');
 
@@ -63,16 +73,19 @@ async function loadOfferContext(supabase, templateId) {
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return { statusCode: 405, body: '{}' };
   try {
-    const { tenantId, templateId, phone, name, instagram, email, ref } = JSON.parse(event.body || '{}');
-    if (!tenantId || !templateId || !phone) return { statusCode: 400, body: JSON.stringify({ error: 'tenantId, templateId, phone obrigatórios' }) };
+    const { templateId, phone, name, instagram, email, ref } = JSON.parse(event.body || '{}');
+    if (!templateId || !phone) return { statusCode: 400, body: JSON.stringify({ error: 'templateId, phone obrigatórios' }) };
+    const ip = clientIp(event);
+    const limit = rateLimit(`claim:${ip}`, CLAIM_MAX, CLAIM_WINDOW_MS);
+    if (!limit.allowed) return tooManyAttempts(limit.retryInMs);
     const supabase = getSupabaseAdminClient();
 
     // ---------- CAMINHO CRITICO (dinheiro). Nao tocar. ----------
     const { data, error } = await supabase.rpc('claim_coupon', {
-      p_tenant_id: tenantId, p_template_id: templateId, p_customer_phone: phone, p_customer_name: name || '',
+      p_tenant_id: TENANT_ID, p_template_id: templateId, p_customer_phone: phone, p_customer_name: name || '',
       p_customer_instagram: instagram || null, p_customer_email: email || null,
     });
-    if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
+    if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
     // ---------- FIM DO CAMINHO CRITICO ----------
 
     // ---------- TAXA POR CUPOM (fase 2). Best-effort. ----------
@@ -81,7 +94,7 @@ exports.handler = async (event) => {
     // resposta segue 200 — mesmo contrato do WhatsApp/indicacao abaixo.
     try {
       await supabase.rpc('billing_record_coupon_tax', {
-        p_tenant_id: tenantId, p_template_id: templateId, p_coupon_id: data.couponId,
+        p_tenant_id: TENANT_ID, p_template_id: templateId, p_coupon_id: data.couponId,
       });
     } catch (e) { /* opcional: cobranca acumulada depois */ }
 
@@ -117,7 +130,7 @@ exports.handler = async (event) => {
     if (ref && customerId) {
       try {
         await supabase.rpc('referral_track', {
-          p_tenant_id: tenantId, p_referral_code: ref, p_referred_user_id: customerId,
+          p_tenant_id: TENANT_ID, p_referral_code: ref, p_referred_user_id: customerId,
         });
       } catch (e) { /* segue normal */ }
     }
@@ -131,7 +144,7 @@ exports.handler = async (event) => {
     // separadas -- o jeito mais facil de alguem editar a variavel errada.
     try {
       const { data: converted, error: refErr } = await supabase.rpc('try_referral_convert', {
-        p_tenant_id: tenantId, p_customer_id: customerId,
+        p_tenant_id: TENANT_ID, p_customer_id: customerId,
       });
       if (!refErr) extras.referral = { converted: converted === true, welcomeCouponId: null };
     } catch (e) { /* segue: resgate ja aconteceu */ }
@@ -141,7 +154,7 @@ exports.handler = async (event) => {
         const message = buildCouponMessage({
           publicId, businessName: ctx.businessName, title: ctx.title,
           site: siteUrl(),
-          referralCode: await findReferralCodeOfAffiliate(supabase, tenantId, phone),
+          referralCode: await findReferralCodeOfAffiliate(supabase, TENANT_ID, phone),
         });
         extras.whatsappUrl = buildWaLink({ phone: ctx.businessPhone, message, fallbackMessage: message });
       } catch (e) { /* opcional */ }
@@ -163,7 +176,7 @@ exports.handler = async (event) => {
         customerId: customerId,
         couponId: data.couponId,
         vars: {
-          tenantId: tenantId,
+          tenantId: TENANT_ID,
           title: ctx ? ctx.title : '',
           businessName: ctx ? ctx.businessName : '',
           publicId: publicId,

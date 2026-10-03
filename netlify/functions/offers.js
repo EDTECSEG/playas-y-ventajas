@@ -1,4 +1,4 @@
-const { getSupabaseAdminClient, verifyCustomerToken } = require('./_supabaseAdmin');
+const { getSupabaseAdminClient, verifyCustomerToken, rpcErrorCode } = require('./_supabaseAdmin');
 
 async function withOfferImages(supabase, tenantId, offers) {
   if (!Array.isArray(offers) || offers.length === 0) return offers;
@@ -23,19 +23,19 @@ exports.handler = async (event) => {
 
     if (businessLogoFor) {
       const { data, error } = await supabase.rpc('business_logo_by_id', { p_business_id: businessLogoFor });
-      if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+      if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
       return { statusCode: 200, body: JSON.stringify(data) };
     }
 
     if (mode === 'cities') {
       const { data, error } = await supabase.rpc('list_cities', { p_tenant_id: tenantId });
-      if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+      if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
       return { statusCode: 200, body: JSON.stringify(data) };
     }
 
     if (mode === 'categories') {
       const { data, error } = await supabase.rpc('list_categories', { p_tenant_id: tenantId });
-      if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+      if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
       return { statusCode: 200, body: JSON.stringify(data) };
     }
 
@@ -46,7 +46,7 @@ exports.handler = async (event) => {
         return { statusCode: 401, body: JSON.stringify({ error: 'CUSTOMER_TOKEN_INVALID' }) };
       }
       const { data, error } = await supabase.rpc('list_customer_coupons', { p_tenant_id: tenantId, p_customer_id: customerId });
-      if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+      if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
       return { statusCode: 200, body: JSON.stringify(data) };
     }
 
@@ -58,7 +58,7 @@ exports.handler = async (event) => {
       p_lng: lng ? parseFloat(lng) : null,
       p_radius_km: radiusKm ? parseFloat(radiusKm) : null,
     });
-    if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+    if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
     return { statusCode: 200, body: JSON.stringify(await withOfferImages(supabase, tenantId, data)) };
   } catch (err) {
     console.error('offers: ' + (err && err.message));

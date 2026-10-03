@@ -1,20 +1,32 @@
-﻿// Identifica/cadastra o cliente. O email e guardado como dado opcional, sem
-// verificacao: o envio de email e o OTP foram removidos (ver
-// SECURITY-DECISIONS.md). A identidade valida do cliente e o telefone.
-const { getSupabaseAdminClient, buildCustomerToken } = require('./_supabaseAdmin');
+﻿const { getSupabaseAdminClient, buildCustomerToken, rpcErrorCode } = require('./_supabaseAdmin');
 
 const TENANT_ID = '0dc57eeb-46c8-47ac-aad4-640d9d59e7b9';
+
+const { rateLimit, clientIp, tooManyAttempts } = require('./_rateLimit');
+
+// Mesmos 20/min do resgate. identify_customer cria usuario a cada chamada e nao
+// tem limite no banco: um robo suja a base e ainda forja indicacao via referral_track.
+const IDENTIFY_MAX = 20;
+const IDENTIFY_WINDOW_MS = 60 * 1000;
+
+// Identifica/cadastra o cliente. O email e guardado como dado opcional, sem
+// verificacao: o envio de email e o OTP foram removidos (ver
+// SECURITY-DECISIONS.md). A identidade valida do cliente e o telefone.
+
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return { statusCode: 405, body: '{}' };
   try {
     const { phone, name, email, instagram, ref } = JSON.parse(event.body || '{}');
     if (!phone) return { statusCode: 400, body: JSON.stringify({ error: 'telefone obrigat\u00f3rio' }) };
+    const ip = clientIp(event);
+    const limit = rateLimit(`identify:${ip}`, IDENTIFY_MAX, IDENTIFY_WINDOW_MS);
+    if (!limit.allowed) return tooManyAttempts(limit.retryInMs);
     const supabase = getSupabaseAdminClient();
     const { data, error } = await supabase.rpc('identify_customer', {
       p_tenant_id: TENANT_ID, p_phone: phone, p_name: name || null, p_email: email || null, p_instagram: instagram || null,
     });
-    if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+    if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
 
     // Vincula cliente <-> afiliado (migration affiliate-link-customer).
     // Se o telefone recem-identificado tambem e afiliado, guarda o

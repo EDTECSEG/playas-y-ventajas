@@ -1,4 +1,4 @@
-const { getSupabaseAdminClient, resolveSession, extractSessionToken } = require('./_supabaseAdmin');
+const { getSupabaseAdminClient, resolveSession, extractSessionToken, rpcErrorCode } = require('./_supabaseAdmin');
 
 exports.handler = async (event) => {
   const supabase = getSupabaseAdminClient();
@@ -9,31 +9,31 @@ exports.handler = async (event) => {
       if (actor.role !== 'ADMIN' && actor.role !== 'SUPER_ADMIN') return { statusCode: 403, body: JSON.stringify({ error: 'FORBIDDEN' }) };
       if (mode === 'billing') {
         const { data, error } = await supabase.rpc('admin_billing_panel', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
-        if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
         return { statusCode: 200, body: JSON.stringify(data) };
       }
       if (mode === 'featured') {
         const { data, error } = await supabase.rpc('admin_featured_ranks', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
-        if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
         return { statusCode: 200, body: JSON.stringify(data) };
       }
       if (mode === 'customers') {
         const { data, error } = await supabase.rpc('admin_list_customers', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_search: search || null });
-        if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
         return { statusCode: 200, body: JSON.stringify(data) };
       }
       if (mode === 'affiliates') {
         const { data, error } = await supabase.rpc('admin_affiliate_report', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
-        if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
         return { statusCode: 200, body: JSON.stringify(data) };
       }
       if (mode === 'affiliate-rewards') {
         const { data, error } = await supabase.rpc('admin_get_affiliate_rewards', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
-        if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+        if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
         return { statusCode: 200, body: JSON.stringify({ config: data }) };
       }
       const { data, error } = await supabase.rpc('admin_list_businesses', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
-      if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+      if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
       return { statusCode: 200, body: JSON.stringify(data) };
     }
 

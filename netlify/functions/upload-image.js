@@ -1,4 +1,4 @@
-const { getSupabaseAdminClient, resolveSession, extractSessionToken } = require('./_supabaseAdmin');
+const { getSupabaseAdminClient, resolveSession, extractSessionToken , rpcErrorCode } = require('./_supabaseAdmin');
 const { randomUUID } = require('crypto');
 
 const MAX_BYTES = 6 * 1024 * 1024; // 6 MB
@@ -44,7 +44,7 @@ exports.handler = async (event) => {
 
     const path = `${safeFolder}/${randomUUID()}.${ext}`;
     const { error } = await supabase.storage.from('pyv-images').upload(path, buffer, { contentType, upsert: false });
-    if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+    if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
 
     const { data: pub } = supabase.storage.from('pyv-images').getPublicUrl(path);
     return { statusCode: 200, body: JSON.stringify({ url: pub.publicUrl }) };

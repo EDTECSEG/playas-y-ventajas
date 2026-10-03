@@ -2,9 +2,18 @@
 // Publico, sem sessao: o vinculo e por telefone.
 //   POST /  { name, phone, email?, kind? }   -> affiliate_register
 //   GET  /?affiliateId=..&phone=..           -> affiliate_dashboard
-const { getSupabaseAdminClient } = require('./_supabaseAdmin');
+const { getSupabaseAdminClient, rpcErrorCode } = require('./_supabaseAdmin');
 
 const TENANT_ID = '0dc57eeb-46c8-47ac-aad4-640d9d59e7b9';
+
+const { rateLimit, clientIp, tooManyAttempts } = require('./_rateLimit');
+
+// 10 por 5 min. affiliate_register grava em public.affiliates e nao tem limite
+// no banco. Pode ser apertado mais que o resgate porque o proprio cliente
+// guarda o link em localStorage (ensureInvite em app/cliente): uma pessoa de
+// verdade chama uma vez, nao a cada page load.
+const AFFILIATE_MAX = 10;
+const AFFILIATE_WINDOW_MS = 5 * 60 * 1000;
 
 // Deduplicacao SEMPRE em digitos. A busca anterior era igualdade exata no
 // texto do telefone, entao "22 99833-6286" e "22 99833-6286 " (espaco no
@@ -22,6 +31,9 @@ const KINDS = ['customer', 'driver', 'business'];
 
 exports.handler = async (event) => {
   try {
+    const ip = clientIp(event);
+    const limit = rateLimit(`affiliate:${ip}`, AFFILIATE_MAX, AFFILIATE_WINDOW_MS);
+    if (!limit.allowed) return tooManyAttempts(limit.retryInMs);
     const supabase = getSupabaseAdminClient();
 
     if (event.httpMethod === 'POST') {
@@ -49,7 +61,7 @@ exports.handler = async (event) => {
         p_tenant_id: TENANT_ID, p_name: name, p_phone: phone,
         p_email: email || null, p_kind: KINDS.includes(kind) ? kind : 'customer',
       });
-      if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
+      if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
       return { statusCode: 200, body: JSON.stringify(data) };
     }
 
@@ -59,7 +71,7 @@ exports.handler = async (event) => {
       const { data, error } = await supabase.rpc('affiliate_dashboard', {
         p_tenant_id: TENANT_ID, p_affiliate_id: affiliateId, p_phone: phone,
       });
-      if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+      if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
       // Sem match de telefone/afiliado o dashboard vem null: devolve vazio.
       const dash = data || {};
 

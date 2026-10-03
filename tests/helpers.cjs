@@ -100,6 +100,10 @@ function makeEvent({ method = 'GET', query = {}, headers = {}, body } = {}) {
 function loadFunction(fileName, fakeClient) {
   const restore = installSupabaseMock(fakeClient);
   clearRequireCache(path.join(ROOT, 'netlify', 'functions', '_supabaseAdmin.js'));
+  // O contador de requisicoes vive no modulo. Sem limpar o cache aqui o
+  // balde de um teste vaza para o seguinte: todos os eventos de teste usam o
+  // mesmo x-forwarded-for, entao o teste N+1 receberia 429 do teste N.
+  clearRequireCache(path.join(ROOT, 'netlify', 'functions', '_rateLimit.js'));
   clearRequireCache(path.join(ROOT, 'netlify', 'functions', fileName));
   const fn = require(path.join(ROOT, 'netlify', 'functions', fileName));
   return { handler: fn.handler, restore };

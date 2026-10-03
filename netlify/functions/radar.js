@@ -1,4 +1,4 @@
-const { getSupabaseAdminClient } = require('./_supabaseAdmin');
+const { getSupabaseAdminClient , rpcErrorCode } = require('./_supabaseAdmin');
 
 exports.handler = async (event) => {
   try {
@@ -8,7 +8,7 @@ exports.handler = async (event) => {
     const { data, error } = await supabase.rpc('find_nearby_businesses', {
       p_tenant_id: tenantId, p_lat: parseFloat(lat), p_lng: parseFloat(lng), p_radius_km: parseFloat(radiusKm) || 20,
     });
-    if (error) return { statusCode: 400, body: JSON.stringify({ error: error.message }) };
+    if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
     return { statusCode: 200, body: JSON.stringify(data) };
   } catch (err) {
     console.error('radar: ' + (err && err.message));
