@@ -610,3 +610,82 @@ público ereporta o estado, mas **ninguém está olhando**. Se isso incomodar, a
 
 Responsável pela decisão: usuário do projeto ("cortar de vez o envio por email e
 efetuar todos os envios pelo whatsapp").
+
+# Decisão de risco registrada — cifragem em repouso do `rawToken` com chave no mesmo banco (2026-10-03)
+
+## Contexto
+`idempotency_keys` guarda o resultado de cada operação idempotente. Em
+`operation='coupon.claim'` esse resultado carrega o `rawToken` do cupom — o mesmo
+valor que vai no QR e dá direito ao desconto. Verificado em 2026-10-03: o papel
+`service_role` tem `SELECT` na tabela.
+
+Ou seja, **uma leitura parcial expurrava todos os tokens ativos de uma vez**. Não
+precisa ser um comprometimento: basta uma chave de serviço vazada, um job de BI,
+um `SELECT` acidental em um dump parcial, ou uma linha de query em log.
+
+Até 2026-09-29, `coupon.validate` também guardava nome e telefone do cliente em
+`result`, sem prazo de expiração. A p3 (2026-10-03) passou a gravar uma linha por
+resgate, o que passou a reter segredo indefinidamente.
+
+## Decisão
+Cifrar em repouso **apenas** `coupon.claim`, com chave simétrica de 256 bits
+(`pgcrypto`, AES-256) em tabela separada:
+
+- `idempotency_keys.result_enc bytea` recebe o resultado cifrado; `result` fica
+  nullable; CHECK XOR exige exatamente um dos dois preenchido.
+- `public.idempotency_keys_secret` guarda a chave, com `REVOKE ALL` de
+  `public, anon, authenticated, service_role`. `service_role` continua lendo
+  `idempotency_keys` e por isso **não** consegue ler a chave.
+- `coupon.validate` **não** foi tocada: ali o que há é nome e telefone, não
+  segredo.
+
+A restrição que fixou essa separação é técnica: `claim_coupon` é `SECURITY
+DEFINER` (roda como `postgres`, dono da chave), mas `validate_and_redeem_coupon` é
+`SECURITY INVOKER` e executa como `service_role`, que não leria uma chave restrita.
+Cifrar as duas exigiria dar a chave ao `service_role` — o que anula o ganho — ou
+promover a função a `DEFINER`, mudando a postura de RLS numa rota de dinheiro.
+Fora de escopo, por escolha.
+
+## Risco explicado e aceito
+A chave está **no mesmo banco** dos dados. Portanto **isto não protege**:
+
+- **dump completo do banco**: leva a tabela e a chave juntas, e um `pg_dump`
+  restaurado em outro lugar lê os tokens;
+- **acesso de superusuário** ou comprometimento do próprio Postgres;
+- **quem chamar `claim_coupon` com a chave de idempotência certa**: o replay
+  decifra e devolve o token por design. É um modelo de *capacidade*, não de
+  autenticação. A chave tem 128 bits de `crypto.getRandomValues` no navegador, o
+  que torna o palpite inviável — mas quem a tem, tem o token.
+
+O que **de fato** fecha: réplica somente-leitura, export de tabela, job de BI,
+log de query, ferramenta que lê `idempotency_keys` sem saber da tabela de chaves.
+É o cenário comum, e o `rawToken` em claro some de todos eles.
+
+A proteção real contra dump exigiria chave fora do banco (KMS externo, ou
+`vault` do Supabase com segredo que não viaje no dump). Isso foi avaliado e
+descartado agora: `vault` no Supabase guarda o segredo em um schema do **mesmo**
+banco, então não resolve o caso do dump, e trazer um KMS externo para um projeto
+de um dono só não se justifica no custo de operação.
+
+## Mitigação que permanece ativa
+- Retenção de **7 dias** para as duas operações (`p4`), por decisão do dono:
+  tokens e PII somem juntos, com o cron `purge-idempotency-keys`.
+- `claim_coupon` responde `IDEMPOTENCY_UNAVAILABLE` se a chave faltar, e o erro do
+  `pgcrypto` é capturado para **não** vazar byte de cifra em mensagem.
+- Se a chave for trocada, os replays antigos falham até as linhas saírem pela
+  janela de 7 dias — o cliente tenta de novo sem chave e ganha um cupom novo,
+  limitado por `per_customer_limit`.
+- `tests/idempotency-encryption-guard.test.cjs` trava 26 invariantes do arquivo
+  versionado, com prova por mutação.
+
+## Condição de revisão obrigatória
+Reabrir esta decisão se:
+- O `rawToken` passar a ter validade de longo prazo (o que faria a retenção de
+  7 dias passar a ser o elo fraco, e não a cifragem).
+- Surgir requisito de dump/restauração que não possa carregar a chave junto.
+- O projeto passar a rodar com um KMS externo já disponível.
+- `per_customer_limit` deixar de estar em 3, o que tornaria o custo de perder um
+  replay (cupom duplicado) mais alto.
+
+Responsável pela decisão: usuário do projeto (autorizou "cifrar o `rawToken`"
+depois de comprovada a exposição).
