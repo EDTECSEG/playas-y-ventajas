@@ -36,7 +36,7 @@
 - **Cadastro/login**: código interno + senha (PIN hasheado, lockout por tentativas); sem email/OTP desde a remoção de 2026-09-28.
 - **Painel** (`empresa`): relatório do negócio, dados próprios (`business_get_own`/`business_update_own`), telefone e logo.
 - **Campanhas e cupons**: cria campanha (`create_campaign`) e modelos de cupom (`create_coupon_template`), habilita/desabilita, atualiza e apaga — com benefício, estoque, imagem, modo "passeio" e proximidade.
-- **Gestão de motoristas**: convite (código `business-driver-invite`), lista de cadastros/detalhes, análise de documentos (`driver-review-document`), abertura do arquivo por **URL assinada de 5 min** (`driver-document-url`, storage privado), aprovação/recusa/suspensão.
+- **Gestão de motoristas**: convite (código `business-driver-invite`), lista de cadastros/detalhes, análise de documentos (`driver-review-document`), abertura do arquivo por **URL assinada de 5 min** (`driver-document-url`, storage privado), aprovação/recusa/suspensão e **redefinição de PIN** (`driver-reset-pin`, botão "Redefinir PIN" na aba Motoristas — único caminho de recuperação, já que o app do motorista não troca o próprio PIN).
 - **Validação de cupom** na tela e **troca de PIN** (`business_set_pin`).
 - **Upload de imagem** (`upload-image`): valida base64, MIME e tamanho; storage com path montado no servidor.
 - **Translado (self-service, escrita)**: aba "🚐 Translado" com CRUD dos próprios serviços (`business_save_shuttle_service`, `business_toggle_shuttle_service`, `business_delete_shuttle_service`, `business_list_shuttle_services`) — nome, descrição, tipo (shuttle/transfer/tour), origem/destino com "usar minha localização", preço em reais, horários, dias ativos e paradas (`Rótulo|lat|lng` por linha). Duração da corrida (15..720 min).
@@ -63,7 +63,7 @@ Fluxo completo com lógica pura testada em `app/motorista/logic.js`:
 - **Planos/faturamento**: painel `admin_billing_panel`, troca de plano. **Plano por cupom** (`PER_COUPON`): admin define `billing_fee_cents` no card do negócio; a cada resgate (`claim-coupon`) a taxa é acumulada em `billing_charges` (`coupon_id` preenchido, dedupe por cupom) e vista no painel `billing` — cobrança manual, sem assinatura MP (`billing_mp_prepare` recusa `PER_COUPON` com `PLAN_NOT_SUBSCRIPTION`).
 - **Destaques**: `admin_featured_ranks` / `admin_set_featured`.
 - **Clientes**: busca e edição (nome, email, Instagram, ativo).
-- **Resset de senha** de negócio (PIN temporário) e **reset de PIN de motorista** (`admin_driver_reset_pin`).
+- **Resset de senha** de negócio (PIN temporário, `/admin`) e **reset de PIN de motorista** (`admin_driver_reset_pin`, exposto como `driver-reset-pin` e acionado pela própria empresa em `/empresa` → aba Motoristas).
 
 ## 7. Módulo Afiliado (`/afiliado`)
 

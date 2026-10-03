@@ -105,7 +105,15 @@ Mapa de referência: rota pública → handler Netlify → RPC do Supabase → S
 - `POST` `{ reservationId }` → `driver_complete_shuttle_reservation` (só `confirmed` → `completed`; escopo da frota do motorista) → `{ reservationId, status: 'completed', completedAt }`. 400 `RESERVATION_ID_REQUIRED`.
 
 ### Motorista (`driver-*`, Worker `routes/drivers`)
-Vínculo por telefone: `driver_register`, `driver_set_pin`, `driver_login`, `driver_logout`, `driver_verify_session`, `driver_list_for_business`, `driver_review_document`, `driver_add_document`, `driver_get_document_path` (+ `business_generate_invite`, `business_logo_by_id` usados pela classe). Frontend em `app/motorista` com lógica pura testada em `motorista/logic.js`.
+Vínculo por telefone: `driver_register`, `driver_set_pin`, `driver_login`, `driver_logout`, `driver_verify_session`, `driver_list_for_business`, `driver_review_document`, `driver_add_document`, `driver_get_document_path`, `admin_driver_reset_pin` (+ `business_generate_invite`, `business_logo_by_id` usados pela classe). Frontend em `app/motorista` com lógica pura testada em `motorista/logic.js`.
+
+#### `driver-reset-pin` — redefinição de PIN pela empresa (POST, sessão de empresa)
+`POST /.netlify/functions/driver-reset-pin` com `Authorization: Bearer <sessionToken>` (sessão de **empresa/admin**, a mesma de `driver-review-document`) e corpo `{ driverId, newPin }`.
+- Sem sessão → 401 antes de tocar o banco. `p_actor_user_id` e `p_tenant_id` vêm da sessão, nunca do corpo.
+- `newPin` é validado no handler (4 a 8 dígitos, só número) → 400 `PIN_REQUIRED`/`PIN_INVALID` sem escrita. O PIN nunca volta na resposta nem é logado.
+- Chama `admin_driver_reset_pin` (SECURITY DEFINER): exige papel `MERCHANT`/`ADMIN`/`STAFF`/`SUPER_ADMIN` e escopo `SUPER_ADMIN` = qualquer motorista do tenant, empresa = os próprios + os independentes (`business_id` NULL). `FORBIDDEN` 403, `DRIVER_NOT_FOUND` 404. Erro fora dessa lista não repassa a mensagem do Postgres.
+- Resposta `{ ok, driverId, sessionsRevoked }` com `Cache-Control: no-store`. A RPC derruba as sessões abertas do motorista.
+- É o único caminho de recuperação de PIN: `driver-set-pin` só funciona com o `pinToken` do cadastro, que morre no primeiro uso. SQL: `supabase/fix-admin-driver-reset-pin-role.sql` (papel) + `supabase/modulo4-motoristas.sql` §9.
 
 #### `driver-position` — transmissão de posição do veículo (POST, sessão de motorista)
 `POST /.netlify/functions/driver-position` com `Authorization: Bearer <sessionToken>` e corpo `{ lat, lng, heading?, speedKmh?, shuttleId? }`.

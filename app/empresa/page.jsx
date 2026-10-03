@@ -7,11 +7,14 @@ import ModuleSplash from '../components/ModuleSplash';
 import { theme } from '../../lib/theme';
 
 function loadQrScanner() {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (window.Html5Qrcode) return resolve(window.Html5Qrcode);
     const script = document.createElement('script');
     script.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
     script.onload = () => resolve(window.Html5Qrcode);
+    // Sem onerror a promessa nunca resolve nem rejeita: a tela ficava em
+    // "abrindo camera" para sempre quando a CDN estava fora do ar.
+    script.onerror = () => reject(new Error('falha de rede ao carregar o leitor de QR code'));
     document.body.appendChild(script);
   });
 }
@@ -75,6 +78,12 @@ export default function EmpresaPage() {
   const [driversBusy, setDriversBusy] = useState(false);
   const [rejeitando, setRejeitando] = useState(null);
   const [motivo, setMotivo] = useState('');
+  // Redefinicao de PIN do motorista (driver-reset-pin). `resetandoPin` e o id do
+  // cadastro com o campo aberto; `pinNovo` e o valor digitado pela empresa — o
+  // app do motorista nao tem caminho para trocar o proprio PIN, entao este e o
+  // unico. Nao volta do servidor: o PIN digitado e descartado com o campo.
+  const [resetandoPin, setResetandoPin] = useState(null);
+  const [pinNovo, setPinNovo] = useState('');
   // Servicos de translado do proprio negocio (painel). `shuttleForm` vira o
   // corpo de save_shuttle_service; `stopsText` e uma linha por parada no
   // formato "Rotulo|lat|lng".
@@ -621,6 +630,47 @@ export default function EmpresaPage() {
     }
   }
 
+  // Redefine o PIN de um cadastro. A empresa escolhe o valor e o repassa ao
+  // motorista por fora — o app dele nao tem como trocar o proprio PIN, porque
+  // driver-set-pin so funciona com o token do cadastro, que ja morreu.
+  // O PIN nunca volta do servidor: a resposta traz so ok/driverId.
+  async function resetPin(driverId) {
+    setDriversMsg('');
+    const sess = session;
+    if (!sess?.sessionToken) return;
+    const pin = pinNovo.trim();
+    if (!/^[0-9]{4,8}$/.test(pin)) {
+      setDriversMsg(t.driversResetInvalid ?? 'O novo PIN precisa ter de 4 a 8 dígitos.');
+      return;
+    }
+    setDriversBusy(true);
+    try {
+      const res = await fetch('/.netlify/functions/driver-reset-pin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sess.sessionToken}`,
+        },
+        body: JSON.stringify({ driverId, newPin: pin }),
+      });
+      if (!res.ok) {
+        setDriversMsg(
+          res.status === 403
+            ? (t.driversResetForbidden ?? 'Você não pode redefinir o PIN deste motorista.')
+            : (t.driversResetError ?? 'Não foi possível redefinir o PIN.')
+        );
+        return;
+      }
+      setResetandoPin(null);
+      setPinNovo('');
+      setDriversMsg(t.driversResetOk ?? 'PIN redefinido. As sessões abertas desse motorista foram encerradas.');
+    } catch (e) {
+      setDriversMsg(t.driversResetError ?? 'Não foi possível redefinir o PIN.');
+    } finally {
+      setDriversBusy(false);
+    }
+  }
+
   // --- Fila de reservas de translado ---------------------------------------
   // GET mode=reservations devolve { reservations, count }; a lista carrega
   // telefone de contato e observacao, entao a resposta e no-store. `status` e
@@ -942,6 +992,36 @@ export default function EmpresaPage() {
                   </span>
                 </div>
                 <p style={{ fontSize: 13, opacity: 0.75, margin: '4px 0' }}>{d.phone}</p>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+                  <button
+                    style={{ ...smallBtn, background: theme.border, color: theme.text }}
+                    disabled={driversBusy}
+                    onClick={() => { setResetandoPin(resetandoPin === d.driverId ? null : d.driverId); setPinNovo(''); }}
+                  >
+                    {t.driversResetPin ?? 'Redefinir PIN'}
+                  </button>
+
+                  {resetandoPin === d.driverId && (
+                    <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <input
+                        style={input}
+                        type="password"
+                        inputMode="numeric"
+                        placeholder={t.driversResetPinNew ?? 'Novo PIN (4 a 8 dígitos)'}
+                        value={pinNovo}
+                        onChange={(e) => setPinNovo(e.target.value.replace(/\D/g, ''))}
+                      />
+                      <button
+                        style={smallBtn}
+                        disabled={driversBusy}
+                        onClick={() => resetPin(d.driverId)}
+                      >
+                        {t.driversResetPinConfirm ?? 'Salvar novo PIN'}
+                      </button>
+                    </span>
+                  )}
+                </div>
 
                 {d.documents.map((doc) => (
                   <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>

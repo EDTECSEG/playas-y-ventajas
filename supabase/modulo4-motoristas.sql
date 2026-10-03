@@ -673,6 +673,14 @@ begin
   select * into v_actor from users where id = p_actor_user_id and tenant_id = p_tenant_id;
   if not found then raise exception 'FORBIDDEN'; end if;
 
+  -- Papel antes de escopo. CUSTOMER mora na mesma tabela `users` e tem
+  -- business_id NULL, entao a regra de business_id abaixo nao o segura: para um
+  -- motorista INDEPENDENTE (business_id NULL) ela nunca dispara e a conta de
+  -- cliente passaria. Ver fix-admin-driver-reset-pin-role.sql.
+  if v_actor.role not in ('MERCHANT','ADMIN','STAFF','SUPER_ADMIN') then
+    raise exception 'FORBIDDEN';
+  end if;
+
   select * into v_driver from drivers where id = p_driver_id and tenant_id = p_tenant_id;
   if not found then raise exception 'DRIVER_NOT_FOUND'; end if;
 

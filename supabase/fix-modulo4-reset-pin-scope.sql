@@ -1,5 +1,5 @@
 -- ============================================================
--- PATCH: modulo4-motoristas.sql
+-- PATCH: modulo4-motoristas.sql — SUPERADO, ver nota abaixo
 -- ------------------------------------------------------------
 -- Correcao de escopo em admin_driver_reset_pin.
 --
@@ -24,6 +24,18 @@
 --
 -- Idempotente. Nao mexe em dado nenhum, so troca o corpo da funcao.
 -- RODE DEPOIS de modulo4-motoristas.sql.
+--
+-- ATENCAO — ESTE ARQUIVO ESTA SUPERADO
+-- O corpo abaixo ainda NAO exige papel de empresa: ele so olha business_id, e
+-- CUSTOMER tem business_id NULL. Para um motorista INDEPENDENTE (business_id
+-- NULL) a regra nao dispara, entao a escalatecao continua aberta enquanto o
+-- endpoint driver-reset-pin existir. O estado final da funcao esta em
+-- fix-admin-driver-reset-pin-role.sql, que precisa rodar DEPOIS deste.
+--
+-- O arquivo fica no repo em vez de ser apagado porque ele e o registro do que
+-- ja rodou em bancos ja migrados. `tests/driver-reset-pin.test.cjs` aceita um
+-- corpo sem papel SO neste arquivo, e so porque ele carrega este aviso — se o
+-- aviso sumir, o teste falha.
 -- ============================================================
 
 DROP FUNCTION IF EXISTS public.admin_driver_reset_pin(uuid, uuid, uuid, text);

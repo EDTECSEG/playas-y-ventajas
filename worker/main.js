@@ -65,6 +65,7 @@ import driverReviewDocument from '../netlify/functions/driver-review-document.js
 import driverAddDocument from '../netlify/functions/driver-add-document.js';
 import driverListForBusiness from '../netlify/functions/driver-list-for-business.js';
 import driverDocumentUrl from '../netlify/functions/driver-document-url.js';
+import driverResetPin from '../netlify/functions/driver-reset-pin.js';
 import driverPosition from '../netlify/functions/driver-position.js';
 import shuttleReservation from '../netlify/functions/shuttle-reservation.js';
 import driverShuttleRuns from '../netlify/functions/driver-shuttle-runs.js';
@@ -121,6 +122,11 @@ const ROUTES = {
   'business-driver-invite': businessDriverInvite,
   'driver-review-document': driverReviewDocument,
   'driver-add-document': driverAddDocument,
+  // Recuperacao de PIN pela empresa: o motorista define o PIN uma vez, no
+  // cadastro, e o token que autorizava a troca morre depois. Sem esta rota o
+  // motorista que esquece o PIN nao tem volta. Entra junto das duas de revisao
+  // acima porque e o mesmo ator (sessao da empresa) e a mesma RPC de escopo.
+  'driver-reset-pin': driverResetPin,
   // Revisao pela empresa: pendencias e o arquivo sob demanda.
   'driver-list-for-business': driverListForBusiness,
   'driver-document-url': driverDocumentUrl,
