@@ -105,9 +105,12 @@ jobs:
       # `fetch` global. Pular a instalacao remove uma etapa que poderia
       # falhar por motivo sem relacao com seguranca.
       - name: Avisa se as variaveis nao estiverem configuradas
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
         run: |
-          if [ -z "${{ vars.SUPABASE_URL }}" ] || [ -z "${{ vars.SUPABASE_ANON_KEY }}" ]; then
-            echo "::warning::Gate de RLS SEM EFITO: defina SUPABASE_URL e SUPABASE_ANON_KEY em Settings > Secrets and variables > Actions > Variables. O teste foi skipped, nada foi verificado."
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::warning::Gate de RLS SEM EFETO: defina SUPABASE_URL e SUPABASE_ANON_KEY em Settings > Secrets and variables > Actions > Variables. O teste foi skipped, nada foi verificado."
           fi
 
       - name: Verifica exposicao da chave anon
