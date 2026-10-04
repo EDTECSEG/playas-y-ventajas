@@ -689,3 +689,110 @@ Reabrir esta decisão se:
 
 Responsável pela decisão: usuário do projeto (autorizou "cifrar o `rawToken`"
 depois de comprovada a exposição).
+
+---
+
+# Decisão registrada - o RLS é redinte de segurança, não a fronteira do app (2026-10-04)
+
+## Contexto
+A auditoria de 2026-10-04 procurou endurecer o RLS e encontrou um desenho que
+convida ao erro. Estado verificado no banco:
+
+- **25 tabelas de app** com `relrowsecurity = true`, todas `owner = postgres`,
+  todas com `relforcerowsecurity = false`.
+- **8 delas têm policy** `PERMISSIVE ... TO public`:
+  `audit_logs`, `businesses`, `campaigns`, `coupon_templates`, `coupons`,
+  `idempotency_keys`, `tenants` (só SELECT, `self_tenant_only`) e `users`.
+- O `USING` de todas elas é `current_setting('app.current_tenant_id', true)`.
+- **`app.current_tenant_id` não é definido em lugar nenhum do código.** A
+  variável resolve para `NULL`, o qual não casa com nenhuma linha, e o RLS nega
+  tudo. As outras 17 tabelas não têm policy nenhuma, e negam por definition.
+
+Medido de verdade com `SET ROLE anon` e `SET ROLE authenticated`:
+`coupons`, `users` e `businesses` devolvem **0 linhas** para os dois papéis.
+`anon` e `authenticated` têm `rolbypassrls = false` e `row_security = on`.
+
+Ou seja: **a barreira é real, mas é acidental.** Ela existe porque uma variável
+de sessão nunca é setada, não porque o isolamento de tenant esteja implementado.
+
+`public.spatial_ref_sys` (RLS desligada) **não** é tratada aqui: já está
+registrada e aceita em 2026-09-29, com o bloqueio `42501` comprovado.
+
+## Decisão
+**Não** aplicar `FORCE ROW LEVEL SECURITY` e **não** revogar grants de `anon`.
+Documentar o desenho e instalar um teste de regressão
+(`supabase/verify-rls-anon.sql`) que falha se a barreira acidental cair.
+
+Isso contraria a recomendação inicial da própria auditoria, que propunha os dois
+`ALTER`. A evidência mensurada mostrou que as duas mudanças seriam inúteis:
+
+- **`FORCE RLS` é no-op.** Ele só alcança o *owner* da tabela, e não alcança
+  papel com `BYPASSRLS`. O owner de todas as 25 tabelas é `postgres`
+  (`rolbypassrls = true`), e os owners das funções `SECURITY DEFINER` são
+  `postgres` e `supabase_admin`, ambos com `BYPASSRLS`. Não existe caminho
+  alcançável onde a mudança produza efeito.
+- **`REVOKE` de `anon` é redundante.** O `anon` já lê 0 linhas. Revogaria uma
+  negação que já existe, trocando risco real por ganho zero. O único caso em que
+  o grant faz diferença é `idempotency_keys_secret`, que **já** não tem
+  `SELECT` para `anon` nem para `authenticated` — fechada em duas camadas
+  (GRANT e RLS).
+
+## Justificativa
+A fronteira de segurança real deste app é a **validação dentro das Netlify
+functions**, não o RLS. Todo acesso a dados passa por
+`netlify/functions/_supabaseAdmin.js`, que usa `SUPABASE_SERVICE_ROLE_KEY`;
+`service_role` tem `rolbypassrls = true` e **ignora RLS por completo**. Não
+existe chamada `.rpc()` ou `.from()` no código do navegador.
+
+Por isso RLS aqui é **redinte**, não fronteira: existe para conter uma
+exploração direta pela chave `anon` — que é pública por design e já esteve
+embutida no bundle do cliente —, e não para autorizar acesso legítimo.
+
+O risco real desta configuração não é a ausência de `FORCE RLS`. É que as 8
+policies parecem implementarem isolamento de tenant e não implementam. Um
+engenheiro que leia `tenant_isolation_all` e conclua que o isolamento está
+pronto pode, num dia de_debug_, rodar
+`set_config('app.current_tenant_id', ...)` ou criar uma policy permissiva nova
+e abrir as 8 tabelas sem nenhum teste falhar. Por isso o teste de regressão
+importa mais do que o `ALTER`.
+
+## Mitigação que permanece ativa
+- `supabase/verify-rls-anon.sql`: só leitura, idempotente, percorre as 25
+  tabelas × os 2 papéis e levanta `EXCEPTION` se qualquer uma devolver linha.
+- O detector é verificado contra `service_role`: substituindo `'anon'` por
+  `'service_role'` no `set_config`, ele **tem de** acusar vazamento em ~25
+  tabelas. Se não acusar, o próprio teste está quebrado. Esse contra-teste foi
+  executado em 2026-10-04 e disparou.
+- `idempotency_keys_secret` sem `SELECT` para `anon`/`authenticated`, e com RLS
+  ligado por cima.
+- As 58 funções `SECURITY DEFINER` do `public` sem `EXECUTE` para
+  `anon`/`authenticated` (ver `hardening-revoke-function-exec.sql`).
+
+## Armadilha de medição registrada
+Vale deixar isto escrito, porque produziu um falso alarme durante a auditoria:
+
+O Postgres fixa o contexto de RLS e de permissão **no plano** da query, no
+momento em que ela é planejada. Um probe que troca de papel com
+`set_config('role','anon', ...)` dentro de uma CTE e conta linhas em
+subqueries **estáticas** no mesmo comando devolve as linhas reais, contadas
+como `postgres` — 48 coupons e 37 users, num banco onde o `anon` correto vê 0.
+
+Por isso o script usa `EXECUTE` dinâmico dentro de plpgsql, que re-planeja em
+tempo de execução com o papel já trocado. **Trocar esse `EXECUTE` por um
+`SELECT` comum torna o teste inútil: ele passa a contar como `postgres` e
+acusa um vazamento que não existe.** O aviso está no próprio arquivo, junto da
+instrução de contra-teste.
+
+## Condição de revisão obrigatória
+Reabrir esta decisão se:
+- Qualquer chamada a `.from()` ou `.rpc()` passar a existir no código do
+  navegador (o RLS deixaria de ser redinte e viraria fronteira, e então
+  precisaria de `FORCE RLS`, policies `TO authenticated` e `app.current_tenant_id`
+ -populado por request).
+- Uma policy nova `PERMISSIVE` for criada em qualquer das 8 tabelas listadas.
+- `service_role` parar de ser o papel do backend.
+- Alguém passar a definir `app.current_tenant_id` em qualquer lugar.
+
+Responsável pela decisão: usuário do projeto (autorizou o hardening depois de
+apresentada a evidência de que `FORCE RLS` e `REVOKE` seriam no-op ou
+redundantes).
