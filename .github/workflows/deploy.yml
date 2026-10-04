@@ -70,3 +70,49 @@ jobs:
           # deploy manual local a arvore costuma estar suja, e ali o aviso
           # importa.
           command: pages deploy out --project-name=playas-y-ventajas --branch=main
+
+  # Gate de exposicao da chave anon. Roda em PARALELO ao deploy e nao e
+  # dependencia dele (sem `needs:`): se este job falhar, o deploy acima
+  # ja foi publicado. E deliberado. Um gate de seguranca que bloqueia o
+  # deploy vira o proprio dano -- foi o que travou o deploy do QR Code
+  # com o token OAuth expirado.
+  #
+  # A URL e a chave anon sao valores PUBLICOS: a chave anon esta embutida
+  # no bundle do cliente e qualquer pessoa pode extrai-la do site. Por
+  # isso vao em `vars` (repository variables), nao em `secrets`, e nao
+  # ficam hardcoded neste arquivo -- assim podem ser trocadas sem mudanca
+  # de codigo.
+  #
+  # Configure em: Settings > Secrets and variables > Actions > Variables
+  #   SUPABASE_URL        = https://<project-ref>.supabase.co
+  #   SUPABASE_ANON_KEY   = <anon key>
+  #
+  # Sem essas variaveis o gate nao checa nada: o proprio teste se marca
+  # como skipped e o job fica verde. O passo de aviso abaixo existe para
+  # isso nao passar despercebido.
+  security-rls:
+    name: Chave anon nao le dado de negocio
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Nao ha `npm ci` aqui de proposito: o teste so usa `node:test` e o
+      # `fetch` global. Pular a instalacao remove uma etapa que poderia
+      # falhar por motivo sem relacao com seguranca.
+      - name: Avisa se as variaveis nao estiverem configuradas
+        run: |
+          if [ -z "${{ vars.SUPABASE_URL }}" ] || [ -z "${{ vars.SUPABASE_ANON_KEY }}" ]; then
+            echo "::warning::Gate de RLS SEM EFITO: defina SUPABASE_URL e SUPABASE_ANON_KEY em Settings > Secrets and variables > Actions > Variables. O teste foi skipped, nada foi verificado."
+          fi
+
+      - name: Verifica exposicao da chave anon
+        env:
+          RUN_RLS_CHECK: '1'
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+        run: npm run test:rls
