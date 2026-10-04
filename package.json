@@ -9,6 +9,7 @@
     "start": "next start",
     "test": "node --test \"tests/*.test.cjs\"",
     "test:live": "node --test tests/live.smoke.test.cjs",
+    "test:rls": "node --test tests/rls-anon-exposure.test.cjs",
     "test:live:approval": "node --test tests/live.driver-approval.test.cjs",
     "test:live:position": "node --test tests/live.driver-position.test.cjs",
     "test:live:reserva": "node --test tests/live.shuttle-reservation.test.cjs",

@@ -698,7 +698,7 @@ depois de comprovada a exposição).
 A auditoria de 2026-10-04 procurou endurecer o RLS e encontrou um desenho que
 convida ao erro. Estado verificado no banco:
 
-- **25 tabelas de app** com `relrowsecurity = true`, todas `owner = postgres`,
+- **24 tabelas de app** com `relrowsecurity = true`, todas `owner = postgres`,
   todas com `relforcerowsecurity = false`.
 - **8 delas têm policy** `PERMISSIVE ... TO public`:
   `audit_logs`, `businesses`, `campaigns`, `coupon_templates`, `coupons`,
@@ -727,7 +727,7 @@ Isso contraria a recomendação inicial da própria auditoria, que propunha os d
 `ALTER`. A evidência mensurada mostrou que as duas mudanças seriam inúteis:
 
 - **`FORCE RLS` é no-op.** Ele só alcança o *owner* da tabela, e não alcança
-  papel com `BYPASSRLS`. O owner de todas as 25 tabelas é `postgres`
+  papel com `BYPASSRLS`. O owner de todas as 24 tabelas é `postgres`
   (`rolbypassrls = true`), e os owners das funções `SECURITY DEFINER` são
   `postgres` e `supabase_admin`, ambos com `BYPASSRLS`. Não existe caminho
   alcançável onde a mudança produza efeito.
@@ -757,10 +757,25 @@ e abrir as 8 tabelas sem nenhum teste falhar. Por isso o teste de regressão
 importa mais do que o `ALTER`.
 
 ## Mitigação que permanece ativa
-- `supabase/verify-rls-anon.sql`: só leitura, idempotente, percorre as 25
+- `tests/rls-anon-exposure.test.cjs`: gate externo, roda por HTTP contra o
+  PostgREST de produção com a **chave `anon`** — que é pública por design, então
+  não expõe segredo e não precisou de `pg` nem de migration. Faz o ataque real
+  em vez de emular papel no SQL: se uma policy permissiva nova for criada ou um
+  GRANT aberto, ele falha mesmo que o SQL interno continue verde. Desabilitado
+  por padrão (`RUN_RLS_CHECK=1`), como os demais live tests.
+  - O gate **reprova** e tem prova de que não é verde vazio: o próprio arquivo
+    tem um teste que exige que `anon` **leia** `spatial_ref_sys`, a única tabela
+    sem RLS. Se esse teste passar, o detector está cego. Em 2026-10-04, com a
+    lista de tabelas adulterada para incluir `spatial_ref_sys`, o gate falhou com
+    `VAZAMENTO: a chave anon leu estas tabelas: spatial_ref_sys`.
+  - **Não** foi ligado no `.github/workflows/deploy.yml`: o CI hoje roda
+    `npm test` sem nenhuma env do Supabase, e ligar o gate ali bloquearia o
+    deploy se a rede ou a chave falhassem.
+- `supabase/verify-rls-anon.sql`: só leitura, idempotente, percorre as 24
   tabelas × os 2 papéis e levanta `EXCEPTION` se qualquer uma devolver linha.
+  É a camada interna; o teste HTTP acima é a externa.
 - O detector é verificado contra `service_role`: substituindo `'anon'` por
-  `'service_role'` no `set_config`, ele **tem de** acusar vazamento em ~25
+  `'service_role'` no `set_config`, ele **tem de** acusar vazamento em 19
   tabelas. Se não acusar, o próprio teste está quebrado. Esse contra-teste foi
   executado em 2026-10-04 e disparou.
 - `idempotency_keys_secret` sem `SELECT` para `anon`/`authenticated`, e com RLS

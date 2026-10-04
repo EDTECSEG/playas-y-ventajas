@@ -6,7 +6,7 @@
 --
 -- POR QUE ESTE ARQUIVO EXISTE
 -- ------------------------------------------------------------
--- As 25 tabelas do app estao com RLS ligado. 8 delas tem policy
+-- As 24 tabelas do app estao com RLS ligado. 8 delas tem policy
 -- PERMISSIVE TO public baseada em current_setting('app.current_tenant_id').
 -- Essa variavel de sessao NUNCA e definida em lugar nenhum do codigo.
 -- Entao o qual da policy resolve para NULL e o RLS nega tudo.
@@ -95,7 +95,7 @@ BEGIN
       --
       -- Como verificar que este script ainda funciona, e nao virou um
       -- teste vazio: troque 'anon' por 'service_role' no set_config
-      -- abaixo. Ele DEVE acusar vazamento em ~25 tabelas. Se nao
+      -- abaixo. Ele DEVE acusar vazamento em ~19 tabelas. Se nao
       -- acusar, o detector quebrou.
       PERFORM set_config('role', v_papel, true);
 
