@@ -768,9 +768,15 @@ importa mais do que o `ALTER`.
     sem RLS. Se esse teste passar, o detector está cego. Em 2026-10-04, com a
     lista de tabelas adulterada para incluir `spatial_ref_sys`, o gate falhou com
     `VAZAMENTO: a chave anon leu estas tabelas: spatial_ref_sys`.
-  - **Não** foi ligado no `.github/workflows/deploy.yml`: o CI hoje roda
-    `npm test` sem nenhuma env do Supabase, e ligar o gate ali bloquearia o
-    deploy se a rede ou a chave falhassem.
+  - **Ligado ao CI em 2026-10-04**, como job **paralelo** (`security-rls`) e
+    **não** como gatilho do deploy: não tem `needs:`, então roda junto com
+    `build-and-deploy` e não bloqueia a publicação. Não usa `npm ci` — o
+    arquivo só precisa de `node:test` e do `fetch` global, então uma etapa
+    de instalação que pode falhar por motivo alheio à segurança ficou de fora.
+    Sem `SUPABASE_URL` e `SUPABASE_ANON_KEY` em *Variables*, os dois testes
+    são **skipped** e o job emite `::warning::`. Ver a armadilha registrada
+    em 2026-10-04 abaixo: esse estado verde **não significa que o banco foi
+    verificado**.
 - `supabase/verify-rls-anon.sql`: só leitura, idempotente, percorre as 24
   tabelas × os 2 papéis e levanta `EXCEPTION` se qualquer uma devolver linha.
   É a camada interna; o teste HTTP acima é a externa.
@@ -811,3 +817,110 @@ Reabrir esta decisão se:
 Responsável pela decisão: usuário do projeto (autorizou o hardening depois de
 apresentada a evidência de que `FORCE RLS` e `REVOKE` seriam no-op ou
 redundantes).
+
+---
+
+# Defeito pré-existente — horário da corrida dependia do fuso da máquina (2026-10-04)
+
+## Contexto
+Descoberto ao investigar por que o job novo de RLS ficava vermelho. **Não era
+o RLS**: o job `Build e publica` estava vermelho desde 2026-10-03, e por um
+motivo que ninguém notava porque o workflow já falhava por outros motivos.
+
+`formatRunWhen` (`app/motorista/logic.js`) formatava o horário da corrida com
+`toLocaleString` **sem `timeZone`**. A saída passa a seguir o fuso de quem
+executa. O teste em `tests/motorista-logic.test.cjs` exige `14:00` para a
+entrada `2026-10-02T14:00:00-03:00`:
+
+```
+fuso -03:00 (dev, esta máquina)  ->  02/10/2026, 14:00   passa
+fuso UTC    (runner do GitHub)   ->  02/10/2026, 17:00   falha
+```
+
+Verde em dev, vermelho no CI, sem ninguém ter mudado nada. Falhou em três runs
+seguidas — `37129163027`, `37131579181` e `37215487667` — a primeira de
+2026-10-03, antes de qualquer alteração desta série de commits.
+
+## Decisão
+Fixar `timeZone: 'America/Sao_Paulo'` em `formatRunWhen`, em vez de deixar o
+horário seguir a máquina. Verificado num worktree limpo com o conteúdo exato do
+commit, sob `TZ=UTC` (a condição do CI): `633 tests, 611 pass, 0 fail,
+22 skipped` — contra `610 pass, 1 fail` antes da correção.
+
+A alternativa era tornar o assert timezone-agnóstico. Descartada porque deixa a
+produção exibindo um horário que muda conforme a máquina de quem vê, e é
+justamente isso que a tela do motorista não deve fazer.
+
+## Risco resolvido que não era de segurança
+O defeito é de exibição, não de exposição. Mas o efeito prático era grave:
+**produção não recebia deploy há dias**, porque o job de build falhava antes de
+publicar. A barreira real do RLS (Netlify functions com `service_role`, decisão
+de 2026-10-04 acima) continuava de pé; o que estava parado era a entrega.
+
+## Condição de revisão obrigatória
+Reabrir se:
+- O app passar a operar em mais de um fuso, ou a aceitar horário de reserva em
+  UTC como entrada canônica — aí `America/Sao_Paulo` deixa de ser a única
+  resposta certa e a decisão vira parâmetro.
+- Algum outro `toLocaleString`/`toLocaleDateString` entrar no código sem
+  `timeZone`. Vale procurar por `toLocale` ao revisar, não só por `formatRunWhen`.
+
+Responsável pela correção: identificado e corrigido durante a auditoria de
+segurança de 2026-10-04, com o gate de RLS já publicado.
+
+---
+
+# Armadilha de CI — gate de segurança verde sem verificar nada (2026-10-04)
+
+## Contexto
+O `security-rls` depende de `SUPABASE_URL` e `SUPABASE_ANON_KEY` em *Variables*
+do repositório. Sem elas o job **fica verde**: os dois testes são `skip` e o
+passo emite um `::warning::`.
+
+Isso é intencional — o gate não pode bloquear o deploy por falha de rede ou de
+configuração. Mas significa que **verde é o estado normal de um gate que não
+verificou absolutamente nada**, e é um estado silencioso: quem olha a lista de
+runs vê verde.
+
+Pior: na primeira execução real, o job ficou **vermelho** por um motivo que não
+era segurança. As variáveis tinham sido criadas com
+`gh variable set SUPABASE_URL --body -`, e o `-` não significa "ler do stdin" —
+foi gravado como valor literal. As duas variáveis existiam com **1 caractere**,
+`-`, e toda URL montada ficou `-/rest/v1/<tabela>`, que nem é URL válida. Erro
+de `TypeError` no `fetch`, não uma leitura indevida.
+
+Vale registrar porque a sequência é instrutiva: o gate só pode falhar de forma
+honesta depois de ter credenciais corretas, e credencial errada se apresenta
+como falha de rede, não como erro de configuração.
+
+## Como foi corrigido
+- `SUPABASE_URL` e `SUPABASE_ANON_KEY` gravadas com o valor no `--body`, e
+  reconferidas lendo de volta (`len=208`, prefixo `eyJhbGciOi`) antes de
+  reexecutar o job.
+- Rodado o gate **localmente** com os mesmos valores antes de tocar no CI, para
+  não queimar outra run.
+- `gh run rerun --failed` reexecutou **só** o `security-rls`; o
+  `build-and-deploy` não foi republicado.
+
+Resultado: run `37218619388` com os dois jobs em `success`, e o passo
+`Verifica exposicao da chave anon` agora executa de verdade contra produção.
+
+## Lição que fica
+Um gate que **pula** em silêncio é pior que um gate que não existe, porque cria
+a ilusão de verificação. Se o `::warning::` algum dia for ignorado, o projeto
+passa a achar que tem proteção que não tem.
+
+A mitigação é exigir, de tempos em tempos, a prova de que o gate detectaria um
+vazamento real — o mesmo caminho do contra-teste com `service_role`, que prova
+que o detector não é cego. E conferir o log do job, não só a cor.
+
+## Condição de revisão obrigatória
+- Se as *Variables* forem apagadas, renomeadas, ou se o job passar a ficar
+  amarelo demais tempo sem que ninguém olhe, considerar tornar a ausência de
+  configuração um **alarme explícito** — ou exigir as variáveis como `secrets`,
+  para que o CI nem tenha como passar em branco.
+- Se o gate passar a bloquear o deploy, revisar esta decisão: hoje ele é
+  informativo por escolha, e essa escolha tem este custo.
+
+Responsável pela decisão: usuário do projeto (mandou registrar o incidente e a
+armadilha depois de o gate falhar por configuração errada).
