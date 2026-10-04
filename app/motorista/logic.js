@@ -323,7 +323,13 @@ export function formatRunWhen(iso, lang) {
   if (Number.isNaN(d.getTime())) return '';
   const bcp = { pt: 'pt-BR', en: 'en-US', es: 'es-ES' }[lang] || 'pt-BR';
   try {
-    return d.toLocaleString(bcp, { dateStyle: 'short', timeStyle: 'short' });
+    // O fuso fica preso em Sao Paulo de proposito: sem isso a saida segue a
+    // maquina, e o mesmo horario aparecia 14:00 aqui e 17:00 no runner do CI.
+    return d.toLocaleString(bcp, {
+      dateStyle: 'short',
+      timeStyle: 'short',
+      timeZone: 'America/Sao_Paulo',
+    });
   } catch (e) {
     return '';
   }
