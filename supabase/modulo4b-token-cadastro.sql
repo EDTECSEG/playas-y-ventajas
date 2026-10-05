@@ -164,6 +164,14 @@ $function$
 -- um vetor de spam de linhas pending.
 -- ============================================================================
 drop function if exists public.driver_register(uuid, text, text, text, uuid);
+-- A assinatura de 9 parametros (p6/p7) tambem e derrubada aqui, e nao so a de 5.
+-- Sem este drop, reaplicar este arquivo DEPOIS da p7 recria a sobrecarga de 6 ao
+-- lado da de 9 -- e como a de 9 tem DEFAULT NULL nos 3 ultimos parametros, uma
+-- chamada de 6 argumentos passa a casar com as DUAS. O Postgres responde
+-- "function ... is not unique" e a RPC deixa de resolver sem dar erro no codigo
+-- que chama. Ver p6-cpf-cnpj-motorista.sql e p7-cpf-obrigatorio-motorista.sql,
+-- que derrubam as mesmas assinaturas pelo mesmo motivo.
+drop function if exists public.driver_register(uuid, text, text, text, uuid, text, text, text, text);
 
 create or replace function public.driver_register(
   p_tenant_id   uuid,

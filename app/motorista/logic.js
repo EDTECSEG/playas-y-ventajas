@@ -25,6 +25,10 @@ const FRIENDLY = {
   NAME_REQUIRED: 'Informe seu nome.',
   PHONE_INVALID: 'Informe um telefone valido.',
   EMAIL_INVALID: 'Informe um email valido.',
+  CPF_REQUIRED: 'Informe seu CPF.',
+  CPF_INVALID: 'CPF invalido. Confira os digitos.',
+  CNPJ_INVALID: 'CNPJ invalido. Confira os digitos.',
+  LEGAL_NAME_REQUIRED: 'Informe a razao social da empresa (o CNPJ exige).',
   PIN_INVALID: 'Informe um PIN valido.',
   PIN_MISMATCH: 'Os PINs nao batem.',
   PIN_TOO_SHORT: 'O PIN precisa ter pelo menos 4 digitos.',
@@ -42,6 +46,8 @@ const FRIENDLY = {
   NOT_APPROVED: 'Seu cadastro ainda nao foi aprovado pela empresa.',
   PENDING_APPROVAL: 'Seu cadastro ainda nao foi aprovado pela empresa.',
   REGISTRATION_REJECTED: 'Seu cadastro foi recusado. Envie o documento corrigido para nova analise.',
+  CPF_ALREADY_REGISTERED: 'Este CPF ja tem cadastro nesta empresa.',
+  CNPJ_ALREADY_REGISTERED: 'Este CNPJ ja tem cadastro nesta empresa.',
   ACCOUNT_SUSPENDED: 'Sua conta esta suspensa. Fale com a empresa.',
   INVALID_CREDENTIALS: 'Telefone ou PIN incorreto.',
   ACCOUNT_LOCKED: 'Muitas tentativas. Aguarde alguns minutos.',
@@ -377,4 +383,146 @@ export function buildCompleteRunRequest({ session, reservationId, status } = {})
     body: { reservationId: String(reservationId) },
     headerToken: session.sessionToken,
   };
+}
+
+// --- CPF / CNPJ --------------------------------------------------------------
+
+// So digitos. Aceita a mascara na entrada de proposito: o usuario digita
+// '529.982.247-25' colando de outro lugar, e rejeitar por causa dos pontos seria
+// um erro que ele nao tem como entender.
+export function digitsOnly(v) {
+  return String(v === null || v === undefined ? '' : v).replace(/\D+/g, '');
+}
+
+// Portas na ordem em que aparecem no roteiro.
+//
+// Os DVs sao espelhados, digito a digito, de public.is_valid_cpf e
+// public.is_valid_cnpj no banco (supabase/p6-cpf-cnpj-motorista.sql). Se os dois
+// lados divergirem, o motorista recebe CPF_INVALID do servidor para um CPF que a
+// tela aceitou, e a culpa parece ser do banco. Por isso a paridade e testada em
+// tests/motorista-logic.test.cjs contra os mesmos valores do SQL.
+const REPEATED_11 = /^(\d)\1{10}$/;
+const REPEATED_14 = /^(\d)\1{13}$/;
+
+export function isValidCpf(raw) {
+  const v = digitsOnly(raw);
+  if (v.length !== 11) return false;
+  // Sequencia repetida sempre satisfaz a conta de DV, entao passaria como
+  // valida. Nao existe tal CPF na Receita.
+  if (REPEATED_11.test(v)) return false;
+
+  let s = 0;
+  for (let i = 0; i < 9; i++) s += Number(v[i]) * (10 - i);
+  let d1 = (s * 10) % 11;
+  if (d1 === 10) d1 = 0;
+  if (Number(v[9]) !== d1) return false;
+
+  s = 0;
+  for (let i = 0; i < 10; i++) s += Number(v[i]) * (11 - i);
+  let d2 = (s * 10) % 11;
+  if (d2 === 10) d2 = 0;
+  return Number(v[10]) === d2;
+}
+
+const CNPJ_W1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+const CNPJ_W2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+
+export function isValidCnpj(raw) {
+  const v = digitsOnly(raw);
+  if (v.length !== 14) return false;
+  if (REPEATED_14.test(v)) return false;
+
+  let s = 0;
+  for (let i = 0; i < 12; i++) s += Number(v[i]) * CNPJ_W1[i];
+  let d1 = 11 - (s % 11);
+  if (d1 >= 10) d1 = 0;
+  if (Number(v[12]) !== d1) return false;
+
+  s = 0;
+  for (let i = 0; i < 13; i++) s += Number(v[i]) * CNPJ_W2[i];
+  let d2 = 11 - (s % 11);
+  if (d2 >= 10) d2 = 0;
+  return Number(v[13]) === d2;
+}
+
+// Mascara progressiva, aplicada a cada tecla. Nao e cosmetica: e o que impede
+// o usuario de digitar o 12o digito de um CPF e receber CPF_INVALID sem entender
+// que o campo ja estava cheio.
+export function maskCpf(raw) {
+  const d = digitsOnly(raw).slice(0, 11);
+  let out = d.slice(0, 3);
+  if (d.length > 3) out += '.' + d.slice(3, 6);
+  if (d.length > 6) out += '.' + d.slice(6, 9);
+  if (d.length > 9) out += '-' + d.slice(9, 11);
+  return out;
+}
+
+export function maskCnpj(raw) {
+  const d = digitsOnly(raw).slice(0, 14);
+  let out = d.slice(0, 2);
+  if (d.length > 2) out += '.' + d.slice(2, 5);
+  if (d.length > 5) out += '.' + d.slice(5, 8);
+  if (d.length > 8) out += '/' + d.slice(8, 12);
+  if (d.length > 12) out += '-' + d.slice(12, 14);
+  return out;
+}
+
+// Monta o corpo do cadastro e valida antes de gastar uma ida ao servidor.
+//
+// O CPF e obrigatorio aqui, e nao so no banco: a tela e o unico lugar onde o
+// erro sai em portugues e sem consumir a taxa de 20 cadastros/hora do tenant,
+// que existe para segurar robo -- cada tentativa errada de um humano real
+// contaria contra ele.
+//
+// O CNPJ e opcional e so exige razao social junto. A razao vai sozinha sem CNPJ
+// nao e barrada: quem digita e so o sinal de que o campo nao foi lido, e
+// guardar um nome sem documento nao cria risco.
+export function buildRegisterRequest({
+  tenantId = TENANT_ID,
+  name,
+  phone,
+  email,
+  cpf,
+  cnpj,
+  legalName,
+  inviteCode,
+} = {}) {
+  if (!name || !String(name).trim()) throw new Error(friendlyMessage('NAME_REQUIRED'));
+  if (!phone || !String(phone).trim()) throw new Error(friendlyMessage('PHONE_INVALID'));
+  if (!email || !String(email).trim()) throw new Error(friendlyMessage('EMAIL_INVALID'));
+
+  const cpfDigits = digitsOnly(cpf);
+  if (!cpfDigits) throw new Error(friendlyMessage('CPF_REQUIRED'));
+  if (!isValidCpf(cpfDigits)) throw new Error(friendlyMessage('CPF_INVALID'));
+
+  const cnpjDigits = digitsOnly(cnpj);
+  if (cnpjDigits && !isValidCnpj(cnpjDigits)) throw new Error(friendlyMessage('CNPJ_INVALID'));
+
+  const razao = legalName && String(legalName).trim() ? String(legalName).trim() : null;
+  if (cnpjDigits && !razao) throw new Error(friendlyMessage('LEGAL_NAME_REQUIRED'));
+
+  return {
+    tenantId,
+    name: String(name).trim(),
+    phone: String(phone).trim(),
+    email: String(email).trim().toLowerCase(),
+    // Digitos, nunca mascarados: o banco grava o que vier e a comparacao de
+    // unicidade e por tenant. Manda a mascara e o indice unico deixa de
+    // reconhecer '529.982.247-25' e '52998224725' como o mesmo CPF.
+    cpf: cpfDigits,
+    cnpj: cnpjDigits || null,
+    legalName: razao,
+    inviteCode: inviteCode && String(inviteCode).trim() ? String(inviteCode).trim().toUpperCase() : null,
+  };
+}
+
+// Texto curto para a revisao da empresa. Devolve '' quando nao ha numero, e o
+// mascarado vem do mesmo digitos que o banco guardou -- se a mascara divergisse
+// do gravado, a empresa conferiria um numero diferente do que esta no cadastro.
+export function cpfText(cpf) {
+  return maskCpf(cpf);
+}
+
+export function cnpjText(cnpj) {
+  return maskCnpj(cnpj);
 }

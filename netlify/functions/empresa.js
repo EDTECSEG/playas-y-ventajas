@@ -136,6 +136,38 @@ exports.handler = async (event) => {
           }),
         };
       }
+      // ---- Cota de cupons gratis do plano FREE ----
+      // `business_coupon_allowance` e da p8: enquanto a p8 nao estiver aplicada a
+      // RPC nao existe, e a tela precisa subir assim mesmo. Degradar para
+      // `available:false` e melhor que 500 -- e `false` em vez de `limited:false`
+      // porque "cota desconhecida" e "cota zero" (que e bloqueio) precisam ser
+      // coisas diferentes na tela.
+      if (mode === 'allowance') {
+        const missingAllowanceFn = (e) => {
+          const message = String((e && e.message) || '');
+          return String((e && e.code) || '') === '42883'
+            || /function\s+business_coupon_allowance/i.test(message)
+            || /does not exist/i.test(message);
+        };
+        const { data, error } = await supabase.rpc('business_coupon_allowance', { p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId });
+        if (error) {
+          if (missingAllowanceFn(error)) return { statusCode: 200, headers: { 'Cache-Control': 'no-store' }, body: JSON.stringify({ available: false }) };
+          return { statusCode: rpcErrorStatus(error), body: JSON.stringify({ error: rpcErrorCode(error) }) };
+        }
+        const row = data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+        return {
+          statusCode: 200,
+          headers: { 'Cache-Control': 'no-store' },
+          body: JSON.stringify({
+            available: true,
+            limited: row.limited === true,
+            allowance: row.allowance,
+            used: row.used,
+            remaining: row.remaining,
+          }),
+        };
+      }
+
       const { data, error } = await supabase.rpc('empresa_dashboard', { p_tenant_id: actor.tenantId, p_business_id: actor.businessId });
       if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
       return { statusCode: 200, body: JSON.stringify(data) };

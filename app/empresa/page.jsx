@@ -6,6 +6,12 @@ import Header from '../components/Header';
 import PasswordInput from '../components/PasswordInput';
 import ModuleSplash from '../components/ModuleSplash';
 import { theme } from '../../lib/theme';
+// cpfText/cnpjText sao as mascaras puras do modulo do motorista. Importar de la
+// em vez de duplicar aqui e o que garante que a empresa veja exatamente o numero
+// gravado: duas copias da mesma mascara divergem na primeira alteracao de
+// formato, e ninguem veria a divergencia -- so o motorista, confrontando o
+// cadastro com o CNPJ da fonte oficial.
+import { cpfText, cnpjText } from '../motorista/logic';
 
 function loadQrScanner() {
   return new Promise((resolve, reject) => {
@@ -60,6 +66,7 @@ export default function EmpresaPage() {
   const [campaignTitle, setCampaignTitle] = useState('Nova campanha');
   const [templateForm, setTemplateForm] = useState({ campaignId: '', title: '10% OFF', benefitType: 'DISCOUNT_PERCENT', benefitValue: 10, totalStock: '', imageUrl: '' });
   const [stats, setStats] = useState(null);
+  const [allowance, setAllowance] = useState(null);
   const [justCreatedTemplate, setJustCreatedTemplate] = useState(null);
   const [editingTemplate, setEditingTemplate] = useState(null);
   const [tab, setTab] = useState('criar');
@@ -482,6 +489,15 @@ export default function EmpresaPage() {
     const res = await fetch(`/.netlify/functions/empresa?mode=stats`, { headers: { Authorization: `Bearer ${sess.sessionToken}` } });
     const data = await res.json();
     if (res.ok) setStats(data);
+    // A cota e consumida pelo CLIENTE, nao por acao da empresa: por isso entra no
+    // mesmo refresh de loadStats, em vez de virar mais um botao que a tela teria
+    // de lembrar de chamar. Falha aqui e silenciosa de proposito -- e um contador,
+    // e perder o numero nao pode derrubar nem as estatisticas nem o cadastro.
+    try {
+      const aRes = await fetch(`/.netlify/functions/empresa?mode=allowance`, { headers: { Authorization: `Bearer ${sess.sessionToken}` } });
+      const aData = await aRes.json();
+      if (aRes.ok) setAllowance(aData);
+    } catch (e) { /* contador e opcional */ }
   }
 
   // ------------------------------------------------------------
@@ -994,6 +1010,16 @@ export default function EmpresaPage() {
                 </div>
                 <p style={{ fontSize: 13, opacity: 0.75, margin: '4px 0' }}>{d.phone}</p>
 
+                {/* Dados fiscais, para a empresa confrontar com o documento antes
+                    de aprovar. Vem mascarado pelo proprio logic.js: o banco
+                    guarda so digitos, e a mascara garante que o numero mostrado
+                    e o mesmo que esta gravado. O CPF aparece sempre que houver
+                    (e obrigatorio em cadastro novo); o CNPJ so para quem tem. */}
+                <p style={{ fontSize: 13, opacity: 0.75, margin: '2px 0' }}>
+                  {t.cnpjShort}: {cpfText(d.cpf) || '—'}
+                  {d.cnpj ? ` · ${cnpjText(d.cnpj)}${d.legalName ? ` — ${d.legalName}` : ''}` : ''}
+                </p>
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
                   <button
                     style={{ ...smallBtn, background: theme.border, color: theme.text }}
@@ -1171,6 +1197,19 @@ export default function EmpresaPage() {
                 <li>{t.expired} <strong>{stats.totalExpired}</strong></li>
                 <li>{t.totalBilled} <strong>R$ {(stats.totalBilledCents / 100).toFixed(2)}</strong></li>
               </ul>
+            </div>
+          )}
+
+          {allowance && allowance.available && allowance.limited && (
+            <div style={card}>
+              <h3>{t.freeQuotaTitle}</h3>
+              <p style={{ marginTop: 0, lineHeight: 1.6, color: allowance.remaining > 0 ? '#2c7a4b' : '#c0392b' }}>
+                {allowance.remaining > 0
+                  ? (t.freeQuotaRemaining ?? '{remaining} de {allowance} cupons grátis ainda disponíveis')
+                      .replace('{remaining}', String(allowance.remaining)).replace('{allowance}', String(allowance.allowance))
+                  : (t.freeQuotaExhausted ?? 'Você usou todos os {allowance} cupons grátis do plano. Fale com a gente para liberar mais.')
+                      .replace('{allowance}', String(allowance.allowance))}
+              </p>
             </div>
           )}
 

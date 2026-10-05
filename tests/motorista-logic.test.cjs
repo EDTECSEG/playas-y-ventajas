@@ -446,3 +446,149 @@ test('canDrive continua barrando quem nao e approved, para o card de corridas', 
     assert.strictEqual(L.canDrive(status), false, String(status));
   }
 });
+
+// --- CPF / CNPJ --------------------------------------------------------------
+//
+// Os casos validos abaixo sao os mesmos que foram verificados contra
+// public.is_valid_cpf e public.is_valid_cnpj no Postgres. Se um lado mudar e o
+// outro nao, estes testes continuam verdes e o motorista passa a receber
+// CPF_INVALID do servidor para um CPF que a tela aceitou -- o usuario ve um erro
+// que nao consegue reproduzir. Por isso os valores vem do mesmo lugar nos dois
+// lados, e nao sao inventados aqui.
+
+test('digitsOnly aceita mascara e descarta o que nao e digito', () => {
+  assert.strictEqual(L.digitsOnly('529.982.247-25'), '52998224725');
+  assert.strictEqual(L.digitsOnly('11.222.333/0001-81'), '11222333000181');
+  assert.strictEqual(L.digitsOnly('abc'), '');
+  assert.strictEqual(L.digitsOnly(null), '');
+  assert.strictEqual(L.digitsOnly(undefined), '');
+});
+
+test('CPF: os validos de referencia passam', () => {
+  for (const cpf of ['52998224725', '11144477735', '529.982.247-25']) {
+    assert.strictEqual(L.isValidCpf(cpf), true, cpf);
+  }
+});
+
+test('CPF: o que nao pode passar', () => {
+  const invalidos = [
+    ['52998224726', 'DV1 errado'],
+    ['52998224735', 'DV2 errado'],
+    ['11111111111', 'sequencia de 1'],
+    ['00000000000', 'zeros'],
+    ['99999999999', 'sequencia de 9'],
+    ['5299822472', '10 digitos'],
+    ['529982247255', '12 digitos'],
+    ['529982247a5', 'letra no meio'],
+    ['', 'vazio'],
+    [null, 'null'],
+    [undefined, 'undefined'],
+  ];
+  for (const [cpf, motivo] of invalidos) {
+    assert.strictEqual(L.isValidCpf(cpf), false, `${motivo}: ${cpf}`);
+  }
+});
+
+test('CNPJ: os validos de referencia passam', () => {
+  for (const cnpj of ['11222333000181', '11.222.333/0001-81']) {
+    assert.strictEqual(L.isValidCnpj(cnpj), true, cnpj);
+  }
+});
+
+test('CNPJ: o que nao pode passar', () => {
+  const invalidos = [
+    ['11222333000182', 'DV1 errado'],
+    ['11222333000171', 'DV2 errado'],
+    ['11111111111111', 'sequencia de 1'],
+    ['00000000000000', 'zeros'],
+    ['1122233300018', '13 digitos'],
+    ['112223330001811', '15 digitos'],
+    ['', 'vazio'],
+    [null, 'null'],
+  ];
+  for (const [cnpj, motivo] of invalidos) {
+    assert.strictEqual(L.isValidCnpj(cnpj), false, `${motivo}: ${cnpj}`);
+  }
+});
+
+test('mascara e progressiva e trava no tamanho do documento', () => {
+  assert.strictEqual(L.maskCpf('5'), '5');
+  assert.strictEqual(L.maskCpf('5299'), '529.9');
+  assert.strictEqual(L.maskCpf('529982247'), '529.982.247');
+  assert.strictEqual(L.maskCpf('52998224725'), '529.982.247-25');
+  // O 12o digito e ignorado: e o que impede CPF_INVALID num campo ja cheio.
+  assert.strictEqual(L.maskCpf('52998224725999'), '529.982.247-25');
+  assert.strictEqual(L.maskCnpj('11222333000181'), '11.222.333/0001-81');
+  assert.strictEqual(L.maskCnpj('1122233300018'), '11.222.333/0001-8');
+  assert.strictEqual(L.maskCnpj('11222333000181999'), '11.222.333/0001-81');
+});
+
+test('cpfText/cnpjText devolvem o mascarado e vazio quando nao ha numero', () => {
+  assert.strictEqual(L.cpfText('52998224725'), '529.982.247-25');
+  assert.strictEqual(L.cnpjText('11222333000181'), '11.222.333/0001-81');
+  // Motorista cadastrado antes do CNPJ existe: a revisao da empresa tem de
+  // mostrar o campo sem quebrar a tela.
+  assert.strictEqual(L.cpfText(null), '');
+  assert.strictEqual(L.cnpjText(null), '');
+  assert.strictEqual(L.cpfText(''), '');
+});
+
+const REG_OK = {
+  tenantId: 't-1',
+  name: 'Joao da Silva',
+  phone: '11988887777',
+  email: 'Joao@Email.COM',
+  cpf: '529.982.247-25',
+  inviteCode: ' abc123 ',
+};
+
+test('buildRegisterRequest monta o corpo e normaliza para digitos', () => {
+  const b = L.buildRegisterRequest(REG_OK);
+  assert.strictEqual(b.tenantId, 't-1');
+  assert.strictEqual(b.name, 'Joao da Silva');
+  assert.strictEqual(b.email, 'joao@email.com', 'email normalizado em minusculas');
+  assert.strictEqual(b.cpf, '52998224725', 'CPF sem mascara: e o que o indice unico compara');
+  assert.strictEqual(b.cnpj, null, 'CNPJ ausente vira null, nunca ""');
+  assert.strictEqual(b.legalName, null);
+  assert.strictEqual(b.inviteCode, 'ABC123', 'convite em maiuscula, como a RPC compara');
+});
+
+test('buildRegisterRequest com CNPJ exige razao social', () => {
+  const base = { ...REG_OK, cnpj: '11.222.333/0001-81' };
+  assert.throws(() => L.buildRegisterRequest(base), /razao social/i);
+  const comRazao = L.buildRegisterRequest({ ...base, legalName: '  Translado Azul ME  ' });
+  assert.strictEqual(comRazao.cnpj, '11222333000181');
+  assert.strictEqual(comRazao.legalName, 'Translado Azul ME', 'razao social aparada');
+});
+
+test('buildRegisterRequest aceita razao social sem CNPJ (campo so leitura a mais)', () => {
+  const b = L.buildRegisterRequest({ ...REG_OK, legalName: 'Translado Azul ME' });
+  assert.strictEqual(b.legalName, 'Translado Azul ME');
+  assert.strictEqual(b.cnpj, null);
+});
+
+test('buildRegisterRequest barra CPF ausente, invalido ou CNPJ invalido', () => {
+  const semCpf = { ...REG_OK, cpf: '' };
+  assert.throws(() => L.buildRegisterRequest(semCpf), /CPF/i);
+
+  const cpfInvalido = { ...REG_OK, cpf: '52998224726' };
+  assert.throws(() => L.buildRegisterRequest(cpfInvalido), /CPF invalido/i);
+
+  const cnpjInvalido = { ...REG_OK, cnpj: '11222333000182', legalName: 'X ME' };
+  assert.throws(() => L.buildRegisterRequest(cnpjInvalido), /CNPJ invalido/i);
+});
+
+test('buildRegisterRequest ainda cobra nome, telefone e email', () => {
+  assert.throws(() => L.buildRegisterRequest({ ...REG_OK, name: '   ' }), /nome/i);
+  assert.throws(() => L.buildRegisterRequest({ ...REG_OK, phone: '' }), /telefone/i);
+  assert.throws(() => L.buildRegisterRequest({ ...REG_OK, email: '' }), /email/i);
+});
+
+test('erros novos do servidor tem texto amigavel', () => {
+  assert.match(L.friendlyMessage('CPF_REQUIRED'), /CPF/i);
+  assert.match(L.friendlyMessage('CPF_INVALID'), /invalido/i);
+  assert.match(L.friendlyMessage('CNPJ_INVALID'), /invalido/i);
+  assert.match(L.friendlyMessage('LEGAL_NAME_REQUIRED'), /razao social/i);
+  assert.match(L.friendlyMessage('CPF_ALREADY_REGISTERED'), /ja tem cadastro/i);
+  assert.match(L.friendlyMessage('CNPJ_ALREADY_REGISTERED'), /ja tem cadastro/i);
+});

@@ -26,7 +26,7 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: 'INVALID_JSON' }) };
   }
 
-  const { tenantId, name, phone, email, businessId, inviteCode } = body || {};
+  const { tenantId, name, phone, email, businessId, inviteCode, cpf, cnpj, legalName } = body || {};
 
   // Validacao de presenca. A RPC revalida tudo com mais rigor; aqui e so para
   // nao gastar ida ao banco com request obviously invalido.
@@ -34,6 +34,15 @@ exports.handler = async (event) => {
   if (!name || !String(name).trim()) return { statusCode: 400, body: JSON.stringify({ error: 'NAME_REQUIRED' }) };
   if (!phone) return { statusCode: 400, body: JSON.stringify({ error: 'PHONE_INVALID' }) };
   if (!email) return { statusCode: 400, body: JSON.stringify({ error: 'EMAIL_INVALID' }) };
+
+  // O CPF e obrigatorio no cadastro, mas a exigencia que vale e a da RPC (p7).
+  // Aqui o que existe e o aviso antecipado, para o erro sair em codigo em vez de
+  // cair no 500 generico. O DV NAO e conferido neste arquivo: a RPC ja faz isso
+  // com public.is_valid_cpf, e duas implementacoes do mesmo DV aqui e no banco
+  // so criariam uma terceira para divergir.
+  if (!cpf || !String(cpf).replace(/\D+/g, '')) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'CPF_REQUIRED' }) };
+  }
 
   try {
     const supabase = getSupabaseAdminClient();
@@ -45,6 +54,12 @@ exports.handler = async (event) => {
       p_email: String(email).trim().toLowerCase(),
       p_business_id: businessId || null,
       p_invite_code: inviteCode ? String(inviteCode).trim().toUpperCase() : null,
+      p_cpf: String(cpf).replace(/\D+/g, ''),
+      // Os tres vao como null quando nao vem nada, e nao como ''. Vazio e null
+      // chegam no mesmo lugar na RPC (nullif), mas mandar '' deixa o campo
+      // parecendo preenchido em qualquer log de chamada feito no futuro.
+      p_cnpj: cnpj ? String(cnpj).replace(/\D+/g, '') || null : null,
+      p_legal_name: legalName ? String(legalName).trim() || null : null,
     });
 
     if (error) {

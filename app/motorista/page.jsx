@@ -35,6 +35,10 @@ import {
   situationFor,
   sessionFromStorage,
   pendingFromStorage,
+  buildRegisterRequest,
+  maskCpf,
+  maskCnpj,
+  digitsOnly,
 } from './logic';
 
 // Rotulo e cor da situacao sao apresentacao, e ficam aqui com o theme. A
@@ -93,7 +97,7 @@ export default function MotoristaPage() {
   const [erro, setErro] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const [login, setLogin] = useState({ phone: '', pin: '' });
-  const [reg, setReg] = useState({ name: '', phone: '', email: '', inviteCode: '' });
+  const [reg, setReg] = useState({ name: '', phone: '', email: '', cpf: '', cnpj: '', legalName: '', inviteCode: '' });
   const [pinForm, setPinForm] = useState({ pin: '', pin2: '' });
   const [doc, setDoc] = useState({ docType: 'cnh', docNumber: '', docExpiresAt: '' });
   const [docEnviado, setDocEnviado] = useState(null);
@@ -322,15 +326,22 @@ export default function MotoristaPage() {
   });
 
   const cadastrar = () => run(async () => {
-    const data = await call('driver-register', {
-      body: {
-        tenantId: TENANT_ID,
-        name: reg.name.trim(),
-        phone: reg.phone.trim(),
-        email: reg.email.trim(),
-        inviteCode: reg.inviteCode.trim() || null,
-      },
+    // buildRegisterRequest valida CPF/CNPJ antes da rede. Alem de dar a mensagem
+    // em portugues, isso evita consumir a taxa de 20 cadastros/hora do tenant a
+    // cada erro de digitacao -- cota que existe para segurar robo, e que um
+    // motorista real errando o CPF five vezes pagaria com o proprio cadastro.
+    const payload = buildRegisterRequest({
+      tenantId: TENANT_ID,
+      name: reg.name,
+      phone: reg.phone,
+      email: reg.email,
+      cpf: reg.cpf,
+      cnpj: reg.cnpj,
+      legalName: reg.legalName,
+      inviteCode: reg.inviteCode,
     });
+
+    const data = await call('driver-register', { body: payload });
     // pinToken e uploadToken aparecem so agora. Ficam no navegador porque o
     // cadastro ainda nao tem sessao; o proximo passo e definir o PIN.
     const p = {
@@ -342,7 +353,7 @@ export default function MotoristaPage() {
     };
     localStorage.setItem('pyv_driver_pending', JSON.stringify(p));
     setPending(p);
-    setReg({ name: '', phone: '', email: '', inviteCode: '' });
+    setReg({ name: '', phone: '', email: '', cpf: '', cnpj: '', legalName: '', inviteCode: '' });
   }, t.regCreatedOk);
 
   const definirPin = () => run(async () => {
@@ -594,6 +605,22 @@ export default function MotoristaPage() {
                 <label style={label} htmlFor="remail">{t.driverEmail}</label>
                 <input id="remail" style={input} type="email" value={reg.email}
                   onChange={(e) => setReg({ ...reg, email: e.target.value })} />
+                <label style={label} htmlFor="rcpf">{t.driverCpfLabel}</label>
+                <input id="rcpf" style={input} inputMode="numeric" value={reg.cpf}
+                  onChange={(e) => setReg({ ...reg, cpf: maskCpf(e.target.value) })} />
+                <label style={label} htmlFor="rcnpj">{t.driverCnpjLabel}</label>
+                <input id="rcnpj" style={input} inputMode="numeric" value={reg.cnpj}
+                  onChange={(e) => setReg({ ...reg, cnpj: maskCnpj(e.target.value) })} />
+                {/* A razao so aparece quando ha CNPJ. Esconder atrelado ao campo
+                    evita a pergunta "para que serve isso?" de quem e autonomo e
+                    nao tem empresa. */}
+                {digitsOnly(reg.cnpj) && (
+                  <>
+                    <label style={label} htmlFor="rlegal">{t.driverLegalNameLabel}</label>
+                    <input id="rlegal" style={input} value={reg.legalName}
+                      onChange={(e) => setReg({ ...reg, legalName: e.target.value })} />
+                  </>
+                )}
                 <label style={label} htmlFor="rcode">{t.driverInviteCode}</label>
                 <input id="rcode" style={input} value={reg.inviteCode}
                   onChange={(e) => setReg({ ...reg, inviteCode: e.target.value })} />

@@ -924,3 +924,55 @@ que o detector não é cego. E conferir o log do job, não só a cor.
 
 Responsável pela decisão: usuário do projeto (mandou registrar o incidente e a
 armadilha depois de o gate falhar por configuração errada).
+---
+
+## Coleta de CPF no cadastro público de motorista (2026-10-05)
+
+### Contexto
+O cadastro de motorista era público (sem sessão) e não coletava documento: só
+nome, telefone e e-mail. A empresa aprovava o motorista conferindo nome e foto,
+sem nenhuma verificação de que a pessoa realmente existia. O dono passou a
+pedir **CPF obrigatório** e **CNPJ + razão social opcionais** (`p6`, `p7`).
+
+Isso cria um problema que não existe com telefone e e-mail: **CPF é dado
+pessoal sensível por natureza, e a tela de cadastro é a porta de entrada mais
+aberta do sistema** — não exige sessão e está exposta a qualquer pessoa.
+
+### Decisão
+Coletar, guardado em dígitos, e **restringir a leitura à aba Motoristas da
+empresa** (`driver_list_for_business`). O cliente nunca enxerga o CPF de terceiro
+nem o próprio. Não há gravação em log, e o `driver-register` não loga nada por
+princípio — o token de posse (`pinToken`, `uploadToken`) é a única prova de posse
+do cadastro e nunca pode entrar em log, métrica ou mensagem de erro.
+
+O CPF é obrigatório **só para cadastros novos**: `drivers.cpf` fica `nullable` e
+os motoristas já cadastrados permanecem com `NULL`, sem preenchimento
+retroativo. Fazer o campo `NOT NULL` exigiria backfill de dado que não existe, e
+inventar CPF para quem não forneceu seria pior que a ausência.
+
+O CNPJ e a razão social formam um par. Um sem o outro é barrado: a empresa usa a
+razão social para conferir o documento, então guardar o CNPJ sozinho não tem uso
+— e o índice único parcial por tenant garante que a empresa não tenha dois
+motoristas com o mesmo CNPJ.
+
+A exigência mora na **RPC** (`p7`), não na tela nem no worker. A tela e o worker
+dão o aviso antecipado para o erro sair em código em vez de virar 500, mas quem
+decide é o banco — um cliente chamando a RPC direto não escapa da regra.
+
+### Risco que isso NÃO cobre
+O CPF valida formato e DV. **Não** valida se a pessoa existe, se o CPF pertence a
+quem se cadastrou, nem se está sendo usado por outra empresa em outro tenant. É
+identidade declarada, não identidade verificada. Quem quiser isso precisa de
+crachá com foto ou bureau — fora do escopo atual, e a aprovação humana pela
+empresa continua sendo o portão de verdade.
+
+### Condição de revisão obrigatória
+- Se algum dia o CPF precisar ser exibido ao cliente ou ao motorista, revisar
+  esta decisão: hoje a justificativa é "a empresa precisa conferir antes de
+  aprovar", e nenhuma outra tela tem essa necessidade.
+- Se a exigência virar nationwide (CPF também no cadastro da **empresa**),
+  revisar o rate limit e o `REGISTRATION_RATE_LIMITED`: a validação de DV é
+  barata, mas um cadastro automatizado agora bate em duas barreiras.
+- Se `drivers.cpf` passar a ser `NOT NULL`, revisar o backfill antes — hoje o
+  índice `drivers_tenant_cpf_uniq` é parcial (`where cpf is not null`) e
+  depende disso para não colidir com os `NULL` legados.

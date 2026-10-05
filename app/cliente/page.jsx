@@ -161,6 +161,20 @@ function reservationErrorMessage(code, t) {
   return map[code] || (t?.reserveGeneric ?? 'Não foi possível concluir a reserva. Tente de novo.');
 }
 
+function claimErrorMessage(code, t) {
+  const map = {
+    NOT_FOUND: t?.claimOfferGone ?? 'Esta oferta não está mais disponível.',
+    COUPON_INACTIVE: t?.claimInactive ?? 'Esta oferta não está mais ativa.',
+    LIMIT_REACHED: t?.claimAlreadyTaken ?? 'Você já resgatou um cupom desta oferta.',
+    COUPON_OUT_OF_STOCK: t?.claimOutOfStock ?? 'Os cupons desta oferta acabaram.',
+    FREE_COUPON_QUOTA_EXCEEDED: t?.claimQuotaReached ?? 'Esta empresa já usou todos os cupons grátis do plano gratuito.',
+    IDEMPOTENCY_UNAVAILABLE: t?.claimRetryUnavailable ?? 'Não foi possível concluir o resgate agora. Tente de novo em instantes.',
+    TOO_MANY_ATTEMPTS: t?.claimTooManyAttempts ?? 'Muitas tentativas em pouco tempo. Aguarde um minuto e tente de novo.',
+    'erro interno': t?.claimServerError ?? 'Erro no servidor. Tente de novo.',
+  };
+  return map[code] || (t?.claimGenericFail ?? 'Não foi possível concluir o resgate. Tente de novo.');
+}
+
 // Texto da conversa de WhatsApp: mesmo formato do buildCouponMessage de
 // _wa.js, com o contexto que a RPC devolveu.
 function reservationWaMessage(res) {
@@ -714,7 +728,7 @@ export default function ClientePage() {
     if (res.ok || (res.status >= 400 && res.status < 500)) clearClaimKey(templateId);
 
     if (!res.ok || !data || data.error) {
-      setMsg(`Erro: ${(data && data.error) || (t.claimGenericFail ?? 'não foi possível concluir o resgate')}`);
+      setMsg(claimErrorMessage((data && data.error) || '', t));
       return;
     }
     if (data.referral) { try { localStorage.removeItem('pyv_ref'); } catch (e) { /* sem referido */ } }
