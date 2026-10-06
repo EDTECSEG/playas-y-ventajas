@@ -16,6 +16,8 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert');
+const { readFileSync } = require('node:fs');
+const path = require('node:path');
 const { makeFakeSupabase, makeEvent, loadFunction } = require('./helpers.cjs');
 
 const TENANT = '0dc57eeb-46c8-47ac-aad4-640d9d59e7b9';
@@ -236,4 +238,108 @@ test('a lista declarada bate com o que a tela realmente le', () => {
   assert.strictEqual(new Set(LIDOS_PELA_UI).size, LIDOS_PELA_UI.length, 'campo repetido na lista');
   assert.ok(!LIDOS_PELA_UI.includes('featuredUntil'), 'featuredUntil nao e lido pela tela, nao entra no contrato');
   assert.ok(!LIDOS_PELA_UI.includes('benefitType'), 'benefitType nao e lido pela tela, nao entra no contrato');
+});
+
+// ---------------------------------------------------------------------------
+// Ficha publica do estabelecimento (outubro/2026)
+// ---------------------------------------------------------------------------
+// Sob o QR Code do cupom em /cliente aparecem telefone, site e Instagram da
+// empresa. Antes these dados eram buscados por um `businessLogoFor` que so
+// devolvia nome e logo - o resto nao existia na resposta. A ficha nova vem de
+// `business_public_card`.
+
+const FICHA = {
+  businessId: 'b-1',
+  name: 'Padaria do Ze',
+  logoUrl: 'https://img/logo.png',
+  phone: '(11) 90000-0000',
+  email: 'contato@exemplo.com',
+  website: 'https://exemplo.com',
+  instagram: 'padariadoze',
+  category: 'Padaria',
+  city: 'Sao Paulo',
+};
+
+test('businessCardFor pede a ficha nova, sem mexer no caminho antigo da logo', async () => {
+  // Os dois parametros convivem de proposito: `businessLogoFor` esta em uso pelo
+  // cliente ja publicado, e sobrescrever a resposta dele trocaria o formato de
+  // um endpoint vivo. Se um dia os dois virarem o mesmo parametro, o cliente
+  // antigo em producao passa a receber um formato que ele nao entende.
+  const seen = [];
+  const fake = makeFakeSupabase({
+    rpc: async (name, args) => {
+      seen.push({ name, args });
+      return { data: FICHA, error: null };
+    },
+  });
+  const { handler, restore } = loadFunction('offers.js', fake);
+  try {
+    const res = await handler(makeEvent({ query: { businessCardFor: 'b-1' } }));
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(seen.length, 1);
+    assert.strictEqual(seen[0].name, 'business_public_card');
+    assert.deepStrictEqual(seen[0].args, { p_business_id: 'b-1' }, 'o id tem de ir com o nome que o SQL declara');
+    assert.deepStrictEqual(JSON.parse(res.body), FICHA, 'a ficha precisa voltar inteira, campos de contato inclusive');
+  } finally {
+    restore();
+  }
+
+  const logoSeen = [];
+  const fakeLogo = makeFakeSupabase({
+    rpc: async (name, args) => {
+      logoSeen.push(name);
+      return { data: { businessId: 'b-1', name: 'Padaria do Ze', logoUrl: 'https://img/logo.png' }, error: null };
+    },
+  });
+  const { handler: h2, restore: r2 } = loadFunction('offers.js', fakeLogo);
+  try {
+    const res = await h2(makeEvent({ query: { businessLogoFor: 'b-1' } }));
+    assert.strictEqual(res.statusCode, 200);
+    assert.deepStrictEqual(logoSeen, ['business_logo_by_id'], 'businessLogoFor tem de continuar indo para a RPC antiga');
+    assert.ok(!('website' in JSON.parse(res.body)), 'a resposta antiga nao pode ganhar campos: mudaria o formato');
+  } finally {
+    r2();
+  }
+});
+
+test('a ficha traz telefone, site e Instagram, e o bloco de contato depende deles', () => {
+  // Se a p9 parar de devolver um dos tres, o bloco de contato simplesmente
+  // deixa de mostrar aquela linha - sem erro, sem log. Por isso o contrato
+  // lista os tres campos explicitamente.
+  for (const campo of ['phone', 'website', 'instagram', 'logoUrl', 'name']) {
+    assert.ok(Object.prototype.hasOwnProperty.call(FICHA, campo), `a ficha precisa trazer ${campo}`);
+  }
+  const sql = readFileSync(path.join(__dirname, '..', 'supabase', 'p9-contato-publico-empresa.sql'), 'utf8');
+  const ini = sql.indexOf('create or replace function public.business_public_card');
+  assert.ok(ini !== -1, 'a p9 precisa criar business_public_card');
+  const rpc = sql.slice(ini, sql.indexOf('end $function$', ini));
+  for (const campo of ['phone', 'website', 'instagram', 'logoUrl', 'name']) {
+    assert.ok(rpc.includes(`'${campo}'`), `business_public_card precisa devolver ${campo}`);
+  }
+  assert.ok(/v_row\.logo_url/.test(rpc), 'a logo volta da coluna logo_url');
+  assert.ok(/security definer/.test(rpc), 'business_public_card precisa ser security definer, como business_logo_by_id');
+  assert.ok(/set search_path to public/.test(rpc), 'business_public_card precisa fixar o search_path');
+});
+
+test('falha na ficha para o pedido, e nao escorre para a lista de ofertas', async () => {
+  // Se o bloco da ficha devolvesse 200 com corpo vazio, o card de /cliente
+  // mostraria um cupom sem nome de empresa. Se a chamada continuasse para
+  // list_offers, o cliente receberia a lista inteira em vez de um erro. Os dois
+  // são silenciosos; por isso o teste mede o caminho, e nao so o status.
+  const seen = [];
+  const fake = makeFakeSupabase({
+    rpc: async (name) => {
+      seen.push(name);
+      return { data: null, error: { message: 'permissao negada' } };
+    },
+  });
+  const { handler, restore } = loadFunction('offers.js', fake);
+  try {
+    const res = await handler(makeEvent({ query: { businessCardFor: 'b-1' } }));
+    assert.strictEqual(res.statusCode, 400);
+    assert.ok(JSON.parse(res.body).error, 'a falha precisa virar erro, e nao ficha vazia');
+    assert.deepStrictEqual(seen, ['business_public_card'], 'a falha nao pode escorrer para list_offers');
+  } finally {
+    restore();
+  }
 });

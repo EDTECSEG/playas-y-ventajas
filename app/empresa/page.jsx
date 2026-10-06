@@ -70,7 +70,13 @@ export default function EmpresaPage() {
   const [justCreatedTemplate, setJustCreatedTemplate] = useState(null);
   const [editingTemplate, setEditingTemplate] = useState(null);
   const [tab, setTab] = useState('criar');
-  const [myData, setMyData] = useState({ name: '', phone: '', email: '', city: '', category: '', logoUrl: '', lat: '', lng: '' });
+  // `website` e `instagram` entram no estado por causa da p9: sao os dados que
+  // aparecem no cartao do cupom em /cliente. Sem eles no formulario, o bloco de
+  // contato do QR ficaria permanentemente vazio para quem nao tem acesso ao
+  // /admin. `instagram` aceita "@perfil", "instagram.com/perfil" ou a URL
+  // completa; a normalizacao para "perfil" e feita no banco
+  // (public.normalize_instagram), e o placeholder mostra o formato aceito.
+  const [myData, setMyData] = useState({ name: '', phone: '', email: '', city: '', category: '', logoUrl: '', lat: '', lng: '', website: '', instagram: '' });
   const [featuredSel, setFeaturedSel] = useState({});
   const [igForm, setIgForm] = useState({ templateId: '', title: '', value: '', businessName: '', handle: '' });
   const igCanvasRef = useRef(null);
@@ -126,7 +132,7 @@ export default function EmpresaPage() {
   const [reportBillingMsg, setReportBillingMsg] = useState('');
   const [regForm, setRegForm] = useState({
     tenantSlug: 'playas-y-ventajas', name: '', category: 'passeio', city: '', phone: '', email: '',
-    cnpj: '', website: '', logoUrl: '', lat: '', lng: '', internalCode: '', pin: '', pin2: '',
+    cnpj: '', website: '', instagram: '', logoUrl: '', lat: '', lng: '', internalCode: '', pin: '', pin2: '',
   });
 
   async function registerBusiness() {
@@ -186,7 +192,7 @@ export default function EmpresaPage() {
   async function loadMyData() {
     const res = await fetch(`/.netlify/functions/empresa?mode=my-data`, { headers: { Authorization: `Bearer ${session.sessionToken}` } });
     const data = await res.json();
-    if (res.ok) setMyData({ name: data.name || '', phone: data.phone || '', email: data.email || '', city: data.city || '', category: data.category || '', logoUrl: data.logoUrl || '', lat: data.lat ?? '', lng: data.lng ?? '' });
+    if (res.ok) setMyData({ name: data.name || '', phone: data.phone || '', email: data.email || '', city: data.city || '', category: data.category || '', logoUrl: data.logoUrl || '', lat: data.lat ?? '', lng: data.lng ?? '', website: data.website || '', instagram: data.instagram || '' });
   }
 
   async function handleMyLogoUpload(e) {
@@ -951,6 +957,7 @@ export default function EmpresaPage() {
               <br />
               <input style={input} placeholder={t.cnpjPlaceholder} value={regForm.cnpj} onChange={(e) => setRegForm({ ...regForm, cnpj: e.target.value })} />
               <input style={input} placeholder={t.website} value={regForm.website} onChange={(e) => setRegForm({ ...regForm, website: e.target.value })} />
+              <input style={input} placeholder={t.instagramCompany} value={regForm.instagram} onChange={(e) => setRegForm({ ...regForm, instagram: e.target.value })} />
               <br />
               <label style={{ fontSize: 13 }}>{t.businessLogo} <input type="file" accept="image/*" onChange={handleRegisterLogoUpload} /></label>
               {regForm.logoUrl && <img src={regForm.logoUrl} alt="logo" style={{ height: 40, marginLeft: 8, verticalAlign: 'middle' }} />}
@@ -1273,6 +1280,8 @@ export default function EmpresaPage() {
             <input style={input} placeholder={t.phoneField} value={myData.phone} onChange={(e) => setMyData({ ...myData, phone: e.target.value })} />
             <input style={input} placeholder={t.emailField} value={myData.email} onChange={(e) => setMyData({ ...myData, email: e.target.value })} />
             <input style={input} placeholder={t.cityField} value={myData.city} onChange={(e) => setMyData({ ...myData, city: e.target.value })} />
+            <input style={input} placeholder={t.website} value={myData.website} onChange={(e) => setMyData({ ...myData, website: e.target.value })} />
+            <input style={input} placeholder={t.instagramCompany} value={myData.instagram} onChange={(e) => setMyData({ ...myData, instagram: e.target.value })} />
             <select
               style={input}
               value={myData.category}

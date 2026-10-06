@@ -27,7 +27,7 @@ async function withOfferImages(supabase, tenantId, offers) {
 exports.handler = async (event) => {
   try {
     // `tenantId` segue na query por compatibilidade, e de proposito ignorado.
-    const { customerId, customerToken, mode, businessLogoFor, city, category, lat, lng, radiusKm } = event.queryStringParameters || {};
+    const { customerId, customerToken, mode, businessLogoFor, businessCardFor, city, category, lat, lng, radiusKm } = event.queryStringParameters || {};
     // Validacao barata ANTES de getSupabaseAdminClient(): nao ha por que
     // construir cliente de banco -- e lancar por falta de configuracao -- para
     // recusar um request malformado. O 400 do tenantId ficava aqui antes, e
@@ -39,6 +39,19 @@ exports.handler = async (event) => {
 
     if (businessLogoFor) {
       const { data, error } = await supabase.rpc('business_logo_by_id', { p_business_id: businessLogoFor });
+      if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
+      return { statusCode: 200, body: JSON.stringify(data) };
+    }
+
+    // Ficha publica do estabelecimento: nome, logo, telefone, site e Instagram.
+    // Fica num parametro NOVO (`businessCardFor`) em vez de reaproveitar
+    // `businessLogoFor` de proposito. O parametro antigo esta em uso pelo
+    // cliente ja publicado em producao, e sobrescrever o que a RPC dele devolve
+    // trocaria o formato da resposta de um endpoint vivo sem ninguem pedir. Com
+    // dois nomes, o cliente novo so passa a usar a ficha depois do deploy --
+    // enquanto isso, o antigo segue funcionando igual.
+    if (businessCardFor) {
+      const { data, error } = await supabase.rpc('business_public_card', { p_business_id: businessCardFor });
       if (error) return { statusCode: 400, body: JSON.stringify({ error: rpcErrorCode(error) }) };
       return { statusCode: 200, body: JSON.stringify(data) };
     }

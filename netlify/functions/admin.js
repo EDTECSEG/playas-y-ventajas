@@ -48,6 +48,7 @@ exports.handler = async (event) => {
           p_city: body.city, p_phone: body.phone, p_email: body.email, p_lat: body.lat ?? null, p_lng: body.lng ?? null,
           p_owner_internal_code: body.ownerInternalCode, p_owner_pin: body.ownerPin, p_billing_plan: body.billingPlan || 'FREE',
           p_cnpj: body.cnpj || null, p_website: body.website || null, p_logo_url: body.logoUrl || null,
+          p_instagram: body.instagram || null,
         });
         if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
         return { statusCode: 200, body: JSON.stringify(data) };
@@ -108,6 +109,9 @@ exports.handler = async (event) => {
           p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_business_id: body.businessId,
           p_name: body.name || null, p_phone: body.phone || null, p_email: body.email || null, p_category: body.category || null,
           p_city: body.city || null, p_cnpj: body.cnpj || null, p_website: body.website || null, p_logo_url: body.logoUrl || null,
+          // Mesma regra do /empresa: string vazia limpa, ausente nao mexe
+          // (ver a regra do NULL na p9).
+          p_instagram: body.instagram === undefined ? null : (body.instagram || ''),
         });
         if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
         return { statusCode: 200, body: JSON.stringify({ ok: true }) };

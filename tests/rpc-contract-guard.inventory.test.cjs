@@ -11,10 +11,11 @@
 //     auth_login"; a funcao definida no mesmo arquivo e auth_login_by_email);
 //   - e perdia 8 que nao tem mencao nenhuma, sao invisiveis a busca por texto.
 //
-// O resultado correto sao 14. Este arquivo e a prova de que 14 continua sendo o
-// numero: se alguem versionar um .sql novo, ou chamar uma RPC nova, a contagem
-// muda e o teste falla pedindo reconciliacao em vez de deixar a lista envelhecer
-// em silencio.
+// O resultado correto eram 14; em outubro/2026 a p9 versionou
+// admin_create_business e admin_update_business, e sairam da lista: 12. Este
+// arquivo e a prova de que 12 continua sendo o numero: se alguem versionar um
+// .sql novo, ou chamar uma RPC nova, a contagem muda e o teste falha pedindo
+// reconciliacao em vez de deixar a lista envelhecer em silencio.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -57,7 +58,7 @@ function hasDefinition(name) {
   return false;
 }
 
-// A lista do guard, lida do proprio arquivo: nao duplicamos as 14 aqui, senao
+// A lista do guard, lida do proprio arquivo: nao duplicamos as 12 aqui, senao
 // as duas copias divergem sem ninguem perceber.
 function guardedRpcs() {
   const src = fs.readFileSync(path.join(__dirname, 'rpc-contract-guard.test.cjs'), 'utf8');
@@ -84,8 +85,8 @@ test('a inventario bate com a lista do guard (nenhuma RPC sem .sql escapando)', 
   );
 });
 
-test('contagem de RPCs sem .sql continua sendo 14', () => {
-  assert.strictEqual(SEM_SQL.length, 14, `hoje sem .sql: ${SEM_SQL.join(', ')}`);
+test('contagem de RPCs sem .sql continua sendo 12', () => {
+  assert.strictEqual(SEM_SQL.length, 12, `hoje sem .sql: ${SEM_SQL.join(', ')}`);
 });
 
 // Trava o metodo, que e onde o numero errado veio. Se `hasDefinition` voltar a

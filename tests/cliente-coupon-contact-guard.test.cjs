@@ -1,21 +1,34 @@
 'use strict';
 
-// /cliente: guarda do WhatsApp de um cupom que ja esta na lista "Meus cupons".
+// /cliente: guarda do botao de envio de cupom por WhatsApp em "Meus cupons".
 //
-// Pedido do dono (setembro/2026): o mesmo mecanismo da mensagem de cupom
-// tambem no fim da tela de resgates, ou seja, valendo tambem para os cupons
-// com status VALIDATED.
+// HISTORICO DESTE ARQUIVO (importante para nao "restaurar" o comportamento
+// antigo sem querer): ele nasceu em setembro/2026 guardando o WhatsApp DIRETO
+// com o estabelecimento -- buildWaLink com businessPhone, mensagem "quero usar
+// meu cupom", e o botao escondido quando a empresa nao tinha telefone.
+//
+// Em outubro/2026 o dono trocou o sentido do botao: o cupom nao e mais uma
+// conversa com o balcao, e uma DIVULGACAO. O cupom de resgate e individual e
+// de uso unico (ver coupon-public-id), entao o codigo do proprio cliente so
+// nao serve para o outro usar -- o que vale e levar o LINK DE INDICACAO, que
+// da ao outro um cupom novo.
+//
+// Em 2026-10-06 o dono mandou o codigo (PYV-...) ser enviado JUNTO no
+// WhatsApp: "no envio do cupom pelo whatsapp o codigo pyv-... e pra ser
+// enviado junto". O link de indicacao continua sendo a forma de quem recebe
+// resgatar o cupom dele proprio; o codigo acompanha a oferta no texto.
+//
+// As guardas abaixo existem para travar essa distincao. Sao exatamente as
+// tres coisas que um "ajuste estetico" quebraria em silencio:
+//
+//   1. O link vai ser o de indicacao (invite.shareUrl), nao o codigo publico.
+//   2. O codigo publico (PYV-...) ENTRA no texto, junto da oferta e do link
+//      (decisao do dono, 2026-10-06).
+//   3. O destino e a folha de compartilhar do WhatsApp (wa.me sem numero), e
+//      nao uma conversa com a loja.
 //
 // Nao da para renderizar JSX neste runner, entao o padrao e travar o
 // codigo-fonte, como em cliente-shuttle-reservation-guard.test.cjs.
-//
-// Dois erros que estas guardas evitam:
-//   1. botao sem telefone: buildWaLink sem numero cai no
-//      https://wa.me/?text=..., que abre o "compartilhar" do proprio celular
-//      do cliente em vez de conversationar com o estabelecimento.
-//   2. texto errado por status: mandar "quero usar meu cupom" em um cupom ja
-//      resgatado faz o caixa recusar com COUPON_ALREADY_USED. O cliente ficaria
-//      achando que o cupom dele estava valendo.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -33,51 +46,117 @@ function bloco(inicio, fim) {
   return src.slice(a, b);
 }
 
-const helper = bloco('function couponContactMessage', 'function timeAgo');
+const mensagem = bloco('function couponShareMessage', 'function timeAgo');
+const compartilhar = bloco('async function shareCouponOnWhatsApp', 'async function copyInviteLink');
 const detalhe = bloco('{openCoupon && (', '{msg && <p');
 
-test('a mensagem de contato do cupom existe e se identifica antes de qualquer coisa', () => {
-  assert.ok(src.includes('function couponContactMessage'), 'falta couponContactMessage');
-  assert.ok(helper.includes("'*Playas y Ventajas*'"), 'a mensagem precisa abrir com a marca');
-  assert.ok(helper.includes("'*Cupom:* '"), 'a mensagem precisa dizer qual cupom e');
-  assert.ok(helper.includes("'*Estabelecimento:* '"), 'a mensagem precisa dizer o estabelecimento');
-  assert.ok(helper.includes("'*Codigo:* '"), 'a mensagem precisa trazer o codigo do cupom');
+test('a mensagem de compartilhamento se identifica antes de qualquer coisa', () => {
+  assert.ok(mensagem.includes("'*Playas y Ventajas*'"), 'a mensagem precisa abrir com a marca');
+  assert.ok(mensagem.includes("'*Cupom:* '"), 'a mensagem precisa dizer qual cupom e');
+  assert.ok(mensagem.includes("'*Estabelecimento:* '"), 'a mensagem precisa dizer o estabelecimento');
 });
 
-test('em cupom resgatado a mensagem assume que o cupom JA foi usado', () => {
-  // O texto de cupom disponivel vai no sentido contrario (cliente -> balcao,
-  // "quero aplicar"). Para o VALIDATED ela so se apresenta e identifica o
-  // cupom, com a data do resgate.
-  assert.ok(/c\.status === 'VALIDATED'/.test(helper), 'a mensagem precisa bifurcar por status');
-  assert.ok(helper.includes('ja resgatado'), 'o VALIDATED precisa aparecer como ja resgatado');
-  assert.ok(/validatedAt/.test(helper), 'o VALIDATED precisa trazer a data do resgate');
-  const ramalValidado = helper.slice(
-    helper.indexOf("c.status === 'VALIDATED'"),
-    helper.indexOf('} else {'),
-  );
-  assert.ok(!/Site/.test(ramalValidado), 'cupom resgatado nao deve mandar o cliente para o site como se fosse usar');
-  assert.ok(ramalValidado.includes('resgatado'), 'o ramo VALIDATED precisa dizer que ja foi resgatado');
-});
-
-test('o botao de WhatsApp usa o telefone que veio do banco', () => {
-  // O telefone nunca pode ser digitado no navegador: o destino do link vem do
-  // businessPhone devolvido pela RPC list_customer_coupons.
+test('a mensagem manda o LINK de indicacao, e nao um cupom pronto', () => {
+  // O link vem do invite do cliente que esta compartilhando. E ele -- e nao o
+  // codigo publico -- que gera um cupom novo para quem recebe.
+  assert.ok(mensagem.includes('referralUrl'), 'a mensagem precisa empilhar o link de indicacao');
+  assert.ok(mensagem.includes('t?.couponShareLead'), 'a mensagem precisa explicar que o outro resgata o cupom dele');
   assert.ok(
-    /buildWaLink\(\{\s*\n?\s*phone: openCoupon\.businessPhone/.test(src),
-    'o botao precisa usar openCoupon.businessPhone',
-  );
-  assert.ok(
-    /message: couponContactMessage\(openCoupon, window\.location\.origin\)/.test(src),
-    'o botao precisa montar a mensagem com couponContactMessage',
+    /if \(!referralUrl && origin\) linhas\.push\(origin\)/.test(mensagem),
+    'sem invite o texto ainda precisa cair na origem, e nao numa string vazia',
   );
 });
 
-test('sem telefone valido o botao nem aparece', () => {
-  // Sem esta guarda o wa.me abre a folha de compartilhar do proprio celular.
+test('o codigo publico (PYV-...) vai na mensagem compartilhada', () => {
+  // Decisao do dono (2026-10-06): "no envio do cupom pelo whatsapp o codigo
+  // pyv-... e pra ser enviado junto". O codigo e do cupom de quem ENVIA e nao
+  // substitui o link de indicacao -- o texto precisa carrega-lo junto.
+  assert.ok(mensagem.includes('c.publicId'), 'a mensagem precisa citar o publicId do cupom');
   assert.ok(
-    /String\(openCoupon\.businessPhone \|\| ''\)\.replace\(\/\\D\/g, ''\)\.length >= 10/.test(src),
-    'o botao precisa exigir 10+ digitos de telefone antes de renderizar',
+    /if \(c\.publicId\) linhas\.push\('\*Codigo:\* ' \+ c\.publicId\)/.test(mensagem),
+    'o codigo precisa entrar como "*Codigo:* PYV-..." quando o cupom tem publicId',
   );
+  assert.ok(
+    !/buildCouponMessage/.test(mensagem),
+    'o texto nao pode vir de buildCouponMessage, que manda "quero usar meu cupom" para o balcao',
+  );
+});
+
+test('o destino e a folha de compartilhar do WhatsApp, sem numero', () => {
+  // Sem telefone, wa.me cai em https://wa.me/?text=... e o WhatsApp oferece a
+  // lista de contatos do proprio cliente. E isso que o dono pediu: ele escolhe
+  // para quem mandar.
+  assert.ok(
+    /buildWaLink\(\{\s*\n?\s*message: couponShareMessage/.test(src),
+    'o envio precisa montar a mensagem e passar para buildWaLink',
+  );
+  const semTelefone = compartilhar.slice(
+    compartilhar.indexOf('buildWaLink({'),
+    compartilhar.indexOf('});', compartilhar.indexOf('buildWaLink({')),
+  );
+  assert.ok(
+    !/phone:/.test(semTelefone),
+    'o envio nao pode ter phone: o numero da loja traria de volta a conversa com o balcao',
+  );
+});
+
+test('a aba do WhatsApp e aberta ANTES de qualquer await', () => {
+  // Sao dois awaits antes de mountar a URL (ensureInvite e a propria leitura do
+  // invite). Chrome e Safari bloqueiam pop-up aberto fora do gesto
+  // do usuario; a aba em branco aberta no primeiro synchronous resolve isso,
+  // e so e fechada no caminho de erro -- assim nunca sobra aba em branco.
+  const abre = compartilhar.indexOf("window.open('about:blank'");
+  const espera = compartilhar.indexOf('await');
+  assert.ok(abre !== -1, 'o envio precisa abrir about:blank no click');
+  assert.ok(espera !== -1, 'o envio precisa ter um await (garantia de que o teste faz sentido)');
+  assert.ok(abre < espera, 'about:blank precisa ser aberto antes do primeiro await, ou o pop-up e bloqueado');
+  assert.ok(/win\.close\(\)/.test(compartilhar), 'o caminho de erro precisa fechar a aba vazia');
+});
+
+test('o botao aparece mesmo sem telefone da empresa cadastrado', () => {
+  // A regra antiga era o contrario: sem 10+ digitos de telefone o botao nem
+  // renderizava, para nao abrir o "compartilhar" do proprio celular. Isso
+  // agora e o comportamento desejado -- e o botao que mais importa e o da
+  // empresa que ainda nao cadasturou telefone.
+  assert.ok(
+    !/openCoupon\.businessPhone \|\| ''\)\.replace\(\/\\D\/g, ''\)\.length >= 10/.test(src),
+    'o botao nao pode mais exigir telefone da loja para aparecer',
+  );
+  assert.ok(
+    detalhe.includes('shareCouponOnWhatsApp(openCoupon)'),
+    'o detalhe do cupom precisa chamar shareCouponOnWhatsApp',
+  );
+  assert.ok(
+    detalhe.includes('t.couponSendWhatsapp'),
+    'falta o rotulo couponSendWhatsapp',
+  );
+  assert.ok(
+    detalhe.includes('sharingCoupon === openCoupon.publicId'),
+    'o botao precisa travar enquanto o envio esta sendo preparado',
+  );
+});
+
+test('o caminho antigo de falar com o balcao sumiu do detalhe do cupom', () => {
+  // couponContactMessage falava com o estabelecimento. Se voltar a ser usada em
+  // algum lugar do modal, o dono volta a receber "quero usar meu cupom" de
+  // clientes que estao so divulgando.
+  assert.ok(!/couponContactMessage/.test(src), 'couponContactMessage nao deve mais existir na pagina');
+  assert.ok(
+    !/phone: openCoupon\.businessPhone/.test(src),
+    'nada no detalhe deve mais montar wa.me com o telefone da loja',
+  );
+});
+
+test('o texto e as traducoes existem nos tres idiomas', () => {
+  const i18n = readFileSync(path.join(__dirname, '..', 'lib', 'i18n.js'), 'utf8');
+  // A busca e pela DEFINICAO da chave (`chave:`), e nao pelo nome: o arquivo
+  // explica em comentario por que ela saiu, e esse comentario tem de poder
+  // citar o nome antigo.
+  assert.ok(!/couponContactWhatsapp\s*:/.test(i18n), 'a chave antiga couponContactWhatsapp deve ter sido removida');
+  for (const chave of ['couponSendWhatsapp', 'couponSharePreparing', 'couponShareHint', 'couponShareFailed', 'couponShareLead', 'couponShareCode', 'businessContactLabel']) {
+    const ocorrencias = i18n.split(`${chave}:`).length - 1;
+    assert.strictEqual(ocorrencias, 3, `${chave} precisa existir em pt, en e es (achei ${ocorrencias})`);
+  }
 });
 
 test('a lista de cupons traz a data do resgate quando ela existe', () => {
@@ -119,15 +198,28 @@ test('o backend ainda aceita o par codigo + curto de material antigo', () => {
   );
 });
 
-test('a RPC que alimenta a lista precisa devolver o telefone e a data do resgate', () => {
-  // Sem businessPhone na RPC o botao nunca tem destino; sem validatedAt a data
-  // do resgate nao aparece. A definicao foi versionada em
-  // supabase/coupon-management.sql (a RPC vivia so no banco).
+test('a ficha da empresa vem do banco, e nao do armazenamento local do navegador', () => {
+  // businessId/businessLogoUrl/businessWebsite/businessInstagram chegam em
+  // list_customer_coupons (ver p9-contato-publico-empresa.sql). Sem isso, o
+  // contato sob o QR so apareceria na mesma sessao em que o cupom foi
+  // resgatado -- e sumiria ao recarregar a pagina.
+  const sql = readFileSync(path.join(__dirname, '..', 'supabase', 'p9-contato-publico-empresa.sql'), 'utf8');
+  const ini = sql.indexOf('create or replace function public.list_customer_coupons');
+  assert.ok(ini !== -1, 'a p9 precisa redefinir list_customer_coupons');
+  const rpc = sql.slice(ini, ini + 2400);
+  for (const campo of ['businessId', 'businessLogoUrl', 'businessPhone', 'businessWebsite', 'businessInstagram', 'validatedAt']) {
+    assert.ok(rpc.includes(`'${campo}'`), `a RPC precisa devolver ${campo}`);
+  }
+  assert.ok(/search_path to public, extensions/.test(rpc), 'a RPC precisa manter o search_path fixo');
+});
+
+test('a lista ainda mostra a data do resgate, e ela vem da RPC versionada', () => {
+  // A definicao antiga esta em supabase/coupon-management.sql (a RPC vivia so no
+  // banco); a p9 adiciona os campos de contato em cima dela.
   const sql = readFileSync(path.join(__dirname, '..', 'supabase', 'coupon-management.sql'), 'utf8');
   const ini = sql.indexOf('create or replace function public.list_customer_coupons');
   assert.ok(ini !== -1, 'a definicao de list_customer_coupons precisa estar versionada em coupon-management.sql');
   const rpc = sql.slice(ini, ini + 1200);
   assert.ok(rpc.includes("'businessPhone', b.phone"), 'a RPC precisa devolver businessPhone');
   assert.ok(rpc.includes("'validatedAt', co.validated_at"), 'a RPC precisa devolver validatedAt');
-  assert.ok(/search_path = public, extensions/.test(rpc), 'a RPC precisa manter o search_path fixo');
 });

@@ -184,6 +184,7 @@ exports.handler = async (event) => {
           p_tenant_slug: body.tenantSlug, p_name: body.name || null, p_category: body.category || null,
           p_city: body.city || null, p_phone: body.phone || null, p_email: body.email || null,
           p_cnpj: body.cnpj || null, p_website: body.website || null, p_logo_url: body.logoUrl || null,
+          p_instagram: body.instagram || null,
           p_lat: lat, p_lng: lng, p_internal_code: body.internalCode || null, p_pin: body.pin || null,
         });
         if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
@@ -239,6 +240,11 @@ exports.handler = async (event) => {
           p_tenant_id: actor.tenantId, p_actor_user_id: actor.userId, p_name: body.name || null,
           p_phone: body.phone || null, p_email: body.email || null, p_city: body.city || null, p_logo_url: body.logoUrl || null,
           p_category: body.category || null, p_lat: lat, p_lng: lng,
+          // String vazia e o sinal de "limpar", e NULL o de "nao veio no
+          // formulario" (ver a regra do NULL na p9). A distincao importa: sem
+          // ela, salvar o formulario com o campo em branco apagaria o dado.
+          p_website: body.website === undefined ? null : (body.website || ''),
+          p_instagram: body.instagram === undefined ? null : (body.instagram || ''),
         });
         if (error) return { statusCode: 400, body: JSON.stringify({ error: (error.message || '').split(':')[0].trim() }) };
         return { statusCode: 200, body: JSON.stringify({ ok: true }) };

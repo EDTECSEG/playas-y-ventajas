@@ -126,12 +126,11 @@ function reservationStatusLabel(status, t) {
   return map[status] || status;
 }
 
-// Link de WhatsApp no mesmo formato de netlify/functions/_wa.js (wa.me, sem API,
-// sem custo). O telefone vem SEMPRE da RPC (businessPhone), nunca digitado
-// aqui. A funcao do servidor continua sendo a copia canonica para os handlers;
-// o cliente nao importa arquivo de netlify/functions, que e CommonJS de
-// plataforma e nao pertence ao bundle do browser.
-function buildWaLink({ phone, message, fallbackMessage }) {
+// Telefone so em digitos, com o 55 do Brasil quando falta. Vem separado do
+// buildWaLink porque o mesmo numero e usado em dois lugares: no link do WhatsApp
+// e no link `tel:` do bloco de contato. Duas copias da mesma normalizacao
+// divergem assim que uma delas ganhar um caso novo.
+function phoneDigits(phone) {
   let digits = String(phone || '').replace(/\D/g, '');
   if (digits) {
     while (digits.length > 2 && digits.charAt(0) === '0') digits = digits.slice(1);
@@ -139,9 +138,51 @@ function buildWaLink({ phone, message, fallbackMessage }) {
       digits = digits.length <= 11 ? `55${digits}` : digits;
     }
   }
+  return digits;
+}
+
+// Link de WhatsApp no mesmo formato de netlify/functions/_wa.js (wa.me, sem API,
+// sem custo). O telefone vem SEMPRE da RPC (businessPhone), nunca digitado
+// aqui. A funcao do servidor continua sendo a copia canonica para os handlers;
+// o cliente nao importa arquivo de netlify/functions, que e CommonJS de
+// plataforma e nao pertence ao bundle do browser.
+function buildWaLink({ phone, message, fallbackMessage }) {
+  const digits = phoneDigits(phone);
   const text = message || fallbackMessage || 'Olá!';
   if (!digits) return `https://wa.me/?text=${encodeURIComponent(text)}`;
   return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+}
+
+// Link do site da empresa. O campo e texto livre e a empresa pode ter gravado
+// "playas.com.br", sem esquema. Sem o https:// o navegador trata o valor como
+// caminho RELATIVO e abre a home do proprio app em vez do site -- o cliente
+// clica achando que foi para a loja e cai no lugar errado.
+function websiteHref(url) {
+  const s = String(url || '').trim();
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s)) return s;
+  return 'https://' + s.replace(/^\/+/, '');
+}
+
+// Handle canonico do Instagram. O banco ja guarda assim (ver
+// public.normalize_instagram, na p9), mas o texto tambem chega de
+// list_offers/list_customer_coupons, que podem ter sido alimentadas por outra
+// origem. O mesmo cleanup e feito aqui em vez de confiar no formato -- e o
+// MESMO codigo alimenta o link e o texto visivel, para os dois nunca
+// discordarem (era o que acontecia com "instagram.com/perfil": link virava
+// instagram.com/instagram.com/perfil e o texto mostrava o dominio inteiro).
+function instagramHandle(handle) {
+  return String(handle || '').trim()
+    .replace(/^((?:https?:\/\/)?(?:www\.)?instagram\.com\/?)/i, '')
+    .replace(/^@+/, '')
+    .replace(/\/+$/, '')
+    .trim()
+    .toLowerCase();
+}
+
+function instagramHref(handle) {
+  const s = instagramHandle(handle);
+  return s ? `https://instagram.com/${s}` : '';
 }
 
 // Codigo de regra do endpoint -> frase util. O handler devolve so o codigo
@@ -188,27 +229,80 @@ function reservationWaMessage(res) {
   return linhas.join('\n');
 }
 
-// Mensagem para falar COM o estabelecimento a partir de um cupom que ja esta
-// na lista "Meus cupons" - inclusive os que foram resgatados (feedback do
-// dono, setembro/2026).
+// Mensagem de COMPARTILHAMENTO do cupom (botao "Enviar por WhatsApp").
 //
-// O texto muda de proposito conforme o status: mandar "quero usar meu cupom"
-// em um cupom ja VALIDATED faz o caixa recusar com COUPON_ALREADY_USED, entao
-// nesse caso a mensagem so se apresenta e identifica o cupom. O texto do cupom
-// recem-resgatado (que vai do cliente para o estabelecimento) e montado no
-// servidor, em netlify/functions/_wa.js.
-function couponContactMessage(c, origin) {
+// Decisao do dono (outubro/2026): o botao que falava com o estabelecimento
+// passou a ENVIAR o cupom para um dos contatos do proprio cliente. Por isso o
+// link e `wa.me/?text=` SEM numero -- no celular isso abre a folha de
+// compartilhamento do WhatsApp, onde o cliente escolhe com quem enviar. Com
+// numero, o link abriria conversa com a loja, que e o comportamento antigo.
+//
+// Decisao do dono (2026-10-06): o codigo do cupom (PYV-...) e enviado JUNTO
+// na mensagem. O LINK DE INDICACAO continua sendo a forma de quem recebeu
+// resgatar o cupom dele proprio -- e o mesmo caminho que ja existe em
+// app/page.jsx (?ref=) e na verificacao do bonus de boas-vindas. O codigo
+// acompanha para que o envio carregue a referencia do cupom, como o dono pediu.
+function couponShareMessage(c, { origin, referralUrl, referralCode, t }) {
   const linhas = ['*Playas y Ventajas*'];
   if (c.title) linhas.push('*Cupom:* ' + c.title);
   if (c.businessName) linhas.push('*Estabelecimento:* ' + c.businessName);
   if (c.publicId) linhas.push('*Codigo:* ' + c.publicId);
-  if (c.status === 'VALIDATED') {
-    linhas.push('*Status:* cupom ja resgatado');
-    if (c.validatedAt) linhas.push('*Resgatado em:* ' + formatWhen(c.validatedAt));
-  } else {
-    linhas.push('*Site:* ' + origin);
-  }
+  linhas.push('');
+  linhas.push(t?.couponShareLead ?? 'Pegue seu cupom pelo meu link de indicação:');
+  if (referralUrl) linhas.push(referralUrl);
+  if (referralCode) linhas.push('*' + (t?.couponShareCode ?? 'Meu código de indicação') + ':* ' + referralCode);
+  if (!referralUrl && origin) linhas.push(origin);
   return linhas.join('\n');
+}
+
+// Bloco de contato do estabelecimento, que aparece sob o QR Code.
+//
+// Renderiza SO o que a empresa preencheu. Campo vazio nao vira linha em branco
+// nem "-": a maioria das empresas do tenant ainda nao tem site nem Instagram
+// cadastrados, e um cartao com tres linhas vazias parece erro de tela em vez
+// de "a empresa ainda nao passou esse dado".
+//
+// Aceita os dois prefixos de campo que chegam de fontes diferentes: a ficha
+// (business_public_card) e businessX, as listas (list_offers e
+// list_customer_coupons) e businessX.
+function BusinessContact({ card, t, align = 'center' }) {
+  if (!card) return null;
+  const phone = String(card.businessPhone || card.phone || '').trim();
+  const digits = phoneDigits(phone);
+  const site = websiteHref(card.businessWebsite || card.website);
+  const ig = instagramHref(card.businessInstagram || card.instagram);
+  if (!digits && !site && !ig) return null;
+
+  const pill = {
+    display: 'inline-flex', alignItems: 'center', gap: 5, margin: '4px 5px 0',
+    padding: '6px 11px', borderRadius: 999, fontSize: 12, fontWeight: 600,
+    textDecoration: 'none', border: '1px solid rgba(11,110,79,.28)', color: '#0B6E4F',
+    background: '#FDF3D7', wordBreak: 'break-all',
+  };
+  const items = [
+    digits && (
+      <a key="tel" href={`tel:+${digits}`} style={pill}>{phone}</a>
+    ),
+    site && (
+      <a key="site" href={site} target="_blank" rel="noopener noreferrer" style={pill}>
+        {String(card.businessWebsite || card.website).replace(/^https?:\/\//i, '').replace(/\/+$/, '')}
+      </a>
+    ),
+    ig && (
+      <a key="ig" href={ig} target="_blank" rel="noopener noreferrer" style={pill}>
+        @{instagramHandle(card.businessInstagram || card.instagram)}
+      </a>
+    ),
+  ].filter(Boolean);
+
+  return (
+    <div style={{ marginTop: 12, textAlign: align }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: .6, color: 'rgba(11,110,79,.7)', textTransform: 'uppercase' }}>
+        {t?.businessContactLabel ?? 'Contato do estabelecimento'}
+      </div>
+      <div style={{ marginTop: 4 }}>{items}</div>
+    </div>
+  );
 }
 
 function timeAgo(iso, t) {
@@ -330,6 +424,10 @@ export default function ClientePage() {
   const [couponFilter, setCouponFilter] = useState('available');
   const [justClaimed, setJustClaimed] = useState(null);
   const [msg, setMsg] = useState('');
+  // publicId do cupom que esta sendo preparado para o compartilhamento. Existe
+  // para desabilitar o botao e mostrar "preparando" enquanto o link de
+  // indicacao e buscado -- sem isso, dois toques seguidos abrem duas abas.
+  const [sharingCoupon, setSharingCoupon] = useState('');
   const [mapStatus, setMapStatus] = useState('idle');
   const [invite, setInvite] = useState(null);
   const [inviteMsg, setInviteMsg] = useState('');
@@ -654,12 +752,17 @@ export default function ClientePage() {
 
   // Card "Indique um amigo": o mesmo telefone sempre devolve o mesmo link de
   // afiliado (affiliates.js faz get-or-create), entao gerar de novo nao duplica.
+  //
+  // Devolve o invite (ou null) alem de guardar no estado: o botao "Enviar por
+  // WhatsApp" precisa da shareUrl na MESMA rodada, e `setInvite` so surte
+  // efeito no proximo render -- ler o estado ali devolveria null justo no caso
+  // em que o link acabou de ser criado.
   async function ensureInvite() {
     const savedInvite = JSON.parse(localStorage.getItem('pyv_customer_invite') || 'null');
-    if (savedInvite && savedInvite.referralCode) { setInvite(savedInvite); return; }
+    if (savedInvite && savedInvite.referralCode) { setInvite(savedInvite); return savedInvite; }
     const savedCustomer = JSON.parse(localStorage.getItem('pyv_customer') || 'null') || {};
     const effPhone = phone || savedCustomer.phone || '';
-    if (!effPhone) { setInviteMsg(t.inviteNeedsPhone ?? 'Cadastre seu telefone acima para gerar seu link.'); return; }
+    if (!effPhone) { setInviteMsg(t.inviteNeedsPhone ?? 'Cadastre seu telefone acima para gerar seu link.'); return null; }
     const effName = name || savedCustomer.name || 'Cliente';
     setInviteMsg('');
     const res = await fetch('/.netlify/functions/affiliates', {
@@ -667,10 +770,45 @@ export default function ClientePage() {
       body: JSON.stringify({ name: effName, phone: effPhone }),
     });
     const data = await res.json();
-    if (!res.ok || !data.referralCode) { setInviteMsg(t.inviteRetry ?? 'Não foi possível gerar seu link. Tente novamente.'); return; }
+    if (!res.ok || !data.referralCode) { setInviteMsg(t.inviteRetry ?? 'Não foi possível gerar seu link. Tente novamente.'); return null; }
     const inv = { affiliateId: data.affiliateId, referralCode: data.referralCode, shareUrl: data.shareUrl };
     try { localStorage.setItem('pyv_customer_invite', JSON.stringify(inv)); } catch (e) { /* sem storage */ }
     setInvite(inv);
+    return inv;
+  }
+
+  // "Enviar por WhatsApp": abre o compartilhamento para UM DOS CONTATOS do
+  // cliente, com o link de indicacao dele na mensagem.
+  //
+  // A aba e aberta ANTES do primeiro await, de proposito. O link so fica pronto
+  // depois de ensureInvite() (que pode ir na rede) e o Chrome bloqueia
+  // window.open chamado depois de um await -- o botao pareceria funcionar e nao
+  // abriria nada. Abrindo 'about:blank' na hora do toque, o clique do usuario
+  // ja conta como autorizacao; depois so trocamos o destino.
+  async function shareCouponOnWhatsApp(c) {
+    if (!c || !c.publicId) return;
+    const origin = window.location.origin;
+    setMsg('');
+    setSharingCoupon(c.publicId);
+    const win = window.open('about:blank', '_blank');
+    try {
+      const inv = await ensureInvite();
+      const referralUrl = inv && inv.shareUrl ? origin + inv.shareUrl : '';
+      const url = buildWaLink({
+        message: couponShareMessage(c, { origin, referralUrl, referralCode: inv && inv.referralCode, t }),
+      });
+      if (win) {
+        win.location.href = url;
+      } else {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+    } catch (err) {
+      // Aba em branco aberta e nada enviado e pior do que nada: fecha.
+      if (win) { try { win.close(); } catch (e) { /* ja fechada */ } }
+      setMsg(t.couponShareFailed ?? 'Não foi possível preparar o envio. Tente novamente.');
+    } finally {
+      setSharingCoupon('');
+    }
   }
 
   async function copyInviteLink() {
@@ -737,16 +875,34 @@ export default function ClientePage() {
     tokens[data.publicId] = data.rawToken;
     localStorage.setItem('pyv_coupon_tokens', JSON.stringify(tokens));
     const logos = JSON.parse(localStorage.getItem('pyv_coupon_logos') || '{}');
-    logos[data.publicId] = { businessName: offer.businessName, logoUrl: offer.logoUrl || null, businessId: offer.businessId || null, title: offer.title, benefitValue: offer.benefitValue };
+    logos[data.publicId] = {
+      businessName: offer.businessName, logoUrl: offer.logoUrl || null, businessId: offer.businessId || null,
+      title: offer.title, benefitValue: offer.benefitValue,
+      businessPhone: offer.businessPhone || null, businessWebsite: offer.businessWebsite || null,
+      businessInstagram: offer.businessInstagram || null,
+    };
     localStorage.setItem('pyv_coupon_logos', JSON.stringify(logos));
     setCustomerId(data.customerId);
-    setJustClaimed({ ...data, businessName: offer.businessName, title: offer.title, benefitValue: offer.benefitValue, logoUrl: offer.logoUrl || null });
+    // O contato do estabelecimento entra no estado do cupom recem-resgatado:
+    // e o que o bloco embaixo do QR mostra. Vem da propria oferta (list_offers
+    // ja devolve businessPhone/businessWebsite/businessInstagram na p9), sem
+    // uma segunda ida ao banco so para desenhar tres linhas.
+    setJustClaimed({
+      ...data, businessId: offer.businessId || null,
+      businessName: offer.businessName, title: offer.title, benefitValue: offer.benefitValue,
+      logoUrl: offer.logoUrl || null,
+      businessPhone: offer.businessPhone || null, businessWebsite: offer.businessWebsite || null,
+      businessInstagram: offer.businessInstagram || null,
+    });
     loadMyCoupons(data.customerId);
 
-    // Mensagem honesta: o resgate ja esta garantido; o WhatsApp e o canal.
+    // Mensagem honesta: o resgate ja esta garantido. O WhatsApp envia a OFERTA
+    // para um contato do proprio cliente, com o link de indicacao dele e o
+    // codigo PYV-... do cupom no texto (decisao do dono, 2026-10-06). O QR
+    // continua sendo o caminho do balcao.
     const bonus = data.referral && data.referral.converted;
     let msg = 'Cupom resgatado! Guarde o QR abaixo — mostre no estabelecimento.';
-    if (data.whatsappUrl) msg += ' Toque em WhatsApp para mandar o código.';
+    msg += ' Use "Enviar por WhatsApp" para indicar este cupom a alguém.';
     if (bonus) msg += ' Você ganhou um bônus de indicação!';
     setMsg(msg);
   }
@@ -820,27 +976,47 @@ export default function ClientePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shuttle.vehicles, mapStatus]);
 
-  function handleOpenCoupon(c) {
+function handleOpenCoupon(c) {
     const tokens = JSON.parse(localStorage.getItem('pyv_coupon_tokens') || '{}');
     const rawToken = tokens[c.publicId];
     if (!rawToken) { setMsg('Código não disponível neste aparelho. Se você o resgatou em outro dispositivo ou limpou os dados do navegador, ele não pode ser recuperado — é necessário ter salvo o print no momento do resgate.'); setOpenCoupon(null); return; }
     setMsg('');
     const logos = JSON.parse(localStorage.getItem('pyv_coupon_logos') || '{}');
-    const meta = logos[c.publicId];
-    const businessId = c.businessId || (meta && meta.businessId);
+    const meta = logos[c.publicId] || {};
+    // Antes, a empresa do cupom vinha so do localStorage -- e sumia quando o
+    // cliente resgatou em outro aparelho. Na p9, list_customer_coupons devolve
+    // businessId/businessLogoUrl/businessWebsite/businessInstagram direto do
+    // banco; o localStorage fica so como complemento, para o caso de a lista
+    // ainda estar servida por uma versao antiga da RPC durante o rollout.
+    const businessId = c.businessId || meta.businessId || null;
     setOpenCoupon({
       ...c,
       rawToken,
-      logoUrl: (meta && meta.logoUrl) || null,
-      businessName: c.businessName || (meta && meta.businessName) || '—',
-      title: c.title || (meta && meta.title) || '',
+      logoUrl: c.businessLogoUrl || meta.logoUrl || null,
+      businessName: c.businessName || meta.businessName || '—',
+      title: c.title || meta.title || '',
+      businessPhone: c.businessPhone || meta.businessPhone || null,
+      businessWebsite: c.businessWebsite || meta.businessWebsite || null,
+      businessInstagram: c.businessInstagram || meta.businessInstagram || null,
     });
     if (businessId) {
       (async () => {
         try {
-          const res = await fetch(`/.netlify/functions/offers?tenantId=${TENANT_ID}&businessLogoFor=${businessId}`);
-          const logo = await res.json();
-          if (res.ok && logo && logo.logoUrl) setOpenCoupon((prev) => (prev ? { ...prev, logoUrl: logo.logoUrl } : prev));
+          // `businessCardFor` e o endpoint novo: traz nome, logo, telefone, site
+          // e Instagram de uma vez. O `businessLogoFor` antigo continua de pe
+          // no servidor so para o cliente ja publicado; quando este for
+          // retirado, o `businessLogoUrl` da lista e a reserva.
+          const res = await fetch(`/.netlify/functions/offers?tenantId=${TENANT_ID}&businessCardFor=${businessId}`);
+          const card = await res.json();
+          if (!res.ok || !card) return;
+          setOpenCoupon((prev) => (prev ? {
+            ...prev,
+            businessName: card.name || prev.businessName,
+            logoUrl: card.logoUrl || prev.logoUrl,
+            businessPhone: card.phone || prev.businessPhone,
+            businessWebsite: card.website || prev.businessWebsite,
+            businessInstagram: card.instagram || prev.businessInstagram,
+          } : prev));
         } catch { /* logo opcional */ }
       })();
     }
@@ -1015,9 +1191,21 @@ export default function ClientePage() {
 
       {justClaimed && (
         <div style={{ ...card, border: '3px solid #F2C14E', textAlign: 'center' }}>
-          {justClaimed.logoUrl && (
-            <img src={justClaimed.logoUrl} alt={justClaimed.businessName} style={{ height: 48, borderRadius: 8, marginBottom: 6 }} />
-          )}
+          {/* Logo em destaque (pedido do dono, outubro/2026): era 48px, suelto
+              no topo. Agora tem area reservada de 96px e `object-fit: contain`,
+              que e o que impede a marca de sair cortada -- logo e imagem de
+              identidade visual e nenhuma empresa tem a mesma proporcao. A marca
+              do sistema aparece quando a empresa nao cadastrou a dela, entao a
+              area existe mesmo sem logoUrl. */}
+          <div style={{ height: 96, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+            {justClaimed.logoUrl && (
+              <img
+                src={justClaimed.logoUrl}
+                alt={justClaimed.businessName || t.yourCoupon}
+                style={{ maxWidth: '100%', maxHeight: 96, objectFit: 'contain' }}
+              />
+            )}
+          </div>
           <h3 style={{ margin: 0 }}>{justClaimed.businessName || t.yourCoupon}</h3>
           <div ref={qrDivRef} style={{ display: 'flex', justifyContent: 'center', margin: '0 auto' }} />
           <p style={{ fontSize: 17, fontWeight: 700, letterSpacing: 1, marginTop: 12 }}>
@@ -1037,24 +1225,40 @@ export default function ClientePage() {
               continua aceitando quem use o par codigo+curto em material
               antigo. Ver netlify/functions/_wa.js. */}
 
-          {/* WhatsApp: link wa.me (gratuito, sem API). O usuario so toca em enviar. */}
-          {justClaimed.whatsappUrl && (
-            <a
-              href={justClaimed.whatsappUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                marginTop: 12, padding: '11px 14px', borderRadius: 10, textDecoration: 'none',
-                background: '#128C4A', color: '#fff', fontWeight: 700, fontSize: 14,
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.7.2-.2.3-.7 1-.9 1.1-.2.2-.3.2-.6.1-1.7-.9-2.8-1.6-3.9-3.5-.3-.5.3-.5.8-1.5.1-.2 0-.4 0-.5s-.7-1.6-.9-2.2c-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5 4.4 1.9.8 2.6.9 3.5.7.6-.1 1.7-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.2-.3-.3-.6-.4zM12 2C6.5 2 2 6.5 2 12c0 1.8.5 3.4 1.3 4.9L2 22l5.3-1.3c1.4.8 3 1.2 4.7 1.2 5.5 0 10-4.5 10-10S17.5 2 12 2zm0 18.2c-1.5 0-3-.4-4.3-1.2l-.3-.2-3.1.8.8-3-.2-.3c-.8-1.3-1.2-2.8-1.2-4.3 0-4.5 3.7-8.2 8.3-8.2s8.2 3.7 8.2 8.2-3.6 8.2-8.2 8.2z" />
-              </svg>
-              Enviar cupom pelo WhatsApp
-            </a>
-          )}
+          {/* Contato do estabelecimento, abaixo do QR (pedido do dono,
+              outubro/2026). Telefone, site e Instagram sao 100% opcionais: o
+              bloco some inteiro quando a empresa nao preencheu nenhum. */}
+          <BusinessContact card={justClaimed} t={t} />
+
+          {/* Enviar por WhatsApp: abre a folha de compartilhamento para UM DOS
+              CONTATOS do cliente, com o link de indicacao dele na mensagem.
+              Substitui o antigo link para a loja, que era wa.me com o telefone
+              do estabelecimento. O destino nao pode ser o `<a href>` montado
+              antes: o link so existe depois de ensureInvite() (que pode ir na
+              rede), e um href estatico congelaria a mensagem sem o codigo de
+              indicacao -- que e justamente o que o dono pediu. */}
+          <button
+            type="button"
+            onClick={() => shareCouponOnWhatsApp(justClaimed)}
+            disabled={sharingCoupon === justClaimed.publicId}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              marginTop: 14, padding: '11px 14px', borderRadius: 10,
+              border: 'none', cursor: sharingCoupon === justClaimed.publicId ? 'default' : 'pointer',
+              background: '#128C4A', color: '#fff', fontWeight: 700, fontSize: 14,
+              opacity: sharingCoupon === justClaimed.publicId ? 0.7 : 1,
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.7.2-.2.3-.7 1-.9 1.1-.2.2-.3.2-.6.1-1.7-.9-2.8-1.6-3.9-3.5-.3-.5.3-.5.8-1.5.1-.2 0-.4 0-.5s-.7-1.6-.9-2.2c-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5 4.4 1.9.8 2.6.9 3.5.7.6-.1 1.7-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.2-.3-.3-.6-.4zM12 2C6.5 2 2 6.5 2 12c0 1.8.5 3.4 1.3 4.9L2 22l5.3-1.3c1.4.8 3 1.2 4.7 1.2 5.5 0 10-4.5 10-10S17.5 2 12 2zm0 18.2c-1.5 0-3-.4-4.3-1.2l-.3-.2-3.1.8.8-3-.2-.3c-.8-1.3-1.2-2.8-1.2-4.3 0-4.5 3.7-8.2 8.3-8.2s8.2 3.7 8.2 8.2-3.6 8.2-8.2 8.2z" />
+            </svg>
+            {sharingCoupon === justClaimed.publicId
+              ? (t.couponSharePreparing ?? 'Preparando o envio…')
+              : (t.couponSendWhatsapp ?? 'Enviar por WhatsApp')}
+          </button>
+          <p style={{ fontSize: 11, color: theme.textMuted, margin: '6px 0 0' }}>
+            {t.couponShareHint ?? 'Escolha um contato: ele recebe o link de indicação e resgata o próprio cupom.'}
+          </p>
 
           {justClaimed.referral && justClaimed.referral.converted && (
             <p style={{ fontSize: 12, color: theme.greenDark, margin: '10px 0 0' }}>
@@ -1516,9 +1720,17 @@ export default function ClientePage() {
           })()}
           {openCoupon && (
             <div style={{ textAlign: 'center', marginTop: 12, borderTop: `1px solid ${theme.border}`, paddingTop: 12 }}>
-              {openCoupon.logoUrl && (
-                <img src={openCoupon.logoUrl} alt={openCoupon.businessName} style={{ height: 40, borderRadius: 8, marginBottom: 4 }} />
-              )}
+              {/* Mesma logica de destaque do cupom recem-resgatado: area fixa,
+                  maior, e `contain` para nao cortar a marca. Era 40px fixos. */}
+              <div style={{ height: 72, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
+                {openCoupon.logoUrl && (
+                  <img
+                    src={openCoupon.logoUrl}
+                    alt={openCoupon.businessName}
+                    style={{ maxWidth: '100%', maxHeight: 72, objectFit: 'contain' }}
+                  />
+                )}
+              </div>
               <strong style={{ fontSize: 15 }}>{openCoupon.businessName}</strong>
               <div ref={myCouponQrDivRef} style={{ display: 'flex', justifyContent: 'center', margin: '0 auto' }} />
               <p style={{ fontSize: 14, fontWeight: 700, margin: '8px 0 0' }}>{openCoupon.title}</p>
@@ -1532,27 +1744,41 @@ export default function ClientePage() {
                   {t.couponRedeemedOn} {formatWhen(openCoupon.validatedAt)}
                 </p>
               )}
-              {/* WhatsApp direto com o estabelecimento, tambem para cupom ja
-                  resgatado (feedback do dono). So aparece se a empresa tiver
-                  telefone cadastrado: sem destino valido o wa.me abriria o
-                  "compartilhar" do proprio celular do cliente, que e pior que
-                  nao mostrar nada. */}
-              {String(openCoupon.businessPhone || '').replace(/\D/g, '').length >= 10 && (
-                <a
-                  href={buildWaLink({
-                    phone: openCoupon.businessPhone,
-                    message: couponContactMessage(openCoupon, window.location.origin),
-                  })}
-                  target="_blank"
-                  rel="noopener noreferrer"
+
+              {/* Contato do estabelecimento, abaixo do QR. Some inteiro se a
+                  empresa nao preencheu telefone, site nem Instagram. */}
+              <BusinessContact card={openCoupon} t={t} />
+
+              {/* Enviar por WhatsApp (decisao do dono, outubro/2026): o botao
+                  que era "Falar no WhatsApp" com a LOJA virou compartilhamento
+                  para um dos CONTATOS do cliente, com o link de indicacao
+                  dele. Vale tambem para cupom ja VALIDATED -- a oferta continua
+                  valendo para quem entra pelo link, ainda que o cupom de quem
+                  envia ja tenha sido usado.
+
+                  Aqui NAO se aplica a regra antiga de "sem telefone o botao nao
+                  aparece": o destino passou a ser escolhido pelo proprio
+                  cliente, e um link sem numero e exatamente o que abre a folha
+                  de compartilhamento. Exigir telefone da loja esconderia o
+                  botao de quem mais precisa dele -- a loja que nao cadasturou
+                  telefone. */}
+              <div style={{ marginTop: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => shareCouponOnWhatsApp(openCoupon)}
+                  disabled={sharingCoupon === openCoupon.publicId}
                   style={{
-                    display: 'inline-block', marginTop: 10, padding: '9px 16px', borderRadius: 999,
-                    background: '#128C7E', color: '#fff', fontWeight: 700, fontSize: 14, textDecoration: 'none',
+                    display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 999,
+                    border: 'none', cursor: sharingCoupon === openCoupon.publicId ? 'default' : 'pointer',
+                    background: '#128C4A', color: '#fff', fontWeight: 700, fontSize: 14,
+                    opacity: sharingCoupon === openCoupon.publicId ? 0.7 : 1,
                   }}
                 >
-                  {t.couponContactWhatsapp}
-                </a>
-              )}
+                  {sharingCoupon === openCoupon.publicId
+                    ? (t.couponSharePreparing ?? 'Preparando o envio…')
+                    : (t.couponSendWhatsapp ?? 'Enviar por WhatsApp')}
+                </button>
+              </div>
             </div>
           )}
         </div>

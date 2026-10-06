@@ -94,7 +94,7 @@ export default function AdminPage() {
   const [affRewards, setAffRewards] = useState({ affiliateRewardTemplateId: '', welcomeTemplateId: '', requireFirstClaim: true });
   const [msg, setMsg] = useState('');
   const [form, setForm] = useState({
-    name: '', category: 'passeio', city: '', phone: '', email: '', cnpj: '', website: '', logoUrl: '',
+    name: '', category: 'passeio', city: '', phone: '', email: '', cnpj: '', website: '', instagram: '', logoUrl: '',
     lat: '', lng: '', ownerInternalCode: '', ownerPin: '', billingPlan: 'FREE',
   });
 
@@ -205,7 +205,7 @@ export default function AdminPage() {
       body: JSON.stringify({
         action: 'create_business',
         name: form.name, category: form.category, city: form.city, phone: form.phone, email: form.email,
-        cnpj: form.cnpj, website: form.website, logoUrl: form.logoUrl,
+        cnpj: form.cnpj, website: form.website, instagram: form.instagram, logoUrl: form.logoUrl,
         lat: form.lat ? Number(form.lat) : null, lng: form.lng ? Number(form.lng) : null,
         ownerInternalCode: form.ownerInternalCode, ownerPin: form.ownerPin, billingPlan: form.billingPlan,
       }),
@@ -213,7 +213,7 @@ export default function AdminPage() {
     const data = await res.json();
     if (!res.ok) { setMsg(`Erro: ${data.error}`); return; }
     setMsg(`Empresa cadastrada. Login dela em /empresa: ${form.ownerInternalCode}`);
-    setForm({ name: '', category: 'passeio', city: '', phone: '', email: '', cnpj: '', website: '', logoUrl: '', lat: '', lng: '', ownerInternalCode: '', ownerPin: '', billingPlan: 'FREE' });
+    setForm({ name: '', category: 'passeio', city: '', phone: '', email: '', cnpj: '', website: '', instagram: '', logoUrl: '', lat: '', lng: '', ownerInternalCode: '', ownerPin: '', billingPlan: 'FREE' });
     loadBusinesses();
   }
 
@@ -328,6 +328,7 @@ export default function AdminPage() {
         <br />
         <input style={input} placeholder={t.cnpjPlaceholder} value={form.cnpj} onChange={(e) => setForm({ ...form, cnpj: maskCnpj(e.target.value) })} />
         <input style={input} placeholder={t.website} value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} />
+        <input style={input} placeholder={t.instagramCompany} value={form.instagram} onChange={(e) => setForm({ ...form, instagram: e.target.value })} />
         <br />
         <label style={{ fontSize: 13 }}>{t.businessLogo} <input type="file" accept="image/*" onChange={handleLogoUpload} /></label>
         {form.logoUrl && <img src={form.logoUrl} alt="logo" style={{ height: 40, marginLeft: 8, verticalAlign: 'middle' }} />}
@@ -414,6 +415,7 @@ export default function AdminPage() {
                 </select>
                 <input style={input} placeholder={t.cnpjShort} value={editingBusiness.cnpj || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, cnpj: maskCnpj(e.target.value) })} />
                 <input style={input} placeholder={t.websiteShort} value={editingBusiness.website || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, website: e.target.value })} />
+                <input style={input} placeholder={t.instagramCompany} value={editingBusiness.instagram || ''} onChange={(e) => setEditingBusiness({ ...editingBusiness, instagram: e.target.value })} />
                 <br />
                 <button style={btn} onClick={saveBusinessEdit}>{t.save}</button>
                 <button style={smallBtn} onClick={() => setEditingBusiness(null)}>{t.cancel}</button>
