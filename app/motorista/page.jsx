@@ -29,6 +29,7 @@ import {
   shouldAutoSend,
   accuracyOk,
   accuracyText,
+  positionTransmitStatus,
   localDateIso,
   sortRunsByTime,
   formatRunWhen,
@@ -126,6 +127,15 @@ export default function MotoristaPage() {
   // GPS esta fraco — tipicamente um computador, que localiza por Wi-Fi/IP.
   const [precisao, setPrecisao] = useState(null);
   const autoErrRef = useRef(0);
+  // Relogio proprio da tela. O status "expirada" depende do tempo que passou,
+  // e tempo que passou nao muda nenhum outro estado: sem este tick, a linha
+  // ficaria "transmitindo" para sempre apos o pin sumir do mapa do cliente.
+  // 10 s e folga suficiente para virar stale logo apos os 300 s do servidor.
+  const [agora, setAgora] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setAgora(Date.now()), 10000);
+    return () => clearInterval(id);
+  }, []);
 
   // Sessao e cadastro pela metade sao reidratados do navegador. O guarda de
   // cada um esta em ./logic: o cadastro pela metade e conferido por
@@ -469,9 +479,18 @@ export default function MotoristaPage() {
               </button>
               <button style={ghostBtn} onClick={carregarServicos} disabled={ocupado}>{t.posReloadServices}</button>
             </div>
-            {autoOn ? (
-              <p style={{ color: theme.textMuted, marginBottom: 0 }}>{t.posAutoOn}</p>
-            ) : null}
+            {(() => {
+              const status = positionTransmitStatus({ autoOn, lastSentAt: ultimaPos, nowMs: agora });
+              const min = ultimaPos ? Math.max(1, Math.round((agora - Date.parse(ultimaPos)) / 60000)) : 0;
+              const linha = {
+                off: { cor: '#B42318', txt: t.posStatusOff },
+                'off-sent': { cor: '#B42318', txt: t.posStatusOffSent },
+                none: { cor: '#B42318', txt: t.posStatusNone },
+                stale: { cor: '#B42318', txt: fmt(t.posStatusStale, { min: String(min) }) },
+                fresh: { cor: theme.green, txt: t.posStatusFresh },
+              }[status];
+              return <p style={{ color: linha.cor, marginBottom: 0 }}>{linha.txt}</p>;
+            })()}
             {precisao !== null && precisao !== undefined ? (
               <p style={{ color: accuracyOk(precisao) ? theme.textMuted : '#B42318', marginBottom: 0 }}>
                 {t.posAccuracy.replace('{value}', accuracyText(precisao))}

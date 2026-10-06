@@ -1436,6 +1436,9 @@ function handleOpenCoupon(c) {
         <button style={btn} onClick={showMap}>{mapStatus === 'idle' ? t.showMap : t.updateMap}</button>
         {mapStatus === 'denied' && <p style={{ fontSize: 13 }}>{t.locationDenied}</p>}
         <div ref={mapRef} style={{ height: 320, marginTop: 12, borderRadius: 8, display: mapStatus === 'idle' ? 'none' : 'block' }} />
+        {mapStatus !== 'idle' && mapStatus !== 'denied' && (
+          <p style={{ fontSize: 11, color: theme.textMuted, margin: '6px 0 0' }}>{t.mapVehiclesLegend}</p>
+        )}
       </div>
 
       <div style={card}>
@@ -1565,6 +1568,9 @@ function handleOpenCoupon(c) {
                   </div>
                 ))}
               </div>
+            )}
+            {!shuttle.err && shuttle.vehicles.length === 0 && (
+              <p style={{ margin: '10px 0 0', fontSize: 12, color: theme.textMuted }}>{t.transladoNoVehicles}</p>
             )}
             {!shuttle.err && shuttle.vehicles.length > 0 && (
               <div style={{ marginTop: 12 }}>

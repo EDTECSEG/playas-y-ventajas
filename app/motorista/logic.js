@@ -267,6 +267,35 @@ export function shouldAutoSend({ enabled, status, visible } = {}) {
   return true;
 }
 
+// --- O que a tela diz sobre a transmissao -----------------------------------
+
+// Janela de frescor do mapa em ms: list_live_vehicles descarta posicao com
+// idade >= 300 s. E o mesmo numero de AUTO_POSITION_MS, so que em
+// milissegundos para a conta de idade caber na funcao pura.
+export const POSITION_MAX_AGE_MS = 300000;
+
+// Estado da transmissao para a tela mostrar sem adivinhar. Os casos sao o
+// que o cliente realmente ve no mapa:
+//   off      - automático desligado e NENHUMA posicao fresca no mapa (nunca
+//              enviou, ou a ultima ja expirou — nos dois, ela nao aparece).
+//   off-sent - desligado mas a posicao ainda e fresca: aparece no mapa por
+//              mais alguns minutos e some sozinha.
+//   none     - ligado e nunca enviou: o pin tambem nao existe.
+//   stale    - ligado, mas a ultima posicao passou de POSITION_MAX_AGE_MS:
+//              o envio automatico nao esta conseguindo atualizar (GPS fraco,
+//              aba escondida, permissao revogada).
+//   fresh    - transmitindo e visivel agora.
+// `lastSentAt` invalido conta como "nunca enviou": dizer "nenhuma posicao
+// enviada" e mais honesto do que calcular idade de um texto que nao e data.
+export function positionTransmitStatus({ autoOn, lastSentAt, nowMs } = {}) {
+  const sent = lastSentAt ? Date.parse(lastSentAt) : NaN;
+  const hasSent = Number.isFinite(sent);
+  const fresh = hasSent && nowMs - sent < POSITION_MAX_AGE_MS;
+  if (!autoOn) return fresh ? 'off-sent' : 'off';
+  if (!hasSent) return 'none';
+  return fresh ? 'fresh' : 'stale';
+}
+
 // --- Qualidade da posicao (accuracy) ----------------------------------------
 
 // Raio maximo aceito para o envio automatico, em metros.

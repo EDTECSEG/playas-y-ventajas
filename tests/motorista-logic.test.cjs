@@ -587,8 +587,37 @@ test('buildRegisterRequest ainda cobra nome, telefone e email', () => {
 test('erros novos do servidor tem texto amigavel', () => {
   assert.match(L.friendlyMessage('CPF_REQUIRED'), /CPF/i);
   assert.match(L.friendlyMessage('CPF_INVALID'), /invalido/i);
-  assert.match(L.friendlyMessage('CNPJ_INVALID'), /invalido/i);
+  assert.match(L.friendlyMessage('CNPJ_INVALID'), /CNPJ/i);
   assert.match(L.friendlyMessage('LEGAL_NAME_REQUIRED'), /razao social/i);
   assert.match(L.friendlyMessage('CPF_ALREADY_REGISTERED'), /ja tem cadastro/i);
   assert.match(L.friendlyMessage('CNPJ_ALREADY_REGISTERED'), /ja tem cadastro/i);
+});
+
+test('positionTransmitStatus: desligado sem posicao fresca e off', () => {
+  const t0 = Date.parse('2026-10-06T19:14:22Z');
+  assert.strictEqual(L.positionTransmitStatus({ autoOn: false, lastSentAt: null, nowMs: t0 }), 'off');
+  assert.strictEqual(L.positionTransmitStatus({ autoOn: false, lastSentAt: 'lixo', nowMs: t0 }), 'off');
+  const enviado = new Date(t0).toISOString();
+  assert.strictEqual(L.positionTransmitStatus({ autoOn: false, lastSentAt: enviado, nowMs: t0 + 300000 }), 'off');
+});
+
+test('positionTransmitStatus: desligado com posicao fresca ainda conta no mapa', () => {
+  const t0 = Date.parse('2026-10-06T19:14:22Z');
+  const enviado = new Date(t0).toISOString();
+  assert.strictEqual(L.positionTransmitStatus({ autoOn: false, lastSentAt: enviado, nowMs: t0 + 1000 }), 'off-sent');
+});
+
+test('positionTransmitStatus: ligado sem envio nenhum e none', () => {
+  const t0 = Date.parse('2026-10-06T19:14:22Z');
+  assert.strictEqual(L.positionTransmitStatus({ autoOn: true, lastSentAt: null, nowMs: t0 }), 'none');
+  assert.strictEqual(L.positionTransmitStatus({ autoOn: true, lastSentAt: 'lixo', nowMs: t0 }), 'none');
+});
+
+test('positionTransmitStatus: fronteira dos 300 s bate com o servidor', () => {
+  const t0 = Date.parse('2026-10-06T19:14:22Z');
+  const enviado = new Date(t0).toISOString();
+  assert.strictEqual(L.positionTransmitStatus({ autoOn: true, lastSentAt: enviado, nowMs: t0 + 299999 }), 'fresh');
+  // list_live_vehicles usa `recorded_at > now() - 300 s`: idade igual a 300 ja cai fora.
+  assert.strictEqual(L.positionTransmitStatus({ autoOn: true, lastSentAt: enviado, nowMs: t0 + 300000 }), 'stale');
+  assert.strictEqual(L.positionTransmitStatus({ autoOn: true, lastSentAt: enviado, nowMs: t0 + 691000 }), 'stale');
 });
