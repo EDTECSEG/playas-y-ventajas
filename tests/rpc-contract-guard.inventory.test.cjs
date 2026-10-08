@@ -11,11 +11,12 @@
 //     auth_login"; a funcao definida no mesmo arquivo e auth_login_by_email);
 //   - e perdia 8 que nao tem mencao nenhuma, sao invisiveis a busca por texto.
 //
-// O resultado correto eram 14; em outubro/2026 a p9 versionou
-// admin_create_business e admin_update_business, e sairam da lista: 12. Este
-// arquivo e a prova de que 12 continua sendo o numero: se alguem versionar um
-// .sql novo, ou chamar uma RPC nova, a contagem muda e o teste falha pedindo
-// reconciliacao em vez de deixar a lista envelhecer em silencio.
+// O resultado correto eram 14; a p9 versionou admin_create_business e
+// admin_update_business (12); a p10 (supabase/p10-functions-v2.sql) versionou
+// as 12 que sobravam, e a lista SEM .sql hoje e 0. Este arquivo e a prova de
+// que 0 continua sendo o numero: se alguem versionar um .sql novo, apagar um,
+// ou chamar uma RPC nova sem versionar, a contagem muda e o teste falha
+// pedindo reconciliacao em vez de deixar a lista envelhecer em silencio.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -58,8 +59,10 @@ function hasDefinition(name) {
   return false;
 }
 
-// A lista do guard, lida do proprio arquivo: nao duplicamos as 12 aqui, senao
-// as duas copias divergem sem ninguem perceber.
+// A lista do guard, lida do proprio arquivo: nao duplicamos os nomes aqui,
+// senao as duas copias divergem sem ninguem perceber. Apos a p10 esta lista
+// esta vazia de proposito (todo RPC chamado tem .sql); o parser continua
+// apontando para ASSINATURAS, que e o ancora da reconciliacao.
 function guardedRpcs() {
   const src = fs.readFileSync(path.join(__dirname, 'rpc-contract-guard.test.cjs'), 'utf8');
   const start = src.indexOf('const ASSINATURAS = {');
@@ -85,21 +88,22 @@ test('a inventario bate com a lista do guard (nenhuma RPC sem .sql escapando)', 
   );
 });
 
-test('contagem de RPCs sem .sql continua sendo 12', () => {
-  assert.strictEqual(SEM_SQL.length, 12, `hoje sem .sql: ${SEM_SQL.join(', ')}`);
+test('contagem de RPCs sem .sql continua sendo 0', () => {
+  assert.strictEqual(SEM_SQL.length, 0, `hoje sem .sql: ${SEM_SQL.join(', ')}`);
 });
 
 // Trava o metodo, que e onde o numero errado veio. Se `hasDefinition` voltar a
-// casar mencao em vez de definicao, business_coupon_stats (que so aparece num
-// comentario em business-report-v3.sql:18) voltaria a contar como versionada.
+// casar mencao em vez de definicao, issue_coupon_from_template (que so aparece
+// num comentario em fix-function-search-path.sql:37 e num DROP do p10, nunca
+// num CREATE) voltaria a contar como versionada.
 test('hasDefinition distingue definicao de mencao em comentario', () => {
-  // So aparece em comentario; nao pode contar como versionada.
-  assert.strictEqual(hasDefinition('business_coupon_stats'), false);
+  // So aparece em comentario (e no DROP do p10); nao pode contar como versionada.
+  assert.strictEqual(hasDefinition('issue_coupon_from_template'), false);
   // Definida de verdade.
   assert.strictEqual(hasDefinition('affiliate_reward_status'), true);
-  // auth_login: o nome aparece no repo, mas so como comentario.
-  assert.strictEqual(hasDefinition('auth_login'), false);
-  // auth_login_by_email: a funcao realmente definida ao lado do comentario.
+  // auth_login: versionada pela p10 (p10-functions-v2.sql), nao so comentada.
+  assert.strictEqual(hasDefinition('auth_login'), true);
+  // auth_login_by_email: a funcao definida ao lado do comentario em email-login-billing.sql.
   assert.strictEqual(hasDefinition('auth_login_by_email'), true);
 });
 

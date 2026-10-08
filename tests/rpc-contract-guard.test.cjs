@@ -1,16 +1,22 @@
 'use strict';
 
-// Trava a ASSINATURA das RPCs que existem em producao mas nao tem .sql no
-// repositorio. Sao as unicas em que o call-site do handler e a fonte da
-// verdade: sem o SQL, nada mais no repo diz quais p_* a funcao aceita.
+// Trava a ASSINATURA das RPCs que os handlers chamam, para que o lado repo
+// pare de mudar em silencio. Uma RPC com .sql no repo tem a assinatura no
+// proprio SQL; o que falta e travar que o HANDLER mande exatamente os p_* e a
+// ordem que o banco espera. Sem este teste, um p_* renomeado no handler so
+// quebra em producao, e o PostgREST responde "function ... does not exist"
+// para o usuario. O teste nao garante que a assinatura bate com o banco (isso
+// exige MCP/CLI): garante que o call-site do repo nao deriva.
 //
-// Sem este teste, um p_* renomeado no handler so quebra em producao, e o
-// PostgREST responde "function ... does not exist" para o usuario. O teste
-// nao garante que a assinatura bate com o banco (isso exige MCP/CLI): garante
-// que o lado do repo para de mudar em silencio.
-//
-// Quando o SQL de uma delas for versionado, este teste vira redundante e pode
-// sair: a passa de `assinatura: CALLSITE` para `assinatura: VERSIONADA`.
+// HISTORICO: ASSINATURAS comecou com as 14 RPCs que existiam em producao mas
+// nao tinham .sql (o call-site era a unica fonte da verdade). A p9 versionou
+// admin_create_business e admin_update_business (saíram para
+// ASSINATURAS_VERSIONADAS); a p10 (supabase/p10-functions-v2.sql) versionou
+// as 12 que sobravam. ASSINATURAS hoje esta VAZIA de proposito: e o âncora que
+// tests/rpc-contract-guard.inventory.test.cjs compara contra a varredura
+// "handler chama RPC que nao tem CREATE FUNCTION no repo". Se uma RPC nova
+// entrar sem .sql, a varredura enche, ASSINATURAS nao, e o inventario falha
+// pedindo reconciliacao.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -22,21 +28,25 @@ const TENANT_SLUG = 'playas-y-ventajas';
 // Nomes exatos, em ordem de insercao, como o handler monta hoje. O
 // deepStrictEqual de `Object.keys` abaixo e o que prende a ordem tambem.
 //
-// Sao 12, nao 6: a lista foi gerada casando `CREATE [OR REPLACE] FUNCTION` de
-// verdade, e nao qualquer mencao. Um scan por substring dava 6 e errava em
-// dois sentidos: contava comentario como definicao (`auth_login` aparece em
-// `email-login-billing.sql:26` so num comentario que diz "espelha auth_login" -
-// a funcao la definida e `auth_login_by_email`) e deixava de fora as 8 que
-// nao tem mencao nenhuma. `tests/rpc-contract-guard.inventory.test.cjs` refaz a
-// contagem e falha se esta lista deixar de bater com o repo.
-//
-// As duas de `admin_*_business` sairam daqui em outubro/2026: a p9 passou a
-// versionar as duas, e uma RPC com .sql no repo nao precisa deste guard como
-// unico registro da assinatura (ver ASSINATURAS_VERSIONADAS abaixo). Eram 14.
+// A lista nasceu com 14 (gerada casando `CREATE [OR REPLACE] FUNCTION` de
+// verdade, e nao qualquer mencao: um scan por substring contava comentario
+// como definicao e deixava de fora as que nao tem mencao nenhuma). A p9 levou
+// 2 para ASSINATURAS_VERSIONADAS; a p10 levou as 12 restantes. Nada aqui esta
+// apagado: as 14 continuam travadas no call-site la embaixo.
 const ASSINATURAS = {
+};
+
+// RPCs com .sql no repo (p9 e p10) mas cujo callsite continua travado aqui.
+// O `.sql` diz o que a funcao aceita; o que falta e travar que o HANDLER
+// continue mandando exatamente esses nomes, na ordem, com nada undefined.
+// Excecao conhecida: as duas da p9 exigem `p_instagram` por ultimo, porque e
+// o unico parametro com DEFAULT (validado no teste da lista, la embaixo).
+const ASSINATURAS_VERSIONADAS = {
   admin_billing_panel: ['p_tenant_id', 'p_actor_user_id'],
+  admin_create_business: ['p_tenant_id', 'p_actor_user_id', 'p_name', 'p_category', 'p_city', 'p_phone', 'p_email', 'p_lat', 'p_lng', 'p_owner_internal_code', 'p_owner_pin', 'p_billing_plan', 'p_cnpj', 'p_website', 'p_logo_url', 'p_instagram'],
   admin_list_customers: ['p_tenant_id', 'p_actor_user_id', 'p_search'],
   admin_toggle_business: ['p_tenant_id', 'p_actor_user_id', 'p_business_id', 'p_is_active'],
+  admin_update_business: ['p_tenant_id', 'p_actor_user_id', 'p_business_id', 'p_name', 'p_phone', 'p_email', 'p_category', 'p_city', 'p_cnpj', 'p_website', 'p_logo_url', 'p_instagram'],
   admin_update_customer: ['p_tenant_id', 'p_actor_user_id', 'p_customer_id', 'p_name', 'p_email', 'p_instagram', 'p_is_active'],
   auth_login: ['p_tenant_slug', 'p_internal_code', 'p_pin'],
   auth_verify_session: ['p_session_token'],
@@ -46,16 +56,6 @@ const ASSINATURAS = {
   empresa_dashboard: ['p_tenant_id', 'p_business_id'],
   identify_customer: ['p_tenant_id', 'p_phone', 'p_name', 'p_email', 'p_instagram'],
   validate_and_redeem_coupon: ['p_tenant_id', 'p_business_id', 'p_public_id', 'p_raw_token', 'p_actor_user_id', 'p_idempotency_key', 'p_short_code'],
-};
-
-// RPCs que JA TEM .sql no repo, mas cujo callsite continua travado aqui. Sao as
-// duas que a p9 recriou com um parametro a mais: o `.sql` diz o que a funcao
-// aceita, e o que falta e travar que o HANDLER continue mandando exatamente
-// esses nomes, na ordem, com nada undefined. O parametro novo (`p_instagram`)
-// tem de vir por ultimo, porque e o unico com DEFAULT.
-const ASSINATURAS_VERSIONADAS = {
-  admin_create_business: ['p_tenant_id', 'p_actor_user_id', 'p_name', 'p_category', 'p_city', 'p_phone', 'p_email', 'p_lat', 'p_lng', 'p_owner_internal_code', 'p_owner_pin', 'p_billing_plan', 'p_cnpj', 'p_website', 'p_logo_url', 'p_instagram'],
-  admin_update_business: ['p_tenant_id', 'p_actor_user_id', 'p_business_id', 'p_name', 'p_phone', 'p_email', 'p_category', 'p_city', 'p_cnpj', 'p_website', 'p_logo_url', 'p_instagram'],
 };
 
 // Uma unica RPC por teste: se o servidor mockado rejeitar o resto, a falha
@@ -91,7 +91,7 @@ test('assinatura CALLSITE: admin_list_customers', async (t) => {
 
   assert.strictEqual(res.statusCode, 200);
   assert.strictEqual(calls.length, 1);
-  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS.admin_list_customers);
+  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS_VERSIONADAS.admin_list_customers);
   // O filtro da UI vai em p_search, nao em p_query_string.
   assert.strictEqual(calls[0].p_search, 'jo');
 });
@@ -117,7 +117,7 @@ test('assinatura CALLSITE: admin_toggle_business', async (t) => {
   }));
 
   assert.strictEqual(res.statusCode, 200);
-  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS.admin_toggle_business);
+  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS_VERSIONADAS.admin_toggle_business);
   assert.strictEqual(calls[0].p_business_id, 'b-1');
   assert.strictEqual(calls[0].p_is_active, false);
 });
@@ -150,7 +150,7 @@ test('assinatura CALLSITE: admin_update_customer', async (t) => {
   }));
 
   assert.strictEqual(res.statusCode, 200);
-  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS.admin_update_customer);
+  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS_VERSIONADAS.admin_update_customer);
   assert.strictEqual(calls[0].p_instagram, '@jo');
 });
 
@@ -195,7 +195,7 @@ test('assinatura CALLSITE: admin_update_business', async (t) => {
   assert.strictEqual(calls[1].p_instagram, '', 'instagram vazio precisa chegar string vazia, para limpar de verdade');
 });
 
-test('assinatura CALLSITE: create_campaign (sem .sql, sem teste ate agora)', async (t) => {
+test('assinatura CALLSITE: create_campaign', async (t) => {
   const calls = [];
   const { handler, restore } = loadFunction(
     'empresa.js',
@@ -216,7 +216,7 @@ test('assinatura CALLSITE: create_campaign (sem .sql, sem teste ate agora)', asy
   }));
 
   assert.strictEqual(res.statusCode, 200);
-  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS.create_campaign);
+  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS_VERSIONADAS.create_campaign);
   assert.strictEqual(calls[0].p_title, 'Outono');
   // businessId vem do ATOR, nunca do body: se alguem mandar businessId no body
   // para escrever em outro estabelecimento, o parametro nem existe.
@@ -243,24 +243,32 @@ test('assinatura CALLSITE: empresa_dashboard', async (t) => {
   }));
 
   assert.strictEqual(res.statusCode, 200);
-  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS.empresa_dashboard);
+  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS_VERSIONADAS.empresa_dashboard);
   assert.strictEqual(calls[0].p_business_id, VALID_ACTORS.merchant.businessId);
 });
 
-// Trava a lista em si: se alguem apagar uma entrada daqui sem versionar o
-// SQL, a assinatura dela deixa de ser travada em silencio. A contagem e a
-// definicao ficam em rpc-contract-guard.inventory.test.cjs, que refaz a varredura.
-test('a lista cobre as 12 RPCs sem .sql no repo', () => {
-  assert.strictEqual(Object.keys(ASSINATURAS).length, 12);
+// Trava as listas em si: se alguem apagar uma entrada sem (des)versionar o
+// SQL, a assinatura dela deixa de ser travada em silencio. A contagem contra o
+// repo fica em rpc-contract-guard.inventory.test.cjs, que refaz a varredura.
+test('ASSINATURAS esta vazia (p10 versionou as 12) e as 14 versionadas seguem travadas no callsite', () => {
+  assert.strictEqual(
+    Object.keys(ASSINATURAS).length,
+    0,
+    'ASSINATURAS so deve ganhar entrada de RPC sem .sql no repo — o inventario refaz a varredura e cobra reconciliacao',
+  );
   for (const [nome, p] of Object.entries(ASSINATURAS)) {
     assert.ok(Array.isArray(p) && p.length > 0, `${nome}: lista vazia`);
     for (const param of p) assert.match(param, /^p_[a-z0-9_]+$/, `${nome}: param invalido ${param}`);
   }
+  assert.strictEqual(Object.keys(ASSINATURAS_VERSIONADAS).length, 14);
   for (const [nome, p] of Object.entries(ASSINATURAS_VERSIONADAS)) {
     assert.ok(Array.isArray(p) && p.length > 0, `${nome}: lista vazia`);
     for (const param of p) assert.match(param, /^p_[a-z0-9_]+$/, `${nome}: param invalido ${param}`);
-    // O parametro da p9 e DEFAULT e por isso tem de ser o ultimo: com um
-    // parametro sem DEFAULT depois dele, o CREATE nem roda.
+  }
+  // O parametro da p9 e DEFAULT e por isso tem de ser o ultimo: com um
+  // parametro sem DEFAULT depois dele, o CREATE nem roda.
+  for (const nome of ['admin_create_business', 'admin_update_business']) {
+    const p = ASSINATURAS_VERSIONADAS[nome];
     assert.strictEqual(p[p.length - 1], 'p_instagram', `${nome}: p_instagram precisa ser o ultimo parametro`);
   }
 });
@@ -313,7 +321,7 @@ test('assinatura CALLSITE: auth_verify_session (afeta toda rota autenticada)', a
   t.after(restore);
   await handler(makeEvent({ query: {}, headers: { authorization: `Bearer ${TOKEN}` } }));
   assert.strictEqual(calls.length, 1, 'resolveSession deveria ter sido chamado');
-  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS.auth_verify_session);
+  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS_VERSIONADAS.auth_verify_session);
   assert.strictEqual(calls[0].p_session_token, TOKEN);
 });
 
@@ -332,7 +340,7 @@ test('assinatura CALLSITE: auth_login', async (t) => {
   t.after(restore);
   const res = await handler(makeEvent({ method: 'POST', body: { tenantSlug: TENANT_SLUG, internalCode: 'C-1', pin: '1234' } }));
   assert.strictEqual(res.statusCode, 200);
-  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS.auth_login);
+  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS_VERSIONADAS.auth_login);
 });
 
 test('assinatura CALLSITE: identify_customer', async (t) => {
@@ -348,7 +356,7 @@ test('assinatura CALLSITE: identify_customer', async (t) => {
   );
   t.after(restore);
   await handler(makeEvent({ method: 'POST', body: { phone: '5511999999999' } }));
-  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS.identify_customer);
+  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS_VERSIONADAS.identify_customer);
 });
 
 test('assinatura CALLSITE: validate_and_redeem_coupon (idempotencia e short_code)', async (t) => {
@@ -365,7 +373,7 @@ test('assinatura CALLSITE: validate_and_redeem_coupon (idempotencia e short_code
   );
   t.after(restore);
   await handler(makeEvent({ method: 'POST', headers: { authorization: `Bearer ${TOKEN}` }, body: { publicId: 'ABC-1', rawToken: 'rt', shortCode: '123456' } }));
-  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS.validate_and_redeem_coupon);
+  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS_VERSIONADAS.validate_and_redeem_coupon);
 });
 
 test('assinatura CALLSITE: business_coupon_stats', async (t) => {
@@ -382,7 +390,7 @@ test('assinatura CALLSITE: business_coupon_stats', async (t) => {
   );
   t.after(restore);
   await handler(makeEvent({ query: { mode: 'stats' }, headers: { authorization: `Bearer ${TOKEN}` } }));
-  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS.business_coupon_stats);
+  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS_VERSIONADAS.business_coupon_stats);
 });
 
 test('assinatura CALLSITE: admin_billing_panel', async (t) => {
@@ -399,5 +407,5 @@ test('assinatura CALLSITE: admin_billing_panel', async (t) => {
   );
   t.after(restore);
   await handler(makeEvent({ query: { mode: 'billing' }, headers: { authorization: `Bearer ${TOKEN}` } }));
-  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS.admin_billing_panel);
+  assert.deepStrictEqual(Object.keys(calls[0]), ASSINATURAS_VERSIONADAS.admin_billing_panel);
 });

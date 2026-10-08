@@ -25,7 +25,7 @@ const fs = require('node:fs');
 const BASE = process.env.LIVE_BASE || 'https://playas-y-ventajas.pages.dev';
 const SLUG = 'playas-y-ventajas';
 const BUSINESS_CODE = process.env.LIVE_BUSINESS_CODE || '';
-const PIN = '4821';
+const PIN = process.env.LIVE_PIN || '4821';
 
 // `path.join(__dirname, '..')` e nao '.dev.vars': assim funciona independente
 // de onde o comando for executado.
@@ -71,6 +71,19 @@ async function get(nome, query, token) {
   return { status: res.status, body: await res.json().catch(() => null) };
 }
 
+// CPF com DV valido, gerado por execucao: o banco exige CPF unico por tenant
+// (drivers_tenant_cpf_uniq), entao um valor fixo so funcionaria uma vez.
+function gerarCpf() {
+  const base = Array.from({ length: 9 }, () => Math.floor(Math.random() * 10));
+  const dv = (nums) => {
+    const s = nums.reduce((acc, n, i) => acc + n * (nums.length + 1 - i), 0);
+    const r = (s * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  const d1 = dv(base);
+  return base.join('') + d1 + dv(base.concat([d1]));
+}
+
 // estado compartilhado entre os passos, que sao estritamente sequenciais.
 // Tudo fica dentro de um `describe` de proposito: no Node 22 um `before` na
 // raiz do arquivo NAO roda antes de `test` na raiz — so ancora dentro de uma
@@ -95,6 +108,7 @@ describe('aprovacao de motorista: caminho feliz', { skip: enabled() }, () => {
     const sufixo = Date.now().toString().slice(-9);
     ctx.fone = `55119${sufixo}`;
     ctx.emailMotorista = `qa.aprovacao.${sufixo}@exemplo.com`;
+    ctx.cpf = gerarCpf();
     ctx.pdf = Buffer.from(
       '%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF',
       'latin1'
@@ -130,6 +144,7 @@ describe('aprovacao de motorista: caminho feliz', { skip: enabled() }, () => {
       phone: ctx.fone,
       email: ctx.emailMotorista,
       businessId: ctx.businessId,
+      cpf: ctx.cpf,
     });
     assert.strictEqual(r.status, 200, `driver-register: ${JSON.stringify(r.body)}`);
     assert.ok(r.body.driverId, 'deve vir driverId');

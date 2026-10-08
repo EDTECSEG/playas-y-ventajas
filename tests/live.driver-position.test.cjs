@@ -68,6 +68,19 @@ async function get(nome, query, token) {
   return { status: res.status, body: await res.json().catch(() => null) };
 }
 
+// CPF com DV valido, gerado por execucao: o banco exige CPF unico por tenant
+// (drivers_tenant_cpf_uniq), entao um valor fixo so funcionaria uma vez.
+function gerarCpf() {
+  const base = Array.from({ length: 9 }, () => Math.floor(Math.random() * 10));
+  const dv = (nums) => {
+    const s = nums.reduce((acc, n, i) => acc + n * (nums.length + 1 - i), 0);
+    const r = (s * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  const d1 = dv(base);
+  return base.join('') + d1 + dv(base.concat([d1]));
+}
+
 const ctx = {};
 
 describe('reporte de posicao ao vivo', { skip: enabled() }, () => {
@@ -82,8 +95,11 @@ describe('reporte de posicao ao vivo', { skip: enabled() }, () => {
       throw new Error('LIVE_BUSINESS_CODE ausente: defina o codigo interno da empresa de teste');
     }
     const sufixo = Date.now().toString().slice(-9);
-    ctx.fone = `55119${sufixo}`;
+    // 55219 (e nao 55119 do suite de aprovacao): os dois arquivos rodam em
+    // paralelo e, no mesmo milissegundo, gerariam o mesmo telefone de teste.
+    ctx.fone = `55219${sufixo}`;
     ctx.emailMotorista = `qa.posicao.${sufixo}@exemplo.com`;
+    ctx.cpf = gerarCpf();
     ctx.pdf = Buffer.from(
       '%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF',
       'latin1'
@@ -126,6 +142,7 @@ describe('reporte de posicao ao vivo', { skip: enabled() }, () => {
       phone: ctx.fone,
       email: ctx.emailMotorista,
       businessId: ctx.businessId,
+      cpf: ctx.cpf,
     });
     assert.strictEqual(r.status, 200, `driver-register: ${JSON.stringify(r.body)}`);
     ctx.driverId = r.body.driverId;

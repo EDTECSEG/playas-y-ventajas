@@ -163,35 +163,31 @@ Vínculo por telefone: `driver_register`, `driver_set_pin`, `driver_login`, `dri
 
 **Nota**: as funções de produção (linha "produção" acima) não têm arquivo `.sql` no repo — vivem apenas no Supabase remoto. Não edite produção sem passar pelo `supabase` (migração versionada + advisors).
 
-## RPCs existentes apenas em produção (sem `.sql` no repo)
+## RPCs: todas versionadas desde a p10
 
-`admin_billing_panel`, `admin_create_business`, `admin_list_businesses`, `admin_list_customers`, `admin_request_password_reset`, `admin_set_billing`, `admin_toggle_business`, `admin_update_business`, `admin_update_customer`, `auth_login`, `auth_pin_reset_required`, `auth_verify_session`, `business_coupon_stats`, `business_delete_template`, `business_set_pin`, `business_toggle_template`, `business_update_template`, `create_campaign`, `create_coupon_template`, `empresa_dashboard`, `identify_customer`, `list_customer_coupons`, `validate_and_redeem_coupon`, `list_shuttle_services`, `list_live_vehicles` (as duas últimas do Módulo 1 têm `.sql` versionado em `supabase/modulo1-motoristas-translado-proximity.sql`, já aplicado).
+Estado atual (p10, 2026-10-08): `supabase/p10-functions-v2.sql` versiona as **95
+funções do app** — as que faltavam e todas as outras, reconstruídas a partir da
+leitura de produção com assinaturas e chaves JSON idênticas (contrato RPC
+preservado; front intocado). Nenhuma função do app está mais sem `.sql` no repo.
+Antes da p10 esta seção listava 25 nomes "só em produção" e o contrato delas
+vivia no call-site; o call-site segue travado (abaixo), agora como trava do
+handler contra o `.sql`, e não como única fonte da verdade.
 
-### Contrato das 14 RPCs acima (trava automática no call-site)
+### Contrato de call-site das 14 funções versionadas
 
-**São 14, não 6.** A contagem aqui é `CREATE [OR REPLACE] FUNCTION` de verdade, e
-não qualquer menção do nome. Uma varredura por substring dava 6 e errava nos dois
-sentidos:
-
-- contava comentário como definição — `auth_login` aparece em
-  `email-login-billing.sql:26` só num comentário que diz "espelha auth_login";
-  a função definida no mesmo arquivo é `auth_login_by_email`;
-- perdia as 8 que não têm menção nenhuma, invisíveis a busca por texto
-  (`business_coupon_stats` só aparece em comentário, em
-  `business-report-v3.sql:18`).
-
-Sem o `.sql`, a assinatura (quais `p_*` cada uma aceita) não é verificável no
-repo — só o PostgREST de produção sabe. O que dá para travar é o call-site.
-`tests/rpc-contract-guard.test.cjs` fixa o conjunto exato de cada uma com
-`deepStrictEqual` sobre `Object.keys`:
+O `.sql` prova o que o banco aceita; o que falta é travar o que o **handler**
+manda — um `p_*` renomeado no call-site só quebra em produção, como
+`function ... does not exist`. `tests/rpc-contract-guard.test.cjs` fixa o
+conjunto exato de cada chamada com `deepStrictEqual` sobre `Object.keys`
+(e a ordem dos `p_*`):
 
 | RPC | `p_*` esperados |
 |---|---|
 | `admin_billing_panel` | `p_tenant_id`, `p_actor_user_id` |
-| `admin_create_business` | `p_tenant_id`, `p_actor_user_id`, `p_name`, `p_category`, `p_city`, `p_phone`, `p_email`, `p_lat`, `p_lng`, `p_owner_internal_code`, `p_owner_pin`, `p_billing_plan`, `p_cnpj`, `p_website`, `p_logo_url` |
+| `admin_create_business` | `p_tenant_id`, `p_actor_user_id`, `p_name`, `p_category`, `p_city`, `p_phone`, `p_email`, `p_lat`, `p_lng`, `p_owner_internal_code`, `p_owner_pin`, `p_billing_plan`, `p_cnpj`, `p_website`, `p_logo_url`, `p_instagram` |
 | `admin_list_customers` | `p_tenant_id`, `p_actor_user_id`, `p_search` |
 | `admin_toggle_business` | `p_tenant_id`, `p_actor_user_id`, `p_business_id`, `p_is_active` |
-| `admin_update_business` | `p_tenant_id`, `p_actor_user_id`, `p_business_id`, `p_name`, `p_phone`, `p_email`, `p_category`, `p_city`, `p_cnpj`, `p_website`, `p_logo_url` |
+| `admin_update_business` | `p_tenant_id`, `p_actor_user_id`, `p_business_id`, `p_name`, `p_phone`, `p_email`, `p_category`, `p_city`, `p_cnpj`, `p_website`, `p_logo_url`, `p_instagram` |
 | `admin_update_customer` | `p_tenant_id`, `p_actor_user_id`, `p_customer_id`, `p_name`, `p_email`, `p_instagram`, `p_is_active` |
 | `auth_login` | `p_tenant_slug`, `p_internal_code`, `p_pin` |
 | `auth_verify_session` | `p_session_token` |
@@ -207,10 +203,12 @@ helper compartilhado `_supabaseAdmin.resolveSession` (`_supabaseAdmin.js:27`),
 que roda em **toda** rota autenticada. Um `p_*` errado ali derruba o sistema
 inteiro de uma vez.
 
-Quando o `.sql` de uma delas for versionado, a linha sai daqui: o teste passa de
-call-site para fonte da verdade. `tests/rpc-contract-guard.inventory.test.cjs`
-refaz a varredura e falha se a lista divergir do repo, para a contagem não
-envelhecer em silêncio.
+`ASSINATURAS` (funções sem `.sql`) está vazia de propósito desde a p10;
+`ASSINATURAS_VERSIONADAS` segura as 14 travadas acima.
+`tests/rpc-contract-guard.inventory.test.cjs` refaz a varredura
+"handler chama RPC sem `CREATE FUNCTION` no repo" e falha pedindo reconciliação
+se uma RPC nova entrar sem versionar, para a contagem não envelhecer em
+silêncio.
 
 **Consequência prática**: renomear um `p_*` no handler quebra o teste local, em
 vez de virar um `function ... does not exist` para o usuário em produção.
@@ -265,3 +263,4 @@ Todas aplicadas via MCP (`apply_migration`) após aprovação do dono; advisors 
 14. `supabase/p8-cota-free-cupons.sql` — **APLICADA em 2026-10-05** (`p8_cota_free_cupons`): `businesses.free_coupon_allowance` (default 10) e `businesses.free_coupons_used` (default 0), ambas `NOT NULL` com CHECK não-negativo; backfill/grandfather que preserva quem já tem mais de 10 (`allowance = used`); `claim_coupon` com **a mesma assinatura de 7 argumentos**, que passa a Incrementar o contador e a devolver `FREE_COUPON_QUOTA_EXCEEDED` quando a empresa FREE estoura a cota vitalícia. O replay idempotente é conferido **antes** da cota, e a RPC nova `business_coupon_allowance(uuid, uuid)` devolve `jsonb` (`available`, `limited`, `allowance`, `used`, `remaining`) com ACL apenas para `service_role`. `billing_plan IS NULL` conta como FREE; planos pagos não têm limite. `allowance = 0` significa bloqueio total (kill switch do admin), não "sem limite". Leitura pelo painel em `empresa?mode=allowance`, que degrada para `{available:false}` enquanto a RPC não existir — por isso a UI pode subir antes da migration. Antes de aplicar, os dois `UPDATE` foram simulados em `SELECT`: o resultado real depois de aplicar bateu exatamente com o previsto (soma de `allowance` FREE = 192, 17 empresas ainda com saldo, 1 empresa no grandfather com 12 cupons, 0 empresas fora da regra). `claim_coupon` em empresa zerada devolveu `FREE_COUPON_QUOTA_EXCEEDED` sem gravar nada — nem cupom, nem o `INSERT` de usuário que roda antes da cota (rollback da transação), e a soma de `used` continuou 48. `business_coupon_allowance` devolveu `limited/allowance/used/remaining` batendo com as colunas, e `FORBIDDEN` para ator `CUSTOMER`. Cupons (48), templates (17) e campanhas (16) intactos. **Rollback:** `p8-cota-free-cupons.rollback.sql` (restaura a `claim_coupon` cifrada da p5 e remove as colunas; **não** apaga cupons nem campanhas, e os contadores perdidos são reconstituíveis por `COUNT`).
 15. `supabase/p9-contato-publico-empresa.sql` — **APLICADA em 2026-10-06** (`p9_contato_publico_empresa`): `businesses.instagram` (nullable, sem default) e o helper `public.normalize_instagram(text)` (`IMMUTABLE`, `search_path = pg_temp`, `STRICT`) que deixa só o handle canônico — sem `@`, sem `https://`, sem barra final e em minúsculas, para o mesmo perfil nunca virar dois cadastros. `business_get_own` e `list_offers` passam a devolver `website`/`instagram`; `list_customer_coupons` ganha `businessId`, `businessLogoUrl`, `businessWebsite` e `businessInstagram`, o que tira a dependência de `localStorage` para identificar a empresa de um cupom resgatado em outro aparelho. Nova `business_public_card(uuid)` (`jsonb`, `security definer`, ACL só `service_role`) devolve a ficha pública da empresa em uma chamada. As 4 funções de escrita (`register_business`, `business_update_own`, `admin_create_business`, `admin_update_business`) ganham `p_instagram` como **último** parâmetro com `DEFAULT NULL`, e `business_update_own` também `p_website`; como no `DROP`+`CREATE` do padrão p3/p6, `DEFAULT` no meio da lista seria erro de sintaxe e manter a sobrecarga antiga criaria ambiguidade de resolução no PostgREST. Semântica no update: `NULL` mantém o valor salvo, string vazia limpa o campo — por isso o worker mapeia `undefined → null` e `'' → ''`, nunca `|| null` nos dois casos. `admin_list_businesses` passa a devolver `instagram`. **Ordem:** o worker novo funciona antes da p9 (o parâmetro novo é o último e tem default) e o worker antigo continua funcionando depois dela; ainda assim, publicar o código antes deixa o rollout reversível sem janela quebrada. **Rollback:** `p9-contato-publico-empresa.rollback.sql` (remove as funções novas, devolve as 4 assinaturas antigas e **não** apaga a coluna, para não perder dado já cadastrado).
 16. `supabase/fix-normalize-instagram.sql` — **APLICADA em 2026-10-06** (`fix_normalize_instagram`): recria `public.normalize_instagram` com a mesma assinatura `(text)`, portanto só `CREATE OR REPLACE` — o ACL (só `service_role` + `postgres`) fica de pe. Saiu da validação da p9 em produção, que mediu tres defeitos de contrato: (a) o prefixo exigia esquema (`'^https?://(www\.)?instagram\.com/'`), então `instagram.com/playas` passava inteiro e o app montava `https://instagram.com/instagram.com/playas` (404) — corrigido para `'^((https?://)?(www\.)?instagram\.com/?)'`, que também cobre a colagem de `https://instagram.com` sem barra (vira `NULL`); (b) `'^@+'` é ancorado e rodava antes do `btrim`, então `  @playas  ` gravava `@playas` no banco — corrigido com `btrim(coalesce(p_handle,''))` como **argumento** da primeira troca; (c) faltava `lower()`, que o próprio `API.md` documentava — sem ele, `@Playas` e `@playas` seriam duas linhas do mesmo perfil, contra o propósito declarado da p9 ("um jeito só de gravar o mesmo perfil"). `businesses.instagram` tinha **0** linhas preenchidas na data da correção, então não há dado no formato antigo a reprocessar e não há rollback. Verificado em produção: `@playas`, `instagram.com/playas`, `https://www.instagram.com/playas/`, `playas`, `PLAYAS` e `  @novo_perfil  ` todos normalizam certo, `https://instagram.com`/`''`/`NULL` viram `NULL`, `provolatile = 'i'` e ACL inalterado. No front, `instagramHandle()` em `app/cliente/page.jsx` passa a ser a **única** fonte do link e do texto exibidos, para os dois nunca discordarem. O teste da p9 (`tests/p9-contato-empresa-guard.test.cjs`) deixou de procurar o texto `instagram\.com` no corpo do SQL e agora extrai os padrões de `regexp_replace` e os **executa** contra os formatos documentados — o assert antigo passava com a função errada.
+17. `supabase/p10-schema-v2.sql` + `supabase/p10-functions-v2.sql` — **APLICADOS em 2026-10-08** (Caminho A aprovado pelo dono: rebuild do schema e das funções "do zero", a partir da leitura de produção; aplicados via MCP `execute_sql`, não `apply_migration`). As 17 tabelas do `public` foram recriadas e resemeadas a partir do snapshot `pyv-backups\db-snapshot-prep10-20261008` (0 FK quebrada) e as **95 funções do app** foram reconstruídas com a mesma assinatura e o mesmo corpo que existiam em produção — conferência final por md5 servidor-side: **95/95** em argumentos e corpo, 0 divergência. O contrato RPC ficou preservado (nomes, `p_*` e chaves JSON idênticos), por isso o front não foi tocado. A auditoria que precedeu o rebuild encontrou 2 bugs latentes, corrigidos pela reaplicação: a `auth_login` antiga referenciava `login_attempts.internal_code` (coluna que não existe mais, BUG-1) e a `list_offers` antiga usava `t.issued_count` (BUG-2) — ambos confirmados verdes na suíte ao vivo. Toda função reaplicada com `REVOKE ... FROM PUBLIC, anon, authenticated` + `GRANT ... TO service_role`. Verificação: suíte completa `RUN_LIVE=1` com credenciais de teste — **772 testes, 770 pass, 0 fail, 0 cancelled, 2 skip** (os 2 skip são o gate de env do detector de exposição da chave anon, pré-existentes); os testes ao vivo de motorista passaram a enviar CPF com DV gerado por execução, porque a p7 exige CPF e o índice `drivers_tenant_cpf_uniq` não deixaria CPF fixo rodar duas vezes. Também neste commit: os 3 índices de FK que faltavam (`idx_outbound_messages_coupon_id`, `idx_referrals_reward_coupon_id`, `idx_referrals_welcome_coupon_id`), zerando `unindexed_foreign_keys`. Advisors pós-aplicação: nenhum `SECURITY DEFINER` do app executável por `anon`/`authenticated`; permanecem os INFOs conhecidos e aceitos (14 tabelas com RLS e sem policy = deny-by-design — leituras do cliente passam só por RPC `SECURITY DEFINER`; `spatial_ref_sys`/postgis; 27 índices não usados). O guarda de contrato (`tests/rpc-contract-guard.test.cjs`) agora trava as 14 em `ASSINATURAS_VERSIONADAS` e mantém `ASSINATURAS` vazia de propósito, com `tests/rpc-contract-guard.inventory.test.cjs` refazendo a varredura de "RPC chamada sem `.sql`". **Rollback:** o snapshot acima (não há `.rollback.sql` dedicado — o rebuild substitui o schema inteiro).
