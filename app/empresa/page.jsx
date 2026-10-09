@@ -928,7 +928,7 @@ export default function EmpresaPage() {
 
       {!session ? (
         <>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginBottom: 12 }}>
             <button style={authMode === 'login' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setAuthMode('login'); setMsg(''); }}>{t.authLogin}</button>
             <button style={authMode === 'register' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setAuthMode('register'); setMsg(''); }}>{t.authRegister}</button>
           </div>
@@ -986,7 +986,7 @@ export default function EmpresaPage() {
         </div>
       ) : (
         <>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginBottom: 16 }}>
             <button style={tab === 'criar' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('criar')}>{t.tabManageOffers}</button>
             <button style={tab === 'validar' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => setTab('validar')}>{t.tabValidate}</button>
             <button style={tab === 'dados' ? btn : { ...btn, background: theme.border, color: theme.text }} onClick={() => { setTab('dados'); loadMyData(); }}>{t.tabMyData}</button>

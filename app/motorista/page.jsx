@@ -598,10 +598,12 @@ export default function MotoristaPage() {
 
         {!session && !pending ? (
           <div style={card}>
-            <button style={{ ...smallBtn, background: tab === 'entrar' ? theme.green : theme.greenLight, color: tab === 'entrar' ? '#FFF' : theme.greenDark }}
-              onClick={() => setTab('entrar')}>{t.driverEnter}</button>
-            <button style={{ ...smallBtn, background: tab === 'cadastrar' ? theme.green : theme.greenLight, color: tab === 'cadastrar' ? '#FFF' : theme.greenDark }}
-              onClick={() => setTab('cadastrar')}>{t.driverRegisterTab}</button>
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
+              <button style={{ ...smallBtn, background: tab === 'entrar' ? theme.green : theme.greenLight, color: tab === 'entrar' ? '#FFF' : theme.greenDark }}
+                onClick={() => setTab('entrar')}>{t.driverEnter}</button>
+              <button style={{ ...smallBtn, background: tab === 'cadastrar' ? theme.green : theme.greenLight, color: tab === 'cadastrar' ? '#FFF' : theme.greenDark }}
+                onClick={() => setTab('cadastrar')}>{t.driverRegisterTab}</button>
+            </div>
 
             {tab === 'entrar' ? (
               <div style={{ marginTop: 16 }}>

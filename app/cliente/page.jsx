@@ -1271,7 +1271,7 @@ function handleOpenCoupon(c) {
       <div style={card}>
         <h3 style={{ marginTop: 0 }}>{customerId && name ? `${t.availableOffers} · ${name}` : t.availableOffers}</h3>
         {cities.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '0 0 12px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8, margin: '0 0 12px' }}>
             <button
               style={{
                 ...smallBtn, borderRadius: 999, padding: '5px 12px', cursor: 'pointer',
@@ -1296,7 +1296,7 @@ function handleOpenCoupon(c) {
           </div>
         )}
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '0 0 12px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8, margin: '0 0 12px', alignItems: 'center' }}>
           <button
             type="button"
             style={{
@@ -1331,7 +1331,7 @@ function handleOpenCoupon(c) {
         {filterMsg && <p style={{ fontSize: 12, color: theme.textMuted, margin: '-4px 0 10px' }}>{filterMsg}</p>}
 
         {categories.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '0 0 12px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8, margin: '0 0 12px' }}>
             <button
               style={{
                 ...smallBtn, borderRadius: 999, padding: '5px 12px', cursor: 'pointer',
