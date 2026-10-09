@@ -416,6 +416,16 @@ export default function MotoristaPage() {
     limparTudo();
   });
 
+  // Saida do estado preso: o cadastro pela metade estava em pending mas o login
+  // automatico apos definir o PIN nao completou. As abas Entrar/Cadastrar so
+  // aparecem sem pending, entao sem este botao o motorista fica preso na tela de
+  // PIN/documentos para sempre, mesmo com o cadastro ja aprovado pela empresa.
+  const irParaLogin = () => {
+    localStorage.removeItem('pyv_driver_pending');
+    setPending(null);
+    setTab('entrar');
+  };
+
   const situacao = situationFor({ session, pending });
   const info = situacao ? STATUS_LABEL[situacao] : null;
 
@@ -563,18 +573,32 @@ export default function MotoristaPage() {
               </>
             ) : (
               /* pinToken ja foi consumido, entao este estado so aparece se o
-                 login automatico apos salvar o PIN nao completou. Da para
-                 enviar documento por aqui mesmo, e o login fica na aba Entrar. */
+                 login automatico apos salvar o PIN nao completou. O botao
+                 abaixo e a unica saida: sem ele o motorista fica preso aqui,
+                 porque as abas Entrar/Cadastrar so aparecem sem pending. */
               <p style={{ color: theme.textMuted, margin: 0 }}>
                 {t.pinAlreadySet}
               </p>
             )}
+            <div style={{ marginTop: 10 }}>
+              <button style={ghostBtn} onClick={irParaLogin}>{t.goToLogin}</button>
+            </div>
           </div>
         ) : null}
 
         {(session || pending) ? (
           <div style={card}>
             <h3 style={{ marginTop: 0 }}>{t.docTitle}</h3>
+            {canDrive(session && session.status) ? (
+              /* Reenviar documento com cadastro aprovado rebaixa o motorista
+                 de novo para pending (driver_add_document). Deixar o botao
+                 visivel aqui seria convidar o motorista a desfazer a propria
+                 aprovacao; para approved a tela so confirma a situacao. */
+              <p style={{ color: theme.textMuted, margin: 0 }}>
+                {t.docApprovedNote}
+              </p>
+            ) : (
+            <>
             <label style={label} htmlFor="doctype">{t.docType}</label>
             <select id="doctype" style={input} value={doc.docType} onChange={(e) => setDoc({ ...doc, docType: e.target.value })}>
               {DOC_TYPES.map((d) => <option key={d.value} value={d.value}>{t[d.value === 'cnh' ? 'docCnh' : d.value === 'rg' ? 'docRg' : 'docCrv']}</option>)}
@@ -593,6 +617,8 @@ export default function MotoristaPage() {
                 {t.docRejected}
               </p>
             ) : null}
+            </>
+            )}
           </div>
         ) : null}
 
