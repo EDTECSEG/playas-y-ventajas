@@ -454,7 +454,7 @@ export default function MotoristaPage() {
           <div style={card}>
             <h3 style={{ marginTop: 0 }}>{fmt(t.helloName, { name: session.name })}</h3>
             <p style={{ color: theme.textMuted, marginTop: 0 }}>
-              {fmt(t.driverHeaderDoc, { phone: session.phone, status: docEnviado ? t.docSent : t.docPending })}
+              {fmt(t.driverHeaderDoc, { phone: session.phone, status: canDrive(session.status) ? t.driverApproved : (docEnviado ? t.docSent : t.docPending) })}
             </p>
             {/* Entrar no app e dirigir sao coisas separadas. Sem esta frase o
                 motorista aprovado em documentos acha que ja esta na frota,

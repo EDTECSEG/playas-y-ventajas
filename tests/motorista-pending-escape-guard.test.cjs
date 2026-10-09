@@ -94,6 +94,23 @@ test('o botao "Enviar documento" so existe no ramo nao-aprovado', () => {
 
 // -------------------------------------------------------------------- i18n
 
+test('o header nao mostra "documento pendente" para motorista aprovado', () => {
+  const linha = MOTORISTA.split('\n').find((l) => l.includes('driverHeaderDoc'));
+  assert.ok(linha, 'a linha do header com status do documento precisa existir');
+  assert.ok(
+    /canDrive\(session\.status\)/.test(linha),
+    'o status do documento deve derivar do status da sessao',
+  );
+  assert.ok(
+    /driverApproved/.test(linha),
+    'aprovado => "documento aprovado", nunca "pendente"',
+  );
+  assert.ok(
+    /docEnviado \? t\.docSent : t\.docPending/.test(linha),
+    'nao-aprovado mantem o comportamento antigo (enviado agora / pendente)',
+  );
+});
+
 test('as chaves novas existem nos tres idiomas', () => {
   for (const chave of ['goToLogin', 'docApprovedNote']) {
     for (const idioma of ['pt', 'en', 'es']) {
