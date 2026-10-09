@@ -241,3 +241,91 @@ test('falha do auto-envio nao enche a tela de aviso de erro', () => {
     'o auto-envio precisa de um contador de falhas, e nao de setErro a cada ciclo',
   );
 });
+
+// ------------------------------------------- Atualizacao automatica do translado
+
+test('a janela de atualizacao do translado e de 30s', () => {
+  assert.strictEqual(CL.SHUTTLE_REFRESH_MS, 30000,
+    '30s acompanha o envio automatico do motorista sem martelar o endpoint');
+});
+
+test('so re-busca com a lista carregada e a aba visivel', () => {
+  // Antes da primeira busca nao ha o que atualizar; com a aba escondida,
+  // atualizar a cada 30s so gasta rede de quem nao esta vendo o mapa.
+  assert.strictEqual(CL.shouldRefreshShuttle({ status: 'done' }), true);
+  assert.strictEqual(CL.shouldRefreshShuttle({ status: 'done', hidden: false }), true);
+  assert.strictEqual(CL.shouldRefreshShuttle({ status: 'done', hidden: true }), false);
+  for (const status of ['idle', 'locating', '', null, undefined]) {
+    assert.strictEqual(CL.shouldRefreshShuttle({ status }), false,
+      `status ${JSON.stringify(status)} nao pode atualizar`);
+  }
+});
+
+test('a pagina re-busca o translado periodicamente, com limpeza', () => {
+  // Este e o teste que trava o bug de "o carro nao aparece": a lista so era
+  // buscada no clique de "Ver perto de mim". Sem timer, uma posicao enviada
+  // depois do load nunca chegava ao cliente com a tela ja aberta.
+  const bloco = PAGE.slice(PAGE.indexOf('shouldRefreshShuttle({ status: shuttle.status'));
+  assert.ok(/SHUTTLE_REFRESH_MS/.test(PAGE), 'a pagina precisa usar a janela da logica pura');
+  assert.ok(/setInterval/.test(bloco), 'falta o timer de atualizacao do translado');
+  assert.ok(/clearInterval/.test(bloco), 'sem clearInterval o timer sobrevive a montagem');
+  assert.ok(/shouldRefreshShuttle\(/.test(bloco), 'a decisao de atualizar tem que vir da logica pura');
+});
+
+// --------------------------------------------- Mapa proprio no card de translado
+
+test('o card de translado tem mapa proprio, alem da lista de texto', () => {
+  // O pino so existia no "Mapa da regiao", que exige um clique e geolocalizacao.
+  // No card de translado os veiculos apareciam somente como texto.
+  assert.ok(/transVehicleMapRef/.test(PAGE), 'falta o container do mapa no card de translado');
+  assert.ok(/transVehicleMapInstanceRef/.test(PAGE), 'falta a instancia do mapa do translado');
+  assert.ok(/transVehicleLayerRef/.test(PAGE), 'falta a camada de veiculos do card');
+  assert.ok(
+    /<div ref=\{transVehicleMapRef\}/.test(PAGE),
+    'o container precisa estar montado no JSX do card',
+  );
+});
+
+test('o mapa do translado redesenha a partir de shuttle.vehicles', () => {
+  const bloco = PAGE.slice(PAGE.indexOf('transVehicleMapRef'));
+  assert.ok(/visibleVehicles\(shuttle\.vehicles\)/.test(bloco), 'o card precisa filtrar os veiculos utilizaveis');
+  assert.ok(/vehicleMarkerHtml\(/.test(bloco), 'o marcador do card tem que vir de vehicleMarkerHtml (que escapa)');
+  assert.ok(
+    /transVehicleLayerRef\.current\s*=\s*L\.layerGroup\(\)\.addTo\(map\)/.test(bloco),
+    'a camada do card precisa ser criada como layerGroup (para limpar e repovoar)',
+  );
+  assert.ok(/layer\.clearLayers\(\)/.test(bloco), 'a camada do card precisa ser limpa antes de redesenhar');
+});
+
+test('o mapa do translado e desmontado ao sair da pagina', () => {
+  assert.ok(
+    /transVehicleMapInstanceRef\.current\.remove\(\)/.test(PAGE),
+    'sem remove() o listener global do Leaflet sobrevive ao componente',
+  );
+});
+
+// ------------------------------------------- showMap sem geolocalizacao / timeout
+
+test('getCurrentPosition tem timeout, senao o mapa travaria em "locating"', () => {
+  assert.ok(
+    /timeout:\s*10000/.test(PAGE),
+    'sem timeout a tela podia ficar presa em locating para sempre',
+  );
+});
+
+test('abrir o mapa funciona mesmo sem geolocalizacao', () => {
+  // Senao o mapa so abria com permissao de GPS concedida; quem negasse via a tela
+  // de erro e nenhum pino. Agora cai num centro de reserva (veiculo/servico).
+  assert.ok(/fallbackCenter/.test(PAGE), 'falta o centro de reserva quando nao ha geolocalizacao');
+  assert.ok(/'geolocation' in navigator/.test(PAGE), 'falta a guarda para navegador sem geolocation');
+  assert.ok(/start\(c\.lat, c\.lng, false\)/.test(PAGE), 'o erro de geolocalizacao precisa desenhar no centro de reserva');
+});
+
+test('o translado busca veiculos num raio maior que o da tela antiga', () => {
+  // 16 km escondia o veiculo que esta a caminho (Arraial -> Buzios) so por estar
+  // longe do ponto do cliente.
+  assert.ok(
+    /params\.set\('radiusKm', '50'\)/.test(PAGE),
+    'o raio do translado precisa subir para 50 km',
+  );
+});

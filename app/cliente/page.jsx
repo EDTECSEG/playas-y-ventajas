@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useLanguage } from '../../lib/LanguageContext';
-import { visibleVehicles, vehicleMarkerHtml, vehiclePopupHtml } from './logic';
+import { visibleVehicles, vehicleMarkerHtml, vehiclePopupHtml, SHUTTLE_REFRESH_MS, shouldRefreshShuttle } from './logic';
 import Header from '../components/Header';
 import { theme } from '../../lib/theme';
 import { renderQrWithLogo } from '../../lib/qr-logo';
@@ -447,10 +447,19 @@ export default function ClientePage() {
   // Camada so dos motoristas. Sem ela, cada atualizacao de posicao empilha um
   // marcador novo por cima do anterior (o mapa e remontado a cada "Atualizar").
   const vehicleLayerRef = useRef(null);
+  // Mapa proprio do card de translado: os veiculos aparecem aqui sem depender do
+  // "Mapa da regiao", que so existe depois de um clique e de geolocalizacao.
+  const transVehicleMapRef = useRef(null);
+  const transVehicleMapInstanceRef = useRef(null);
+  const transVehicleLayerRef = useRef(null);
   const qrDivRef = useRef(null);
   const myCouponQrDivRef = useRef(null);
   const [openCoupon, setOpenCoupon] = useState(null);
   const [shuttle, setShuttle] = useState({ status: 'idle', lat: null, lng: null, services: [], vehicles: [], err: '' });
+  // Ultima lista conhecida, para o timer re-buscar com as coordenadas ja achadas
+  // sem refazer geolocalizacao a cada ciclo.
+  const shuttleRef = useRef(shuttle);
+  const [shuttleHidden, setShuttleHidden] = useState(false);
 
   useEffect(() => {
     // Guarda o ?ref= do link de afiliado antes de qualquer fluxo de resgate.
@@ -516,7 +525,10 @@ export default function ClientePage() {
   async function fetchShuttle(lat, lng) {
     try {
       const params = new URLSearchParams({ tenantId: TENANT_ID });
-      if (lat != null && lng != null) { params.set('lat', lat); params.set('lng', lng); params.set('radiusKm', '16'); }
+      // 50 km acompanha o raio de ofertas/radar da mesma tela: com 16 km o
+      // veiculo que esta a caminho (translado Arraial -> Buzios) sumia do mapa
+      // so por estar longe do ponto do cliente.
+      if (lat != null && lng != null) { params.set('lat', lat); params.set('lng', lng); params.set('radiusKm', '50'); }
       const res = await fetchComTimeout(`/.netlify/functions/shuttle?${params.toString()}`);
       if (!res.ok) {
         setShuttle((s) => ({ ...s, status: 'done', services: [], vehicles: [], err: (t.transladoFail ?? 'Não foi possível carregar o translado. Tente de novo em instantes.') }));
@@ -976,6 +988,84 @@ export default function ClientePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shuttle.vehicles, mapStatus]);
 
+  // Mantem a ref com a ultima lista para o timer re-buscar com as coordenadas
+  // ja conhecidas, sem refazer geolocalizacao a cada ciclo.
+  useEffect(() => {
+    shuttleRef.current = shuttle;
+  }, [shuttle]);
+
+  // Pausa a re-busca com a aba escondida: com o mapa fora de vista, atualizar a
+  // cada 30s so gasta rede.
+  useEffect(() => {
+    const onVis = () => setShuttleHidden(document.hidden);
+    onVis();
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
+  // Re-busca periodica do translado. Sem isto, uma posicao enviada DEPOIS de o
+  // cliente carregar a lista nunca aparecia ate ele tocar em "Ver perto de mim"
+  // de novo — era o que fazia o carro "sumir" de quem ja estava com a tela
+  // aberta.
+  useEffect(() => {
+    if (!shouldRefreshShuttle({ status: shuttle.status, hidden: shuttleHidden })) return;
+    const id = setInterval(() => {
+      fetchShuttle(shuttleRef.current.lat, shuttleRef.current.lng);
+    }, SHUTTLE_REFRESH_MS);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shuttle.status, shuttleHidden]);
+
+  // Mapa proprio do card de translado. Diferente do "Mapa da regiao", ele existe
+  // so por causa dos veiculos: o carro aparece assim que a lista chega, sem
+  // depender de um clique nem de geolocalizacao.
+  useEffect(() => {
+    const vs = visibleVehicles(shuttle.vehicles);
+    if (vs.length === 0) {
+      if (transVehicleMapInstanceRef.current) {
+        transVehicleMapInstanceRef.current.remove();
+        transVehicleMapInstanceRef.current = null;
+        transVehicleLayerRef.current = null;
+      }
+      return undefined;
+    }
+    let cancelled = false;
+    loadLeaflet().then((L) => {
+      if (cancelled || !transVehicleMapRef.current) return;
+      if (!transVehicleMapInstanceRef.current) {
+        const map = L.map(transVehicleMapRef.current, { attributionControl: false })
+          .setView([vs[0].lat, vs[0].lng], 14);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+        transVehicleMapInstanceRef.current = map;
+        transVehicleLayerRef.current = L.layerGroup().addTo(map);
+        setTimeout(() => { if (transVehicleMapInstanceRef.current) transVehicleMapInstanceRef.current.invalidateSize(); }, 0);
+      }
+      const layer = transVehicleLayerRef.current;
+      if (!layer) return;
+      layer.clearLayers();
+      for (const v of vs) {
+        L.marker([v.lat, v.lng], {
+          icon: L.divIcon({ className: 'pyv-driver-marker', html: vehicleMarkerHtml(v, t), iconSize: [44, 40], iconAnchor: [22, 20] }),
+        }).addTo(layer).bindPopup(vehiclePopupHtml(v, t, timeAgo(v.recordedAt, t)));
+      }
+      const pts = vs.map((v) => [v.lat, v.lng]);
+      if (pts.length === 1) transVehicleMapInstanceRef.current.setView(pts[0], 14);
+      else transVehicleMapInstanceRef.current.fitBounds(pts, { padding: [30, 30], maxZoom: 15 });
+    }).catch(() => { /* sem Leaflet: a lista de texto continua valendo */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shuttle.vehicles]);
+
+  // Desmonta o mapa do card ao sair da pagina, senao o listener global do
+  // Leaflet sobrevive ao componente.
+  useEffect(() => () => {
+    if (transVehicleMapInstanceRef.current) {
+      transVehicleMapInstanceRef.current.remove();
+      transVehicleMapInstanceRef.current = null;
+      transVehicleLayerRef.current = null;
+    }
+  }, []);
+
 function handleOpenCoupon(c) {
     const tokens = JSON.parse(localStorage.getItem('pyv_coupon_tokens') || '{}');
     const rawToken = tokens[c.publicId];
@@ -1024,8 +1114,21 @@ function handleOpenCoupon(c) {
 
   async function showMap() {
     setMapStatus('locating');
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      const { latitude, longitude } = pos.coords;
+    // Abrir o mapa tambem carrega o translado: quem nunca tocou em "Ver perto de
+    // mim" chegaria ao mapa sem nenhum pino de motorista.
+    if (shuttleRef.current.status === 'idle') fetchShuttle(null, null);
+
+    // Centro de reserva quando a geolocalizacao nao esta disponivel: o primeiro
+    // veiculo ao vivo, senao a origem do primeiro servico. Sem isso o mapa nem
+    // abria e a tela ficava presa em "locating".
+    const fallbackCenter = () => {
+      const v = visibleVehicles(shuttleRef.current.vehicles)[0];
+      if (v) return { lat: v.lat, lng: v.lng };
+      const s = (shuttleRef.current.services || []).find((x) => x.origin && x.origin.lat != null && x.origin.lng != null);
+      return s ? { lat: s.origin.lat, lng: s.origin.lng } : null;
+    };
+
+    async function draw(latitude, longitude, hasLocation) {
       const L = await loadLeaflet();
       if (!mapInstanceRef.current) {
         mapInstanceRef.current = L.map(mapRef.current).setView([latitude, longitude], 13);
@@ -1038,11 +1141,15 @@ function handleOpenCoupon(c) {
         setTimeout(() => mapInstanceRef.current.invalidateSize(), 0);
         setTimeout(() => mapInstanceRef.current.invalidateSize(), 300);
         window.addEventListener('resize', () => mapInstanceRef.current.invalidateSize());
+      } else {
+        mapInstanceRef.current.setView([latitude, longitude], mapInstanceRef.current.getZoom());
       }
-      // Localização do usuário: ponto pequeno, sem clique, para não cobrir a
-      // empresa que ocupa a mesma posição e não atrapalhar ao tocar nela.
-      L.circleMarker([latitude, longitude], { radius: 5, color: '#2563eb', fillColor: '#2563eb', fillOpacity: 0.85, weight: 1, interactive: false })
-        .addTo(mapInstanceRef.current);
+      // Localizacao do usuario: so quando ela existe, para nao cravar um ponto
+      // azul no centro de reserva (que vem do veiculo/servico).
+      if (hasLocation) {
+        L.circleMarker([latitude, longitude], { radius: 5, color: '#2563eb', fillColor: '#2563eb', fillOpacity: 0.85, weight: 1, interactive: false })
+          .addTo(mapInstanceRef.current);
+      }
 
       // Nossos parceiros (verde)
       let currentOffers = Array.isArray(offers) ? offers : [];
@@ -1159,7 +1266,28 @@ function handleOpenCoupon(c) {
       } catch { /* mapa de parceiros continua funcionando mesmo se isso falhar */ }
 
       setMapStatus('done');
-    }, () => setMapStatus('denied'));
+    }
+
+    // start() trata a falha do loadLeaflet: sem isto a tela ficaria em "locating"
+    // para sempre quando o Leaflet nao carrega.
+    const start = (latitude, longitude, hasLocation) => { draw(latitude, longitude, hasLocation).catch(() => setMapStatus('denied')); };
+
+    if (!('geolocation' in navigator)) {
+      const c = fallbackCenter();
+      if (c) { await start(c.lat, c.lng, false); return; }
+      setMapStatus('denied');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => start(pos.coords.latitude, pos.coords.longitude, true),
+      () => {
+        const c = fallbackCenter();
+        if (c) start(c.lat, c.lng, false);
+        else setMapStatus('denied');
+      },
+      // timeout: sem ele o mapa podia ficar parado em "locating" indefinidamente.
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 },
+    );
   }
 
   const inviteUrl = (typeof window !== 'undefined' && invite) ? window.location.origin + invite.shareUrl : '';
@@ -1575,6 +1703,7 @@ function handleOpenCoupon(c) {
             {!shuttle.err && shuttle.vehicles.length > 0 && (
               <div style={{ marginTop: 12 }}>
                 <strong>{t.transladoVehicles ?? 'Veículos ao vivo'}</strong>
+                <div ref={transVehicleMapRef} style={{ height: 220, marginTop: 8, borderRadius: 8, overflow: 'hidden', background: theme.bg }} />
                 {shuttle.vehicles.map((v) => (
                   <div key={v.driverId} style={{
                     border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12, marginTop: 8, background: theme.bg,

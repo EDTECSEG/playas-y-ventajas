@@ -46,6 +46,25 @@ export function visibleVehicles(vehicles) {
   return out;
 }
 
+// Janela de auto-atualizacao do translado no mapa do cliente.
+//
+// O mapa so buscava a lista quando o usuario tocava em "Ver perto de mim". Uma
+// posicao enviada DEPOIS disso nunca aparecia ate tocar de novo — era o que
+// fazia o carro "sumir" de quem ja estava com a tela aberta. 30s e o mesmo passo
+// do envio automatico do motorista (AUTO_POSITION_MS), entao cada re-busca
+// quase sempre encontra uma posicao nova sem martelar o endpoint.
+export const SHUTTLE_REFRESH_MS = 30000;
+
+// A re-busca so roda depois que a primeira busca terminou e com a aba visivel.
+// Com a aba em segundo plano, pausar evita gastar rede a toa (ninguem esta
+// vendo o mapa). `hidden` indefinido conta como visivel, para a decisao nao
+// depender de a pagina ter lido document.visibilityState.
+export function shouldRefreshShuttle({ status, hidden } = {}) {
+  if (status !== 'done') return false;
+  if (hidden === true) return false;
+  return true;
+}
+
 // "Em movimento" so quando a velocidade diz isso. speed_kmh e null quando o
 // navegador nao devolveu heading/speed: dizer "Parado" ali seria afirmar algo
 // que o banco nao sabe. Number(null) e 0 (finito), entao o null sai antes.
