@@ -272,36 +272,19 @@ test('a pagina re-busca o translado periodicamente, com limpeza', () => {
   assert.ok(/shouldRefreshShuttle\(/.test(bloco), 'a decisao de atualizar tem que vir da logica pura');
 });
 
-// --------------------------------------------- Mapa proprio no card de translado
+// ------------------------------------------------- Um unico mapa na tela
+//
+// O card de translado chegou a ter um segundo mapa proprio, alem do "Mapa da
+// regiao". Isso duplicava o mapa (o cliente via dois). Voltou a ser um mapa
+// unico: os veiculos aparecem no "Mapa da regiao", que ja le shuttle.vehicles
+// pela vehicleLayerRef. Este teste trava a volta do mapa extra.
 
-test('o card de translado tem mapa proprio, alem da lista de texto', () => {
-  // O pino so existia no "Mapa da regiao", que exige um clique e geolocalizacao.
-  // No card de translado os veiculos apareciam somente como texto.
-  assert.ok(/transVehicleMapRef/.test(PAGE), 'falta o container do mapa no card de translado');
-  assert.ok(/transVehicleMapInstanceRef/.test(PAGE), 'falta a instancia do mapa do translado');
-  assert.ok(/transVehicleLayerRef/.test(PAGE), 'falta a camada de veiculos do card');
-  assert.ok(
-    /<div ref=\{transVehicleMapRef\}/.test(PAGE),
-    'o container precisa estar montado no JSX do card',
-  );
-});
-
-test('o mapa do translado redesenha a partir de shuttle.vehicles', () => {
-  const bloco = PAGE.slice(PAGE.indexOf('transVehicleMapRef'));
-  assert.ok(/visibleVehicles\(shuttle\.vehicles\)/.test(bloco), 'o card precisa filtrar os veiculos utilizaveis');
-  assert.ok(/vehicleMarkerHtml\(/.test(bloco), 'o marcador do card tem que vir de vehicleMarkerHtml (que escapa)');
-  assert.ok(
-    /transVehicleLayerRef\.current\s*=\s*L\.layerGroup\(\)\.addTo\(map\)/.test(bloco),
-    'a camada do card precisa ser criada como layerGroup (para limpar e repovoar)',
-  );
-  assert.ok(/layer\.clearLayers\(\)/.test(bloco), 'a camada do card precisa ser limpa antes de redesenhar');
-});
-
-test('o mapa do translado e desmontado ao sair da pagina', () => {
-  assert.ok(
-    /transVehicleMapInstanceRef\.current\.remove\(\)/.test(PAGE),
-    'sem remove() o listener global do Leaflet sobrevive ao componente',
-  );
+test('a tela do cliente tem um unico mapa, sem mapa extra no card de translado', () => {
+  assert.ok(!/transVehicleMapRef/.test(PAGE), 'nao pode existir um segundo mapa no card de translado');
+  assert.ok(!/transVehicleMapInstanceRef/.test(PAGE), 'nao pode existir a instancia do mapa extra');
+  assert.ok(!/transVehicleLayerRef/.test(PAGE), 'nao pode existir a camada do mapa extra');
+  const criacoes = PAGE.match(/L\.map\(/g) || [];
+  assert.strictEqual(criacoes.length, 1, 'o mapa unico precisa ser o "Mapa da regiao" (mapRef)');
 });
 
 // ------------------------------------------- showMap sem geolocalizacao / timeout

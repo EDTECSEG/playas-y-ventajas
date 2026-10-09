@@ -447,11 +447,6 @@ export default function ClientePage() {
   // Camada so dos motoristas. Sem ela, cada atualizacao de posicao empilha um
   // marcador novo por cima do anterior (o mapa e remontado a cada "Atualizar").
   const vehicleLayerRef = useRef(null);
-  // Mapa proprio do card de translado: os veiculos aparecem aqui sem depender do
-  // "Mapa da regiao", que so existe depois de um clique e de geolocalizacao.
-  const transVehicleMapRef = useRef(null);
-  const transVehicleMapInstanceRef = useRef(null);
-  const transVehicleLayerRef = useRef(null);
   const qrDivRef = useRef(null);
   const myCouponQrDivRef = useRef(null);
   const [openCoupon, setOpenCoupon] = useState(null);
@@ -1015,56 +1010,6 @@ export default function ClientePage() {
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shuttle.status, shuttleHidden]);
-
-  // Mapa proprio do card de translado. Diferente do "Mapa da regiao", ele existe
-  // so por causa dos veiculos: o carro aparece assim que a lista chega, sem
-  // depender de um clique nem de geolocalizacao.
-  useEffect(() => {
-    const vs = visibleVehicles(shuttle.vehicles);
-    if (vs.length === 0) {
-      if (transVehicleMapInstanceRef.current) {
-        transVehicleMapInstanceRef.current.remove();
-        transVehicleMapInstanceRef.current = null;
-        transVehicleLayerRef.current = null;
-      }
-      return undefined;
-    }
-    let cancelled = false;
-    loadLeaflet().then((L) => {
-      if (cancelled || !transVehicleMapRef.current) return;
-      if (!transVehicleMapInstanceRef.current) {
-        const map = L.map(transVehicleMapRef.current, { attributionControl: false })
-          .setView([vs[0].lat, vs[0].lng], 14);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
-        transVehicleMapInstanceRef.current = map;
-        transVehicleLayerRef.current = L.layerGroup().addTo(map);
-        setTimeout(() => { if (transVehicleMapInstanceRef.current) transVehicleMapInstanceRef.current.invalidateSize(); }, 0);
-      }
-      const layer = transVehicleLayerRef.current;
-      if (!layer) return;
-      layer.clearLayers();
-      for (const v of vs) {
-        L.marker([v.lat, v.lng], {
-          icon: L.divIcon({ className: 'pyv-driver-marker', html: vehicleMarkerHtml(v, t), iconSize: [44, 40], iconAnchor: [22, 20] }),
-        }).addTo(layer).bindPopup(vehiclePopupHtml(v, t, timeAgo(v.recordedAt, t)));
-      }
-      const pts = vs.map((v) => [v.lat, v.lng]);
-      if (pts.length === 1) transVehicleMapInstanceRef.current.setView(pts[0], 14);
-      else transVehicleMapInstanceRef.current.fitBounds(pts, { padding: [30, 30], maxZoom: 15 });
-    }).catch(() => { /* sem Leaflet: a lista de texto continua valendo */ });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shuttle.vehicles]);
-
-  // Desmonta o mapa do card ao sair da pagina, senao o listener global do
-  // Leaflet sobrevive ao componente.
-  useEffect(() => () => {
-    if (transVehicleMapInstanceRef.current) {
-      transVehicleMapInstanceRef.current.remove();
-      transVehicleMapInstanceRef.current = null;
-      transVehicleLayerRef.current = null;
-    }
-  }, []);
 
 function handleOpenCoupon(c) {
     const tokens = JSON.parse(localStorage.getItem('pyv_coupon_tokens') || '{}');
@@ -1703,7 +1648,6 @@ function handleOpenCoupon(c) {
             {!shuttle.err && shuttle.vehicles.length > 0 && (
               <div style={{ marginTop: 12 }}>
                 <strong>{t.transladoVehicles ?? 'Veículos ao vivo'}</strong>
-                <div ref={transVehicleMapRef} style={{ height: 220, marginTop: 8, borderRadius: 8, overflow: 'hidden', background: theme.bg }} />
                 {shuttle.vehicles.map((v) => (
                   <div key={v.driverId} style={{
                     border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12, marginTop: 8, background: theme.bg,
