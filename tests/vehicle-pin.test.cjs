@@ -287,6 +287,13 @@ test('a tela do cliente tem um unico mapa, sem mapa extra no card de translado',
   assert.strictEqual(criacoes.length, 1, 'o mapa unico precisa ser o "Mapa da regiao" (mapRef)');
 });
 
+test('o mapa realca as cores so no painel de tiles', () => {
+  assert.ok(
+    /getPane\('tilePane'\)\.style\.filter\s*=\s*'[^']*saturate\(/.test(PAGE),
+    'faltou o filtro de cor (saturate) no tilePane do mapa',
+  );
+});
+
 // ------------------------------------------- showMap sem geolocalizacao / timeout
 
 test('getCurrentPosition tem timeout, senao o mapa travaria em "locating"', () => {

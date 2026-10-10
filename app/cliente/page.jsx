@@ -1078,6 +1078,7 @@ function handleOpenCoupon(c) {
       if (!mapInstanceRef.current) {
         mapInstanceRef.current = L.map(mapRef.current).setView([latitude, longitude], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapInstanceRef.current);
+        mapInstanceRef.current.getPane('tilePane').style.filter = 'saturate(1.4) contrast(1.06) brightness(1.02)';
         // Motoristas ficam numa camada propria para poderem ser redesenhados
         // (limpa e repovoa) sem tocar nos marcadores de comercio.
         vehicleLayerRef.current = L.layerGroup().addTo(mapInstanceRef.current);
