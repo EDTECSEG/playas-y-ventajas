@@ -69,6 +69,7 @@ import driverResetPin from '../netlify/functions/driver-reset-pin.js';
 import driverPosition from '../netlify/functions/driver-position.js';
 import shuttleReservation from '../netlify/functions/shuttle-reservation.js';
 import driverShuttleRuns from '../netlify/functions/driver-shuttle-runs.js';
+import driverMe from '../netlify/functions/driver-me.js';
 
 // driver-list-for-business e driver-document-url entraram na whitelist juntos
 // porque um sem o outro nao serve: a lista diz que existe um documento pendente,
@@ -140,6 +141,10 @@ const ROUTES = {
   // corrida (credencial = sessao de driver, como driver-position).
   'shuttle-reservation': shuttleReservation,
   'driver-shuttle-runs': driverShuttleRuns,
+  // Leitura da sessao do motorista: devolve o status atual (pending/approved/
+  // rejected/suspended) para a tela parar de mostrar situacao velha guardada no
+  // navegador. So GET.
+  'driver-me': driverMe,
 };
 
 const CORS_HEADERS = {

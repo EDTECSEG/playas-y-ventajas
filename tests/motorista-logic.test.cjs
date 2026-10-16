@@ -277,6 +277,36 @@ test('entrar e dirigir sao decisiones separadas: pendente entra, nao dirige', ()
 });
 
 // ------------------------------------------------------------
+// Situacao atual do motorista (driver-me)
+// ------------------------------------------------------------
+
+test('buildMeRequest manda a sessao no header e nada sem sessao', () => {
+  const r = L.buildMeRequest({ session: SESSION });
+  assert.strictEqual(r.headerToken, 'sess-abc');
+  assert.throws(() => L.buildMeRequest({ session: null }), /Faca login/);
+  assert.throws(() => L.buildMeRequest({ session: { driverId: 'd-1' } }), /Faca login/);
+  assert.throws(() => L.buildMeRequest({}), /Faca login/);
+});
+
+test('mergeSessionStatus troca o status quando o servidor diverge', () => {
+  const pending = { ...SESSION, status: 'pending' };
+  const next = L.mergeSessionStatus(pending, { status: 'approved' });
+  assert.strictEqual(next.status, 'approved');
+  assert.strictEqual(next.sessionToken, 'sess-abc', 'o resto da sessao fica intacto');
+  assert.notStrictEqual(next, pending, 'objeto novo quando muda');
+});
+
+test('mergeSessionStatus devolve a MESMA referencia quando nada muda', () => {
+  // A tela usa a identidade para nao regravar o localStorage nem disparar os
+  // efeitos de servicos/corridas a cada revisao.
+  const s = { ...SESSION, status: 'approved' };
+  assert.strictEqual(L.mergeSessionStatus(s, { status: 'approved' }), s);
+  assert.strictEqual(L.mergeSessionStatus(s, {}), s);
+  assert.strictEqual(L.mergeSessionStatus(s, null), s);
+  assert.strictEqual(L.mergeSessionStatus(null, { status: 'approved' }), null);
+});
+
+// ------------------------------------------------------------
 // Transmissao de posicao (driver-position)
 // ------------------------------------------------------------
 

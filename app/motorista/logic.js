@@ -116,6 +116,36 @@ export function canDrive(status) {
   return String(status || '') === 'approved';
 }
 
+// --- Situacao atual do motorista (driver-me) --------------------------------
+//
+// A sessao vive no localStorage e so era escrita no login. Quem entrou como
+// 'pending' e foi aprovado depois continuava vendo "aguardando aprovacao" ate
+// sair e entrar de novo. driver-me devolve o status do banco e a tela reescreve
+// a sessao guardada com ele.
+
+// Credencial do driver-me: SEMPRE a sessao, no header. Sem sessao nao ha o que
+// revisar, entao isso e AUTH_REQUIRED e nao uma chamada anonima.
+export function buildMeRequest({ session } = {}) {
+  if (!session || !session.sessionToken) throw new Error(friendlyMessage('AUTH_REQUIRED'));
+  return { headerToken: session.sessionToken };
+}
+
+// Funde o status vindo do servidor na sessao guardada.
+//
+// Devolve a MESMA referencia quando nada mudou: a tela usa a identidade para
+// decidir se grava no localStorage e chama setSession. Um objeto novo a cada
+// revisao dispararia os efeitos que dependem de `session` (carregar servicos e
+// corridas) sem necessidade — a cada abertura e a cada refresh.
+//
+// Nome, telefone e businessId nao entram: mudar esses campos nao e o caso deste
+// endpoint, e mexer neles aqui daria a impressao de que a tela os revalida.
+export function mergeSessionStatus(session, me) {
+  if (!session || !session.sessionToken) return session;
+  if (!me || typeof me !== 'object' || !me.status) return session;
+  if (String(me.status) === String(session.status)) return session;
+  return { ...session, status: me.status };
+}
+
 export function checkPin(pin, pin2) {
   if (String(pin || '') !== String(pin2 || '')) throw new Error(friendlyMessage('PIN_MISMATCH'));
   if (String(pin || '').length < 4) throw new Error(friendlyMessage('PIN_TOO_SHORT'));

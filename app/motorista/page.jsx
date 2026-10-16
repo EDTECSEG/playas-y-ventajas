@@ -36,6 +36,8 @@ import {
   situationFor,
   sessionFromStorage,
   pendingFromStorage,
+  buildMeRequest,
+  mergeSessionStatus,
   buildRegisterRequest,
   maskCpf,
   maskCnpj,
@@ -143,8 +145,14 @@ export default function MotoristaPage() {
   // definido. Errar isso aqui esconde o bloco de documentos depois de um
   // recarregamento e deixa o motorista sem caminho para se habilitar.
   useEffect(() => {
-    setSession(sessionFromStorage(localStorage.getItem('pyv_driver')));
+    const s = sessionFromStorage(localStorage.getItem('pyv_driver'));
+    setSession(s);
     setPending(pendingFromStorage(localStorage.getItem('pyv_driver_pending')));
+    // Alem de reidratar, consulta o status atual: quem entrou como 'pending' e
+    // foi aprovado depois continuava vendo "aguardando aprovacao" ate sair e
+    // entrar de novo, porque a sessao guardada tinha o status antigo.
+    if (s && s.sessionToken) revisarSituacao(s);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Carrega os servicos de translado do tenant quando o motorista esta
@@ -161,6 +169,25 @@ export default function MotoristaPage() {
     if (canDrive(session && session.status)) carregarCorridas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
+
+  // Revisa a situacao no servidor e reescreve a sessao guardada se o status
+  // mudou (ex.: aprovado depois do login). Roda em segundo plano no mount; uma
+  // falha NAO pode derrubar a tela, entao qualquer erro alem de sessao morta e
+  // ignorado e a sessao local fica como esta. Sessao expirada/revogada no
+  // servidor nao tem como continuar, entao limpa e volta para o login.
+  async function revisarSituacao(s) {
+    try {
+      const { headerToken } = buildMeRequest({ session: s });
+      const me = await call('driver-me', { token: headerToken });
+      const next = mergeSessionStatus(s, me);
+      if (next !== s) {
+        localStorage.setItem('pyv_driver', JSON.stringify(next));
+        setSession(next);
+      }
+    } catch (e) {
+      if (e && String(e.message) === friendlyMessage('SESSION_EXPIRED')) limparTudo();
+    }
+  }
 
   function limparTudo() {
     setSession(null);

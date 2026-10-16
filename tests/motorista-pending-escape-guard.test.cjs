@@ -138,3 +138,79 @@ test('o texto do PIN ja definido aponta para o botao de escape', () => {
   const pt = trechoI18n('pt').match(/pinAlreadySet: '([^']*)'/)[1];
   assert.match(pt, /Já tenho cadastro/, 'o texto precisa indicar o botao de escape');
 });
+
+// --------------------------------------------- Situacao velha no navegador
+//
+// A sessao vive no localStorage e so era escrita no login. Um motorista que
+// entrou como 'pending' e foi aprovado depois continuava vendo "Aguardando
+// aprovacao da empresa" ate sair e entrar de novo. driver-me existe para a tela
+// reescrever a sessao guardada com o status atual do banco.
+
+const WORKER = readFileSync(path.join(RAIZ, 'worker', 'main.js'), 'utf8');
+const DRIVER_ME = readFileSync(
+  path.join(RAIZ, 'netlify', 'functions', 'driver-me.js'),
+  'utf8',
+);
+
+test('a tela revisa a situacao no mount, usando a sessao guardada', () => {
+  assert.ok(
+    /const s = sessionFromStorage\(localStorage\.getItem\('pyv_driver'\)\)/.test(MOTORISTA),
+    'o mount precisa ler a sessao guardada para uma variavel local',
+  );
+  assert.ok(
+    /revisarSituacao\(s\)/.test(MOTORISTA),
+    'o mount precisa revisar a situacao quando existe sessao',
+  );
+  assert.ok(
+    /call\('driver-me',\s*\{\s*token:\s*headerToken\s*\}\)/.test(MOTORISTA),
+    'a revisao precisa chamar driver-me com o token da sessao',
+  );
+});
+
+test('a revisao so desloga quando o servidor diz que a sessao morreu', () => {
+  const bloco = MOTORISTA.slice(MOTORISTA.indexOf('async function revisarSituacao'));
+  const fim = bloco.indexOf('\n  function ');
+  const handler = fim === -1 ? bloco : bloco.slice(0, fim);
+  assert.ok(
+    /friendlyMessage\('SESSION_EXPIRED'\)/.test(handler),
+    'sessao expirada no servidor precisa limpar a tela',
+  );
+  assert.ok(
+    /else|limparTudo\(\)/.test(handler),
+    'precisa tratar a sessao morta',
+  );
+  assert.ok(
+    !/friendlyMessage\('AUTH_REQUIRED'\).*limparTudo/.test(handler),
+    'erro de rede/endpoint fora nao pode deslogar o motorista',
+  );
+});
+
+test('driver-me existe em producao: rota no worker e handler GET', () => {
+  assert.ok(
+    /'driver-me':\s*driverMe,/.test(WORKER),
+    "driver-me precisa estar no ROUTES de worker/main.js, senao responde 404 em producao",
+  );
+  assert.ok(
+    /import driverMe from '\.\.\/netlify\/functions\/driver-me\.js'/.test(WORKER),
+    'falta o import estatico do handler no bundle do worker',
+  );
+  assert.ok(/exports\.handler/.test(DRIVER_ME), 'driver-me precisa exportar handler');
+  assert.ok(
+    /httpMethod !== 'GET'/.test(DRIVER_ME),
+    'driver-me e leitura: so GET',
+  );
+});
+
+test('driver-me deriva o motorista da sessao e recusa sessao invalida/expirada', () => {
+  assert.ok(/eq\('kind', 'driver'\)/.test(DRIVER_ME), 'a sessao precisa ser do tipo driver');
+  assert.ok(/from\('sessions'\)/.test(DRIVER_ME), 'precisa ler a sessao no banco');
+  assert.ok(/from\('drivers'\)/.test(DRIVER_ME), 'precisa ler o motorista pelo driver_id da sessao');
+  assert.ok(
+    /SESSION_EXPIRED/.test(DRIVER_ME),
+    'sessao ausente/expirada responde SESSION_EXPIRED (401), que a tela sabe tratar',
+  );
+  assert.ok(
+    /driver_id/.test(DRIVER_ME) && !/body\.driverId|body\?\.driverId/.test(DRIVER_ME),
+    'o driver_id vem da sessao, nunca do corpo',
+  );
+});
